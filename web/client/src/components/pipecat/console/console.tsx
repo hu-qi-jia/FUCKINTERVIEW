@@ -624,16 +624,16 @@ function ConsoleShell({
         data-slot="console-header"
         className="flex items-center gap-2 border-b px-3 py-2"
       >
-        <div className="flex shrink-0 items-center">
-          {noLogo ? (
-            <span className="h-6" />
-          ) : (
-            (logo ?? <PipecatLogo height={20} />)
-          )}
-        </div>
-        <strong className="hidden min-w-0 truncate text-sm md:block">
-          {titleText}
-        </strong>
+        {!noLogo && (
+          <div className="flex shrink-0 items-center">
+            {logo ?? <PipecatLogo height={20} />}
+          </div>
+        )}
+        {titleText && (
+          <strong className="hidden min-w-0 truncate text-sm md:block">
+            {titleText}
+          </strong>
+        )}
         <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
           {/* Slot content may shrink; the console's own controls never do. */}
           {headerSlot && (

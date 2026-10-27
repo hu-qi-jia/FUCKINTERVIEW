@@ -151,6 +151,9 @@ export function AppSidebar({
         ))}
       </nav>
 
+      {/* Device controls are portaled here by the active page. */}
+      <div id="app-devices-slot" />
+
       <div className="flex flex-col gap-1 border-t border-sidebar-border p-2">
         <SidebarItem
           collapsed={collapsed}

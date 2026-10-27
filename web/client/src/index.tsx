@@ -1,5 +1,6 @@
 import type { PipecatClient } from "@pipecat-ai/client-js";
 import { RTVIEvent } from "@pipecat-ai/client-js";
+import { PipecatClientProvider } from "@pipecat-ai/client-react";
 import { createStore } from "jotai/vanilla";
 import { SettingsIcon } from "lucide-react";
 import { StrictMode, useEffect, useState } from "react";
@@ -8,6 +9,12 @@ import { useTranslation } from "react-i18next";
 
 import "@/i18n";
 
+import {
+  HeaderDeviceButton,
+  HEADER_SLOT,
+  PortalTo,
+  SidebarDevices,
+} from "@/components/app-device-dock";
 import { Console, type ConsoleProps } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
 import { AppSidebar, type AppPage } from "@/components/app-sidebar";
@@ -230,20 +237,40 @@ function Home() {
     });
   };
 
-  // Console header extras: the small-screen page switcher (the sidebar is
-  // hidden there) and the settings entry.
-  const headerSlot = (
+  // Header extras shared by both pages. Devices live in the sidebar; only
+  // small screens (where the sidebar is hidden) put an entry in the header.
+  const settingsButton = (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="md:hidden"
+      aria-label={t("settings.title")}
+      onClick={() => setSettingsOpen(true)}
+    >
+      <SettingsIcon />
+    </Button>
+  );
+
+  const pageSwitch = <PageSwitch page={page} onNavigate={navigate} />;
+  const liveDevices = { cam: true, screen: true, mic: !captureMic };
+
+  // The mock page owns its client inside the Console, so the dock is portaled
+  // from its header slot. The live page's devices belong to the mic session,
+  // whose provider sits at this level.
+  const mockHeaderSlot = (
     <>
-      <PageSwitch page={page} onNavigate={navigate} />
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="md:hidden"
-        aria-label={t("settings.title")}
-        onClick={() => setSettingsOpen(true)}
-      >
-        <SettingsIcon />
-      </Button>
+      <SidebarDevices collapsed={sidebarCollapsed} version={page} />
+      <HeaderDeviceButton />
+      {pageSwitch}
+      {settingsButton}
+    </>
+  );
+
+  const liveHeaderSlot = (
+    <>
+      <div id={HEADER_SLOT} />
+      {pageSwitch}
+      {settingsButton}
     </>
   );
 
@@ -323,9 +350,10 @@ function Home() {
                   }
                   layout="interview"
                   layoutPersistenceKey="live-interview"
-                  titleText={t("nav.interview")}
+                  noLogo
+                  titleText=""
                   noDTMF
-                  headerSlot={headerSlot}
+                  headerSlot={liveHeaderSlot}
                   onClient={onClient}
                 />
               </div>
@@ -335,13 +363,30 @@ function Home() {
               key="mock"
               jotaiStore={mockStore}
               {...SMALL_WEBRTC_PROPS}
-              titleText={t("nav.mockInterview")}
+              noLogo
+              titleText=""
               noDTMF
-              headerSlot={headerSlot}
+              noUserAudio
+              noUserVideo
+              noScreenControl
+              headerSlot={mockHeaderSlot}
               onClient={onClient}
             />
           )}
         </div>
+
+        {page === "interview" && live.micClient && (
+          <PipecatClientProvider client={live.micClient}>
+            <SidebarDevices
+              collapsed={sidebarCollapsed}
+              disabled={liveDevices}
+              version={page}
+            />
+            <PortalTo id={HEADER_SLOT} version={page}>
+              <HeaderDeviceButton disabled={liveDevices} />
+            </PortalTo>
+          </PipecatClientProvider>
+        )}
 
         <SettingsDialog
           open={settingsOpen}
