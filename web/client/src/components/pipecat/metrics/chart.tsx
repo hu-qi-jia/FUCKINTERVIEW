@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 export const METRIC_CATEGORY_TITLES: Record<MetricCategory, string> = {
   ttfb: "metrics.ttfb",
   ttfa: "metrics.ttfa",
+  ttfat: "metrics.ttfat",
   processing: "metrics.processing",
   characters: "metrics.characters",
   stt_usage: "metrics.sttAudio",
@@ -28,6 +29,7 @@ export const METRIC_CATEGORY_TITLES: Record<MetricCategory, string> = {
 export const METRIC_CATEGORY_UNITS: Record<MetricCategory, string> = {
   ttfb: " (ms)",
   ttfa: " (ms)",
+  ttfat: " (ms)",
   processing: " (ms)",
   characters: "",
   stt_usage: " (s)",

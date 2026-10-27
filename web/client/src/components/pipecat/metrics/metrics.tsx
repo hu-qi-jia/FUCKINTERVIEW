@@ -96,6 +96,28 @@ export interface MetricsProps {
   className?: string;
 }
 
+/**
+ * The metrics body for one tab, without its own tab list. Hosts that carry
+ * the performance/usage switch in their own header use this instead of
+ * {@link Metrics}.
+ */
+export function MetricsTabContent({
+  tab = "performance",
+  performanceProps,
+  usageProps,
+  className,
+}: {
+  tab?: MetricsTab;
+  performanceProps?: MetricsPerformanceProps;
+  usageProps?: MetricsUsageProps;
+  className?: string;
+}) {
+  if (tab === "usage") {
+    return <MetricsUsage {...usageProps} className={className} />;
+  }
+  return <MetricsPerformance {...performanceProps} className={className} />;
+}
+
 /** Requires PipecatClientProvider. Keeps collection active while individual tabs are unmounted. */
 export function Metrics({
   defaultTab,

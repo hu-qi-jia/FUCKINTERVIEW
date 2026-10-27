@@ -7,11 +7,17 @@ import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 
 export type MetricCategory =
-  "ttfb" | "ttfa" | "processing" | "characters" | "stt_usage";
+  | "ttfb"
+  | "ttfa"
+  | "ttfat"
+  | "processing"
+  | "characters"
+  | "stt_usage";
 
 const METRIC_CATEGORIES: MetricCategory[] = [
   "ttfb",
   "ttfa",
+  "ttfat",
   "processing",
   "characters",
   "stt_usage",
@@ -28,6 +34,9 @@ const CATEGORY_SAMPLERS: Record<
 > = {
   ttfb: (entry) => numberOrNull(entry.value),
   ttfa: (entry) => numberOrNull(entry.ttfa),
+  // Time to first answer token: TTFB plus any reasoning streamed before the
+  // answer itself, reported by LLM services that answer in text.
+  ttfat: (entry) => numberOrNull(entry.ttfat),
   processing: (entry) => numberOrNull(entry.value),
   characters: (entry) => numberOrNull(entry.value),
   stt_usage: (entry) =>

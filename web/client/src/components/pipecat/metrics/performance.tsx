@@ -16,7 +16,7 @@ import {
 } from "@/hooks/use-pipecat-metrics";
 import { cn } from "@/lib/utils";
 
-export type MetricsPerformanceCategory = "ttfb" | "ttfa" | "processing";
+export type MetricsPerformanceCategory = "ttfb" | "ttfa" | "ttfat" | "processing";
 
 export interface MetricsPerformanceViewProps {
   /** Metric series; non-performance categories are ignored. */
@@ -37,7 +37,7 @@ export interface MetricsPerformanceViewProps {
 /** Latency tiles and charts in milliseconds. ttfa requires Pipecat server ≥1.7. */
 export function MetricsPerformanceView({
   series,
-  categories = ["ttfb"],
+  categories = ["ttfb", "ttfat"],
   noTiles = false,
   noCharts = false,
   ignoreProcessors,
