@@ -3,6 +3,10 @@ import { initReactI18next } from "react-i18next";
 
 const zh = {
   app: { title: "面试语音助手" },
+  nav: {
+    interview: "实时面试",
+    footer: "SmallWebRTC · Pipecat",
+  },
   errors: {
     startSession: "会话启动失败：{{message}}",
     disconnect: "断开连接失败：{{message}}",
@@ -215,6 +219,10 @@ const zh = {
 
 const en = {
   app: { title: "Interview Voice Assistant" },
+  nav: {
+    interview: "Live interview",
+    footer: "SmallWebRTC · Pipecat",
+  },
   errors: {
     startSession: "Failed to start session: {{message}}",
     disconnect: "Failed to disconnect: {{message}}",

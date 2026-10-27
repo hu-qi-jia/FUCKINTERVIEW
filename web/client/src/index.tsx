@@ -12,7 +12,9 @@ import {
   type ConsoleProps,
 } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
+import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   readTheme,
   resolveDark,
@@ -80,30 +82,36 @@ function Home() {
   };
 
   return (
-    <div className="h-dvh">
-      <Console
-        {...SMALL_WEBRTC_PROPS}
-        titleText={t("app.title")}
-        noDTMF
-        headerSlot={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t("settings.title")}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <SettingsIcon />
-          </Button>
-        }
-        onClient={onClient}
-      />
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        theme={theme}
-        onThemeChange={handleThemeChange}
-      />
-    </div>
+    <TooltipProvider>
+      <div className="flex h-dvh">
+        <AppSidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <div className="min-w-0 flex-1">
+          <Console
+            {...SMALL_WEBRTC_PROPS}
+            titleText={t("nav.interview")}
+            noDTMF
+            headerSlot={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="md:hidden"
+                aria-label={t("settings.title")}
+                onClick={() => setSettingsOpen(true)}
+              >
+                <SettingsIcon />
+              </Button>
+            }
+            onClient={onClient}
+          />
+        </div>
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          theme={theme}
+          onThemeChange={handleThemeChange}
+        />
+      </div>
+    </TooltipProvider>
   );
 }
 

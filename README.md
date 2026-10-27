@@ -36,6 +36,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 ## 界面与语言
 
+- 左侧导航：**实时面试** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（设置入口回到顶栏）
 - 默认中文；语言与主题都在「设置 → 通用设置」里切换（主题支持浅色 / 深色 / 跟随系统），选择保存在浏览器 localStorage
 - 文案统一走 `web/client/src/i18n/index.ts`（i18next），新增文案在 `zh` / `en` 两份资源里同步添加
 - 设置页分两页：「通用设置」（界面语言、深色模式）与「模型配置」（ASR / LLM / TTS 三段，同页滚动）

@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 
 # 上游源码（git clone，不属于本项目）
-pipecat/
+/pipecat/
 
 # 前端
 web/client/node_modules/
