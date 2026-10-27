@@ -8,6 +8,7 @@ import {
   ConsolePanelActions,
   ConsolePanelContent,
 } from "@/components/pipecat/console/panel";
+import { TextRenderModeSelect } from "@/components/pipecat/console/text-render-mode-select";
 import {
   Conversation,
   type ConversationProps,
@@ -15,20 +16,7 @@ import {
 import type { TextRenderMode } from "@/components/pipecat/conversation-message";
 import { Metrics } from "@/components/pipecat/metrics/metrics";
 import { TextInput } from "@/components/pipecat/text-input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-const RENDER_MODES: Array<{ value: TextRenderMode }> = [
-  { value: "karaoke" },
-  { value: "captions" },
-  { value: "instant" },
-];
 
 export interface ConsoleConversationPanelProps {
   /** Hides the conversation tab. Default false. */
@@ -80,6 +68,13 @@ export function ConsoleConversationPanel({
     onTextRenderModeChange?.(mode);
   };
 
+  // With only one section there is no tab to switch between, so the header
+  // shows a plain title instead of a lone tab.
+  const showTabs = !noConversation && !noMetrics;
+  const sectionTitle = noConversation
+    ? t("conversation.metrics")
+    : t("conversation.title");
+
   return (
     <Tabs
       defaultValue={noConversation ? "metrics" : "conversation"}
@@ -88,43 +83,24 @@ export function ConsoleConversationPanel({
     >
       <ConsolePanel>
         <div className="flex items-center gap-2 border-b px-(--card-spacing) pb-(--card-spacing)">
-          <TabsList>
-            {!noConversation && (
+          {showTabs ? (
+            <TabsList>
               <TabsTrigger value="conversation">
                 {t("conversation.title")}
               </TabsTrigger>
-            )}
-            {!noMetrics && (
-              <TabsTrigger value="metrics">{t("conversation.metrics")}</TabsTrigger>
-            )}
-          </TabsList>
+              <TabsTrigger value="metrics">
+                {t("conversation.metrics")}
+              </TabsTrigger>
+            </TabsList>
+          ) : (
+            <span className="text-sm font-medium">{sectionTitle}</span>
+          )}
           {!noConversation && !noTextRenderModeSwitch && (
             <ConsolePanelActions className="ml-auto">
-              <Select
-                items={RENDER_MODES.map((mode) => ({
-                  value: mode.value,
-                  label: t(`conversation.${mode.value}`),
-                }))}
+              <TextRenderModeSelect
                 value={renderMode}
-                onValueChange={(value) =>
-                  handleRenderMode(value as TextRenderMode)
-                }
-              >
-                <SelectTrigger
-                  size="sm"
-                  aria-label={t("conversation.renderMode")}
-                  className="h-7 text-xs"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end" alignItemWithTrigger={false}>
-                  {RENDER_MODES.map((mode) => (
-                    <SelectItem key={mode.value} value={mode.value}>
-                      {t(`conversation.${mode.value}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={handleRenderMode}
+              />
             </ConsolePanelActions>
           )}
         </div>

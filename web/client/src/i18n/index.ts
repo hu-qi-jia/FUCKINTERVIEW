@@ -5,6 +5,8 @@ const zh = {
   app: { title: "面试语音助手" },
   nav: {
     interview: "实时面试",
+    mockInterview: "模拟面试",
+    switchPage: "切换页面",
     collapse: "收起导航",
     expand: "展开导航",
     resize: "调整导航栏宽度",
@@ -26,6 +28,8 @@ const zh = {
     sessionError: "会话错误",
     tabs: {
       conversation: "对话",
+      answer: "回答",
+      metrics: "指标",
       botMedia: "机器人媒体",
       info: "信息",
       events: "事件",
@@ -110,8 +114,10 @@ const zh = {
   },
   conversation: {
     title: "对话",
+    answer: "回答",
     metrics: "指标",
     waiting: "等待消息…",
+    waitingAnswer: "等待回答…",
     connecting: "正在连接智能体…",
     notConnected: "未连接到智能体",
     connectHint: "连接后即可实时查看对话内容。",
@@ -223,6 +229,8 @@ const en = {
   app: { title: "Interview Voice Assistant" },
   nav: {
     interview: "Live interview",
+    mockInterview: "Mock interview",
+    switchPage: "Switch page",
     collapse: "Collapse sidebar",
     expand: "Expand sidebar",
     resize: "Resize sidebar",
@@ -244,6 +252,8 @@ const en = {
     sessionError: "Session error",
     tabs: {
       conversation: "Conversation",
+      answer: "Answer",
+      metrics: "Metrics",
       botMedia: "Bot media",
       info: "Info",
       events: "Events",
@@ -324,8 +334,10 @@ const en = {
   },
   conversation: {
     title: "Conversation",
+    answer: "Answer",
     metrics: "Metrics",
     waiting: "Waiting for messages…",
+    waitingAnswer: "Waiting for an answer…",
     connecting: "Connecting to agent…",
     notConnected: "Not connected to agent",
     connectHint: "Connect to an agent to see conversation messages in real-time.",

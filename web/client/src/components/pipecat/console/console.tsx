@@ -14,13 +14,16 @@ import {
   useConversationContext,
   useRTVIClientEvent,
 } from "@pipecat-ai/client-react";
+import type { createStore } from "jotai/vanilla";
 import {
   BotIcon,
   ChevronsLeftRightEllipsisIcon,
+  GaugeIcon,
   InfoIcon,
   MessagesSquareIcon,
   PanelLeftCloseIcon,
   PanelRightCloseIcon,
+  SparklesIcon,
   XIcon,
 } from "lucide-react";
 import * as React from "react";
@@ -33,6 +36,7 @@ import {
 
 import { BotAudioOutput } from "@/components/pipecat/bot-audio";
 import { ConnectButton } from "@/components/pipecat/connect-button";
+import { ConsoleAnswerPanel } from "@/components/pipecat/console/answer-panel";
 import { ConsoleBotAudioPanel } from "@/components/pipecat/console/bot-audio-panel";
 import { ConsoleBotVideoPanel } from "@/components/pipecat/console/bot-video-panel";
 import { SmallWebRTCCodecSetter } from "@/components/pipecat/console/codec-setter";
@@ -41,6 +45,7 @@ import { ConsoleEventsPanel } from "@/components/pipecat/console/events-panel";
 import { ConsoleInfoPanel } from "@/components/pipecat/console/info-panel";
 import { ConsoleKeypadToggle } from "@/components/pipecat/console/keypad-toggle";
 import { PipecatLogo } from "@/components/pipecat/console/logo";
+import { ConsoleMetricsPanel } from "@/components/pipecat/console/metrics-panel";
 import { useMinWidth } from "@/components/pipecat/console/panel";
 import type { ConversationProps } from "@/components/pipecat/conversation";
 import type { TextRenderMode } from "@/components/pipecat/conversation-message";
@@ -133,7 +138,22 @@ const MEMORY_STORAGE: LayoutStorage = {
   setItem: () => {},
 } as LayoutStorage;
 
+type JotaiStore = ReturnType<typeof createStore>;
+
 export interface ConsoleProps {
+  /**
+   * Pane arrangement. "default" is the media / conversation+metrics / info
+   * console; "interview" is transcript / answer / metrics, for the live
+   * interview page.
+   */
+  layout?: "default" | "interview";
+  /**
+   * Store behind conversation, metrics and event state. Defaults to the
+   * library-wide store; pass one per page so two consoles never share a
+   * transcript.
+   */
+  jotaiStore?: JotaiStore;
+
   // -- Bootstrap (forwarded to usePipecatApp) --------------------------------
   /** Transport backing the client (default "smallwebrtc"). Match it to transportFactory; codec and ICE handling depend on it. */
   transportType?: TransportType;
@@ -294,7 +314,7 @@ export function Console(props: ConsoleProps) {
   }
 
   return (
-    <PipecatClientProvider client={app.client}>
+    <PipecatClientProvider client={app.client} jotaiStore={props.jotaiStore}>
       <TooltipProvider>
         <ConsoleShell {...props} app={app} />
       </TooltipProvider>
@@ -313,6 +333,7 @@ export function Console(props: ConsoleProps) {
 
 function ConsoleShell({
   app,
+  layout = "default",
   transportOptions,
   connectParams,
   startBotParams,
@@ -350,6 +371,15 @@ function ConsoleShell({
   const { t } = useTranslation();
   // Three resizable columns need about 1024px; narrower screens get tabs.
   const isDesktop = useMinWidth(1024);
+  const isInterviewLayout = layout === "interview";
+
+  // Interview layout: the transcript and answer panes show the same bot text,
+  // so they share one render mode.
+  const [sharedRenderMode, setSharedRenderMode] =
+    React.useState<TextRenderMode>(textRenderMode ?? "karaoke");
+  React.useEffect(() => {
+    if (textRenderMode !== undefined) setSharedRenderMode(textRenderMode);
+  }, [textRenderMode]);
 
   // -- Session facts collected from RTVI events ------------------------------
   const [participantId, setParticipantId] = React.useState<string>();
@@ -424,17 +454,19 @@ function ConsoleShell({
     storage,
   });
   const horizontalLayout = useDefaultLayout({
-    id: `${layoutPersistenceKey ?? "pipecat-console"}:h`,
+    id: `${layoutPersistenceKey ?? "pipecat-console"}:${isInterviewLayout ? "interview" : "h"}`,
     storage,
   });
 
   const mediaPanelRef = usePanelRef();
   const infoPanelRef = usePanelRef();
+  const metricsPanelRef = usePanelRef();
   const eventsPanelRef = usePanelRef();
   const [isMediaCollapsed, setIsMediaCollapsed] =
     React.useState(collapseMediaPanel);
   const [isInfoCollapsed, setIsInfoCollapsed] =
     React.useState(collapseInfoPanel);
+  const [isMetricsCollapsed, setIsMetricsCollapsed] = React.useState(false);
   const [isEventsCollapsed, setIsEventsCollapsed] =
     React.useState(collapseEventsPanel);
 
@@ -491,6 +523,34 @@ function ConsoleShell({
       />
     );
 
+  // -- Interview layout panes: transcript / answer / metrics -----------------
+  const interviewConversationPanel = (
+    <ConsoleConversationPanel
+      noMetrics
+      noConversation={noConversation}
+      noTextInput={noTextInput}
+      noTextRenderModeSwitch={noTextRenderModeSwitch}
+      textRenderMode={sharedRenderMode}
+      onTextRenderModeChange={setSharedRenderMode}
+      conversationProps={conversationProps}
+      className="h-full"
+    />
+  );
+
+  const answerPanel = (
+    <ConsoleAnswerPanel
+      noTextRenderModeSwitch={noTextRenderModeSwitch}
+      textRenderMode={sharedRenderMode}
+      onTextRenderModeChange={setSharedRenderMode}
+      conversationProps={conversationProps}
+      className="h-full"
+    />
+  );
+
+  const metricsPanel = (collapsed: boolean) => (
+    <ConsoleMetricsPanel collapsed={collapsed} className="h-full" />
+  );
+
   const eventsPanel = (collapsed: boolean) =>
     noEvents ? null : (
       <ConsoleEventsPanel collapsed={collapsed} className="h-full" />
@@ -540,7 +600,7 @@ function ConsoleShell({
             <div className="flex min-w-0 items-center gap-1">{headerSlot}</div>
           )}
           {!noDTMF && <ConsoleKeypadToggle mode={keypadMode} />}
-          {!noInfoPanel && (
+          {!isInterviewLayout && !noInfoPanel && (
             <Button
               variant="ghost"
               size="icon-sm"
@@ -593,7 +653,133 @@ function ConsoleShell({
       )}
 
       <div className="min-h-0 flex-1 p-2">
-        {isDesktop ? (
+        {isInterviewLayout ? (
+          isDesktop ? (
+            <ResizablePanelGroup
+              orientation="vertical"
+              defaultLayout={verticalLayout.defaultLayout}
+              onLayoutChanged={verticalLayout.onLayoutChanged}
+              className="gap-2"
+            >
+              <ResizablePanel id="main" defaultSize="70%" minSize="50%">
+                <ResizablePanelGroup
+                  orientation="horizontal"
+                  defaultLayout={horizontalLayout.defaultLayout}
+                  onLayoutChanged={horizontalLayout.onLayoutChanged}
+                  className="gap-2"
+                >
+                  <ResizablePanel
+                    id="conversation"
+                    defaultSize="36%"
+                    minSize="22%"
+                  >
+                    <div className="h-full p-px">
+                      {interviewConversationPanel}
+                    </div>
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel id="answer" defaultSize="34%" minSize="22%">
+                    <div className="h-full p-px">{answerPanel}</div>
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    id="metrics"
+                    defaultSize="30%"
+                    minSize="14%"
+                    collapsible
+                    collapsedSize={56}
+                    panelRef={metricsPanelRef}
+                    onResize={() =>
+                      setIsMetricsCollapsed(
+                        metricsPanelRef.current?.isCollapsed() ?? false,
+                      )
+                    }
+                  >
+                    <div className="h-full p-px">
+                      {metricsPanel(isMetricsCollapsed)}
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              </ResizablePanel>
+              {!noEvents && <ResizableHandle withHandle />}
+              {!noEvents && (
+                <ResizablePanel
+                  id="events"
+                  defaultSize={collapseEventsPanel ? "6%" : "30%"}
+                  minSize="7%"
+                  collapsible
+                  collapsedSize="6%"
+                  panelRef={eventsPanelRef}
+                  onResize={() =>
+                    setIsEventsCollapsed(
+                      eventsPanelRef.current?.isCollapsed() ?? false,
+                    )
+                  }
+                >
+                  <div className="h-full p-px">
+                    {eventsPanel(isEventsCollapsed)}
+                  </div>
+                </ResizablePanel>
+              )}
+            </ResizablePanelGroup>
+          ) : (
+            <Tabs
+              defaultValue="conversation"
+              className="flex h-full min-h-0 flex-col"
+            >
+              <TabsContent
+                value="conversation"
+                keepMounted
+                className="min-h-0 flex-1 data-[hidden]:hidden"
+              >
+                {interviewConversationPanel}
+              </TabsContent>
+              <TabsContent
+                value="answer"
+                keepMounted
+                className="min-h-0 flex-1 data-[hidden]:hidden"
+              >
+                {answerPanel}
+              </TabsContent>
+              <TabsContent value="metrics" className="min-h-0 flex-1">
+                {metricsPanel(false)}
+              </TabsContent>
+              {!noEvents && (
+                <TabsContent value="events" className="min-h-0 flex-1">
+                  {eventsPanel(false)}
+                </TabsContent>
+              )}
+              <TabsList className="mt-2 w-full">
+                <TabsTrigger
+                  value="conversation"
+                  aria-label={t("console.tabs.conversation")}
+                >
+                  <MessagesSquareIcon />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="answer"
+                  aria-label={t("console.tabs.answer")}
+                >
+                  <SparklesIcon />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="metrics"
+                  aria-label={t("console.tabs.metrics")}
+                >
+                  <GaugeIcon />
+                </TabsTrigger>
+                {!noEvents && (
+                  <TabsTrigger
+                    value="events"
+                    aria-label={t("console.tabs.events")}
+                  >
+                    <ChevronsLeftRightEllipsisIcon />
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </Tabs>
+          )
+        ) : isDesktop ? (
           <ResizablePanelGroup
             orientation="vertical"
             defaultLayout={verticalLayout.defaultLayout}

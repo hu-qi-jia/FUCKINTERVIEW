@@ -2,11 +2,11 @@
 
 import { usePipecatClientCamControl } from "@pipecat-ai/client-react";
 import { ChevronsLeftRightEllipsisIcon, InfoIcon, MicIcon } from "lucide-react";
-import * as React from "react";
 import { useTranslation } from "react-i18next";
 
 import { ClientStatus } from "@/components/pipecat/client-status";
 import {
+  ConsoleCollapsedSection,
   ConsolePanel,
   ConsolePanelContent,
   ConsolePanelTitle,
@@ -15,12 +15,6 @@ import { SessionInfo } from "@/components/pipecat/session-info";
 import { UserAudioControl } from "@/components/pipecat/user-audio-control";
 import { UserScreenControl } from "@/components/pipecat/user-screen-control";
 import { UserVideoControl } from "@/components/pipecat/user-video-control";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 
 export interface ConsoleInfoPanelProps {
   /** Hides the connection status section. Default false. */
@@ -40,31 +34,6 @@ export interface ConsoleInfoPanelProps {
   /** Icon-strip rendering for a collapsed pane; sections open in popovers. */
   collapsed?: boolean;
   className?: string;
-}
-
-function CollapsedSection({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button variant="ghost" size="icon-sm" aria-label={label}>
-            {icon}
-          </Button>
-        }
-      />
-      <PopoverContent side="left" align="start" className="w-80 max-w-[90vw]">
-        {children}
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 /**
@@ -111,25 +80,25 @@ export function ConsoleInfoPanel({
       >
         <div className="flex h-full flex-col items-center gap-1 py-2">
           {!noStatusInfo && (
-            <CollapsedSection
+            <ConsoleCollapsedSection
               label={t("session.connectionStatus")}
               icon={<ChevronsLeftRightEllipsisIcon />}
             >
               <ClientStatus />
-            </CollapsedSection>
+            </ConsoleCollapsedSection>
           )}
           {!noDevices && (
-            <CollapsedSection label={t("devices.title")} icon={<MicIcon />}>
+            <ConsoleCollapsedSection label={t("devices.title")} icon={<MicIcon />}>
               {devices}
-            </CollapsedSection>
+            </ConsoleCollapsedSection>
           )}
           {!noSessionInfo && (
-            <CollapsedSection label={t("session.sessionInfo")} icon={<InfoIcon />}>
+            <ConsoleCollapsedSection label={t("session.sessionInfo")} icon={<InfoIcon />}>
               <SessionInfo
                 sessionId={sessionId}
                 participantId={participantId}
               />
-            </CollapsedSection>
+            </ConsoleCollapsedSection>
           )}
         </div>
       </div>

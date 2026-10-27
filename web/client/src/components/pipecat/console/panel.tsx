@@ -2,6 +2,12 @@
 
 import * as React from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Card,
   CardAction,
@@ -109,5 +115,34 @@ export function ConsolePanelContent({
       data-slot="console-panel-content"
       {...props}
     />
+  );
+}
+
+/**
+ * One section of a collapsed pane: a single icon button that opens the
+ * section's content in a popover beside the icon strip.
+ */
+export function ConsoleCollapsedSection({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button variant="ghost" size="icon-sm" aria-label={label}>
+            {icon}
+          </Button>
+        }
+      />
+      <PopoverContent side="left" align="start" className="w-80 max-w-[90vw]">
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }

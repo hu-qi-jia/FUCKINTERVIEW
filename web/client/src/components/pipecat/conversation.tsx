@@ -142,6 +142,10 @@ export interface ConversationProps extends Omit<
   noFunctionCalls?: boolean;
   /** Controls how bot message text is rendered. */
   textRenderMode?: TextRenderMode;
+  /** Only render messages with these roles. All roles when unset. */
+  roles?: ConversationMessage["role"][];
+  /** Shown when connected but there are no messages to render. */
+  empty?: React.ReactNode;
 }
 
 /**
@@ -151,6 +155,8 @@ export interface ConversationProps extends Omit<
 export function Conversation({
   noFunctionCalls = false,
   textRenderMode,
+  roles,
+  empty: emptyWhenConnected,
   aggregationMetadata,
   ...props
 }: ConversationProps) {
@@ -169,13 +175,13 @@ export function Conversation({
   });
   const { botOutputSupported } = useConversationContext();
 
-  const messages = useMemo(
-    () =>
-      noFunctionCalls
-        ? allMessages.filter((m) => m.role !== "function_call")
-        : allMessages,
-    [allMessages, noFunctionCalls],
-  );
+  const messages = useMemo(() => {
+    let visible = noFunctionCalls
+      ? allMessages.filter((m) => m.role !== "function_call")
+      : allMessages;
+    if (roles) visible = visible.filter((m) => roles.includes(m.role));
+    return visible;
+  }, [allMessages, noFunctionCalls, roles]);
 
   const isConnecting =
     transportState === "authenticating" || transportState === "connecting";
@@ -211,6 +217,8 @@ export function Conversation({
         </p>
       </div>
     );
+  } else {
+    empty = emptyWhenConnected;
   }
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ClipboardListIcon,
   MicIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -17,6 +18,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+
+/** Top-level pages. Each renders its own Console and connection. */
+export type AppPage = "interview" | "mock";
 
 function SidebarItem({
   icon,
@@ -64,19 +68,40 @@ function SidebarItem({
 }
 
 /**
- * 左侧导航：宽度由外层 ResizablePanel 控制，可拖拽调整；
+ * 左侧导航：宽度由外层容器控制，可拖拽调整；
  * 折叠后只保留图标，悬停显示名称。
  */
 export function AppSidebar({
   collapsed,
+  activePage,
+  onNavigate,
   onToggle,
   onOpenSettings,
 }: {
   collapsed: boolean;
+  activePage: AppPage;
+  onNavigate: (page: AppPage) => void;
   onToggle: () => void;
   onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
+
+  const pages: Array<{
+    id: AppPage;
+    label: string;
+    icon: ReactNode;
+  }> = [
+    {
+      id: "interview",
+      label: t("nav.interview"),
+      icon: <MicIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "mock",
+      label: t("nav.mockInterview"),
+      icon: <ClipboardListIcon className="size-4 shrink-0" />,
+    },
+  ];
 
   return (
     <aside className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -114,12 +139,16 @@ export function AppSidebar({
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 p-2">
-        <SidebarItem
-          active
-          collapsed={collapsed}
-          icon={<MicIcon className="size-4 shrink-0" />}
-          label={t("nav.interview")}
-        />
+        {pages.map((page) => (
+          <SidebarItem
+            key={page.id}
+            active={activePage === page.id}
+            collapsed={collapsed}
+            icon={page.icon}
+            label={page.label}
+            onClick={() => onNavigate(page.id)}
+          />
+        ))}
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-sidebar-border p-2">

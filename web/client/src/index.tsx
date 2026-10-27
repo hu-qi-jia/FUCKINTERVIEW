@@ -1,5 +1,6 @@
 import type { PipecatClient } from "@pipecat-ai/client-js";
 import { RTVIEvent } from "@pipecat-ai/client-js";
+import { createStore } from "jotai/vanilla";
 import { SettingsIcon } from "lucide-react";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,13 +8,17 @@ import { useTranslation } from "react-i18next";
 
 import "@/i18n";
 
-import {
-  Console,
-  type ConsoleProps,
-} from "@/components/pipecat/console/console";
+import { Console, type ConsoleProps } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar, type AppPage } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   readTheme,
@@ -25,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 import "./index.css";
 
+const PAGE_KEY = "interview-assistant:page";
 const SIDEBAR_WIDTH_KEY = "interview-assistant:sidebar-width";
 const SIDEBAR_COLLAPSED_KEY = "interview-assistant:sidebar-collapsed";
 const SIDEBAR_DEFAULT_WIDTH = 224;
@@ -61,6 +67,46 @@ function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
 }
 
+const PAGES: AppPage[] = ["interview", "mock"];
+const pageLabelKey = (page: AppPage) =>
+  page === "mock" ? "nav.mockInterview" : "nav.interview";
+
+/**
+ * Small-screen page switcher. The sidebar is hidden below 768px, so the
+ * console header carries the two pages instead.
+ */
+function PageSwitch({
+  page,
+  onNavigate,
+}: {
+  page: AppPage;
+  onNavigate: (page: AppPage) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Select
+      items={PAGES.map((value) => ({ value, label: t(pageLabelKey(value)) }))}
+      value={page}
+      onValueChange={(value) => onNavigate(value as AppPage)}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={t("nav.switchPage")}
+        className="h-8 w-28 md:hidden"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        {PAGES.map((value) => (
+          <SelectItem key={value} value={value}>
+            {t(pageLabelKey(value))}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function initialSidebarWidth(): number {
   const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "");
   return Number.isFinite(stored) && stored >= SIDEBAR_MIN_WIDTH
@@ -72,6 +118,14 @@ function Home() {
   const { t, i18n } = useTranslation();
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [page, setPage] = useState<AppPage>(() =>
+    localStorage.getItem(PAGE_KEY) === "mock" ? "mock" : "interview",
+  );
+
+  // Each page gets its own Pipecat store: transcript, metrics and events
+  // belong to that page's session and never leak into the other one.
+  const [liveStore] = useState(createStore);
+  const [mockStore] = useState(createStore);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
@@ -105,6 +159,11 @@ function Home() {
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
       return next;
     });
+  };
+
+  const navigate = (next: AppPage) => {
+    setPage(next);
+    localStorage.setItem(PAGE_KEY, next);
   };
 
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -142,6 +201,23 @@ function Home() {
     });
   };
 
+  // Console header extras: the small-screen page switcher (the sidebar is
+  // hidden there) and the settings entry.
+  const headerSlot = (
+    <>
+      <PageSwitch page={page} onNavigate={navigate} />
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="md:hidden"
+        aria-label={t("settings.title")}
+        onClick={() => setSettingsOpen(true)}
+      >
+        <SettingsIcon />
+      </Button>
+    </>
+  );
+
   return (
     <TooltipProvider>
       <div
@@ -160,6 +236,8 @@ function Home() {
         >
           <AppSidebar
             collapsed={sidebarCollapsed}
+            activePage={page}
+            onNavigate={navigate}
             onToggle={toggleSidebar}
             onOpenSettings={() => setSettingsOpen(true)}
           />
@@ -181,23 +259,31 @@ function Home() {
         )}
 
         <div className="h-full min-w-0 flex-1">
-          <Console
-            {...SMALL_WEBRTC_PROPS}
-            titleText={t("nav.interview")}
-            noDTMF
-            headerSlot={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="md:hidden"
-                aria-label={t("settings.title")}
-                onClick={() => setSettingsOpen(true)}
-              >
-                <SettingsIcon />
-              </Button>
-            }
-            onClient={onClient}
-          />
+          {/* Each page owns its Console and connection; switching pages
+              unmounts the other, so the two sessions stay independent. */}
+          {page === "interview" ? (
+            <Console
+              key="interview"
+              jotaiStore={liveStore}
+              {...SMALL_WEBRTC_PROPS}
+              layout="interview"
+              layoutPersistenceKey="live-interview"
+              titleText={t("nav.interview")}
+              noDTMF
+              headerSlot={headerSlot}
+              onClient={onClient}
+            />
+          ) : (
+            <Console
+              key="mock"
+              jotaiStore={mockStore}
+              {...SMALL_WEBRTC_PROPS}
+              titleText={t("nav.mockInterview")}
+              noDTMF
+              headerSlot={headerSlot}
+              onClient={onClient}
+            />
+          )}
         </div>
 
         <SettingsDialog
