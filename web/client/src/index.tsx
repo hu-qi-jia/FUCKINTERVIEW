@@ -34,6 +34,7 @@ import {
   saveCaptureMic,
   saveDeviceId,
 } from "@/lib/preferences";
+import { startBotParams } from "@/lib/session-request";
 import {
   readTheme,
   resolveDark,
@@ -67,14 +68,7 @@ const SMALL_WEBRTC_PROPS: TransportProps = {
     );
     return new SmallWebRTCTransport({ waitForICEGathering: true });
   },
-  startBotParams: {
-    endpoint: `/start`,
-    requestData: {
-      createDailyRoom: false,
-      enableDefaultIceServers: true,
-      transport: "webrtc",
-    },
-  },
+  startBotParams: startBotParams(),
 };
 
 function clampSidebarWidth(width: number): number {
@@ -142,6 +136,12 @@ function Home() {
   const [page, setPage] = useState<AppPage>(() =>
     localStorage.getItem(PAGE_KEY) === "mock" ? "mock" : "interview",
   );
+
+  // Leaving the live page must end both sessions and stop the system-audio
+  // capture; the Console only tears down its own client on unmount.
+  useEffect(() => {
+    if (page !== "interview") live.stopSession();
+  }, [page, live.stopSession]);
 
   // Each page gets its own Pipecat store: transcript, metrics and events
   // belong to that page's session and never leak into the other one.
@@ -216,10 +216,11 @@ function Home() {
   };
 
   const onClient = (client: PipecatClient) => {
-    // Device choices are global: remember every switch and re-apply them at
-    // the start of the next session (the page's own selector covers the rest).
+    // Device choices are global: remember every switch and re-apply the
+    // audio devices at the start of the next session (the page's own
+    // selector covers the rest). The camera is deliberately not restored —
+    // doing so would switch it on for users who had it on last time.
     client.on(RTVIEvent.MicUpdated, (mic) => saveDeviceId("mic", mic?.deviceId));
-    client.on(RTVIEvent.CamUpdated, (cam) => saveDeviceId("cam", cam?.deviceId));
     client.on(RTVIEvent.SpeakerUpdated, (speaker) =>
       saveDeviceId("speaker", speaker?.deviceId),
     );
@@ -230,8 +231,6 @@ function Home() {
       applied = true;
       const mic = readDeviceId("mic");
       if (mic) client.updateMic(mic);
-      const cam = readDeviceId("cam");
-      if (cam) client.updateCam(cam);
       const speaker = readDeviceId("speaker");
       if (speaker) client.updateSpeaker(speaker);
     });

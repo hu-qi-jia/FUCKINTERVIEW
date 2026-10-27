@@ -1,15 +1,16 @@
 "use client";
 
-import type { APIRequest, TransportState } from "@pipecat-ai/client-js";
+import type { TransportState } from "@pipecat-ai/client-js";
 import { RTVIEvent } from "@pipecat-ai/client-js";
 import { SmallWebRTCTransport } from "@pipecat-ai/small-webrtc-transport";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { usePipecatApp } from "@/hooks/use-pipecat-app";
 import { CaptureError, captureSystemAudio } from "@/lib/capture";
 import { transcriptTimestamp, type LiveMessage } from "@/lib/live-message";
 import { readCaptureMic, readDeviceId, saveDeviceId } from "@/lib/preferences";
+import { startBotParams as buildStartBotParams } from "@/lib/session-request";
 import { SystemAudioMediaManager } from "@/lib/system-audio-media-manager";
 
 /**
@@ -41,15 +42,7 @@ export function useLiveInterview() {
     transportType: "smallwebrtc",
     transportFactory: async () => new SmallWebRTCTransport({ waitForICEGathering: true }),
     initDevicesOnMount: false,
-    startBotParams: {
-      endpoint: "/start",
-      requestData: {
-        createDailyRoom: false,
-        enableDefaultIceServers: true,
-        transport: "webrtc",
-        body: { mode: "listen" },
-      },
-    },
+    startBotParams: buildStartBotParams("listen"),
     onClient: (client) => {
       client.on(RTVIEvent.MicUpdated, (mic) => saveDeviceId("mic", mic?.deviceId));
       client.on(RTVIEvent.CamUpdated, (cam) => saveDeviceId("cam", cam?.deviceId));
@@ -68,15 +61,18 @@ export function useLiveInterview() {
           return;
         }
         setInterimText("");
-        setExtraMessages((previous) => [
-          ...previous,
-          {
-            id: `${transcriptTimestamp(data.timestamp)}-${previous.length}`,
-            text,
-            createdAt: transcriptTimestamp(data.timestamp),
-            from: "candidate",
-          },
-        ]);
+        setExtraMessages((previous) => {
+          const createdAt = transcriptTimestamp(data.timestamp);
+          return [
+            ...previous,
+            {
+              id: `${createdAt}-${previous.length}`,
+              text,
+              createdAt,
+              from: "candidate",
+            },
+          ];
+        });
       });
     },
   });
@@ -90,18 +86,7 @@ export function useLiveInterview() {
     [manager],
   );
 
-  const startBotParams = useMemo<APIRequest>(
-    () => ({
-      endpoint: "/start",
-      requestData: {
-        createDailyRoom: false,
-        enableDefaultIceServers: true,
-        transport: "webrtc",
-        body: { mode: "live" },
-      },
-    }),
-    [],
-  );
+  const liveStartBotParams = buildStartBotParams("live");
 
   const stopCapture = useCallback(() => {
     manager.stop();
@@ -112,8 +97,6 @@ export function useLiveInterview() {
 
   const beforeConnect = useCallback(async () => {
     setMicError(null);
-    setInterimText("");
-    setExtraMessages([]);
 
     try {
       const stream = await captureSystemAudio();
@@ -135,13 +118,24 @@ export function useLiveInterview() {
       throw error;
     }
 
+    // From here on a new session is really starting; only now is it safe to
+    // drop the previous transcript.
+    setInterimText("");
+    setExtraMessages([]);
+
     if (!readCaptureMic() || !micApp.client) return;
 
     try {
       const client = micApp.client;
       if (client.needsInit()) await client.initDevices();
       const stored = readDeviceId("mic");
-      if (stored) client.updateMic(stored);
+      if (stored) {
+        // The client's updateMic drops the transport promise; await the
+        // transport directly so the device switch finishes before connect.
+        await Promise.resolve(
+          (client.transport.updateMic as (id: string) => unknown)(stored),
+        );
+      }
       await micApp.connect();
     } catch (error) {
       setMicError(
@@ -152,19 +146,24 @@ export function useLiveInterview() {
     }
   }, [manager, micApp, t]);
 
+  const stopSession = useCallback(() => {
+    stopCapture();
+    void micApp.disconnect();
+  }, [micApp, stopCapture]);
+
   const handleTransportStateChange = useCallback(
     (state: TransportState) => {
       if (state !== "disconnected" && state !== "error") return;
-      stopCapture();
-      void micApp.disconnect();
+      stopSession();
     },
-    [micApp, stopCapture],
+    [stopSession],
   );
 
   return {
     transportFactory,
-    startBotParams,
+    startBotParams: liveStartBotParams,
     beforeConnect,
+    stopSession,
     handleTransportStateChange,
     extraMessages,
     interimText,

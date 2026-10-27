@@ -46,25 +46,28 @@ export function PortalTo({
   const [target, setTarget] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    let attempts = 0;
     setTarget(null);
+    const find = () => document.getElementById(id);
+    const existing = find();
+    if (existing) {
+      setTarget(existing);
+      return;
+    }
 
-    // The header slot is mounted by the Console, which can land a tick after
-    // this portal; poll briefly instead of giving up on the first miss.
-    const resolve = () => {
-      if (cancelled) return;
-      const node = document.getElementById(id);
-      if (node) {
-        setTarget(node);
-        return;
-      }
-      if (attempts++ < 40) setTimeout(resolve, 50);
-    };
-    resolve();
+    // The shell (e.g. the Console header) can mount after this portal, so
+    // watch for the node instead of giving up after one lookup.
+    const observer = new MutationObserver(() => {
+      const node = find();
+      if (!node) return;
+      observer.disconnect();
+      setTarget(node);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timeout = window.setTimeout(() => observer.disconnect(), 10000);
 
     return () => {
-      cancelled = true;
+      observer.disconnect();
+      window.clearTimeout(timeout);
     };
   }, [id, version]);
 
@@ -81,6 +84,7 @@ function Disabled({
   return (
     <div
       aria-disabled={active || undefined}
+      inert={active || undefined}
       className={cn("w-full", active && "pointer-events-none opacity-50")}
     >
       {children}

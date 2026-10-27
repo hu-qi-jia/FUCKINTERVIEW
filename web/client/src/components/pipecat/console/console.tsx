@@ -491,6 +491,7 @@ function ConsoleShell({
   const [isEventsCollapsed, setIsEventsCollapsed] =
     React.useState(collapseEventsPanel);
   const [connectError, setConnectError] = React.useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = React.useState(false);
 
   // The live page bumps this when system-audio sharing ends outside the app.
   const handledDisconnectSignal = React.useRef(0);
@@ -591,14 +592,19 @@ function ConsoleShell({
   };
 
   const handleConnect = async () => {
+    // beforeConnect can hold a system-audio picker open for a while; without
+    // this guard a second click would start a second capture and session.
+    if (isPreparing) return;
+    setIsPreparing(true);
     setConnectError(null);
     try {
       await beforeConnect?.();
+      await app.connect();
     } catch (error) {
       setConnectError(error instanceof Error ? error.message : String(error));
-      return;
+    } finally {
+      setIsPreparing(false);
     }
-    await app.connect();
   };
 
   const connectButton = (

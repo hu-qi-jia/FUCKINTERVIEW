@@ -120,7 +120,7 @@ class TextOnlyOutput(FrameProcessor):
 
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     settings = load_settings()
-    body = runner_args.body or {}
+    body = runner_args.body if isinstance(runner_args.body, dict) else {}
     mode = str(body.get("mode", "mock")).lower()
     if mode not in ("live", "listen", "mock"):
         mode = "mock"
@@ -158,7 +158,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 processors.append(LLMTextProcessor())
             processors += [transport.output(), assistant_aggregator]
         else:
-            processors.append(transport.output())
+            # 分段 STT 靠 VAD 帧切句，而 VAD 由用户聚合器运行；只听不答的
+            # 第二路也必须带上它，否则一段转写都不会产生。
+            user_aggregator, _assistant_aggregator = LLMContextAggregatorPair(
+                context,
+                user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+            )
+            processors += [user_aggregator, transport.output()]
 
         pipeline = Pipeline(processors)
 
