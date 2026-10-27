@@ -44,6 +44,7 @@ import { ConsoleConversationPanel } from "@/components/pipecat/console/conversat
 import { ConsoleEventsPanel } from "@/components/pipecat/console/events-panel";
 import { ConsoleInfoPanel } from "@/components/pipecat/console/info-panel";
 import { ConsoleKeypadToggle } from "@/components/pipecat/console/keypad-toggle";
+import { LiveConversationPanel } from "@/components/pipecat/console/live-conversation-panel";
 import { PipecatLogo } from "@/components/pipecat/console/logo";
 import { ConsoleMetricsPanel } from "@/components/pipecat/console/metrics-panel";
 import { useMinWidth } from "@/components/pipecat/console/panel";
@@ -76,6 +77,7 @@ import {
 } from "@/hooks/use-pipecat-app";
 import { usePipecatEventStream } from "@/hooks/use-pipecat-event-stream";
 import { usePipecatMetricValue } from "@/hooks/use-pipecat-metrics";
+import type { LiveMessage } from "@/lib/live-message";
 import type {
   TransportFactory,
   TransportOptions,
@@ -153,6 +155,22 @@ export interface ConsoleProps {
    * transcript.
    */
   jotaiStore?: JotaiStore;
+  /**
+   * Awaited by the connect button before connecting — the live interview
+   * captures system audio here, while the click still counts as a user
+   * gesture.
+   */
+  beforeConnect?: () => Promise<void>;
+  /**
+   * Interview layout: the candidate's transcript, collected from the second
+   * (microphone) session and merged into the left-hand conversation.
+   */
+  liveConversation?: { messages: LiveMessage[]; interimText?: string };
+  /**
+   * Bump to request a disconnect, e.g. when the user stops sharing system
+   * audio from the browser's own bar.
+   */
+  disconnectSignal?: number;
 
   // -- Bootstrap (forwarded to usePipecatApp) --------------------------------
   /** Transport backing the client (default "smallwebrtc"). Match it to transportFactory; codec and ICE handling depend on it. */
@@ -334,6 +352,9 @@ export function Console(props: ConsoleProps) {
 function ConsoleShell({
   app,
   layout = "default",
+  beforeConnect,
+  liveConversation,
+  disconnectSignal,
   transportOptions,
   connectParams,
   startBotParams,
@@ -469,6 +490,16 @@ function ConsoleShell({
   const [isMetricsCollapsed, setIsMetricsCollapsed] = React.useState(false);
   const [isEventsCollapsed, setIsEventsCollapsed] =
     React.useState(collapseEventsPanel);
+  const [connectError, setConnectError] = React.useState<string | null>(null);
+
+  // The live page bumps this when system-audio sharing ends outside the app.
+  const handledDisconnectSignal = React.useRef(0);
+  React.useEffect(() => {
+    if (!disconnectSignal || disconnectSignal === handledDisconnectSignal.current)
+      return;
+    handledDisconnectSignal.current = disconnectSignal;
+    void app.disconnect();
+  }, [app, disconnectSignal]);
 
   const connectionUrl = getConnectionUrl(
     startBotParams,
@@ -525,14 +556,10 @@ function ConsoleShell({
 
   // -- Interview layout panes: transcript / answer / metrics -----------------
   const interviewConversationPanel = (
-    <ConsoleConversationPanel
-      noMetrics
-      noConversation={noConversation}
+    <LiveConversationPanel
+      extraMessages={liveConversation?.messages}
+      interimText={liveConversation?.interimText}
       noTextInput={noTextInput}
-      noTextRenderModeSwitch={noTextRenderModeSwitch}
-      textRenderMode={sharedRenderMode}
-      onTextRenderModeChange={setSharedRenderMode}
-      conversationProps={conversationProps}
       className="h-full"
     />
   );
@@ -563,13 +590,26 @@ function ConsoleShell({
     else handle.collapse();
   };
 
+  const handleConnect = async () => {
+    setConnectError(null);
+    try {
+      await beforeConnect?.();
+    } catch (error) {
+      setConnectError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    await app.connect();
+  };
+
   const connectButton = (
     <ConnectButton
       size="sm"
-      onConnect={app.connect}
+      onConnect={handleConnect}
       onDisconnect={app.disconnect}
     />
   );
+
+  const errorText = connectError ?? app.error;
 
   return (
     <div
@@ -632,19 +672,22 @@ function ConsoleShell({
         </div>
       </header>
 
-      {app.error && (
+      {errorText && (
         <Alert
           variant="destructive"
           className="animate-in fade-in m-2 duration-300"
         >
           <AlertTitle>{t("console.sessionError")}</AlertTitle>
-          <AlertDescription>{app.error}</AlertDescription>
+          <AlertDescription>{errorText}</AlertDescription>
           <AlertAction>
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label={t("header.dismissError")}
-              onClick={app.clearError}
+              onClick={() => {
+                app.clearError();
+                setConnectError(null);
+              }}
             >
               <XIcon />
             </Button>

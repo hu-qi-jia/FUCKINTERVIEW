@@ -20,6 +20,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useLiveInterview } from "@/hooks/use-live-interview";
+import {
+  readCaptureMic,
+  readDeviceId,
+  saveCaptureMic,
+  saveDeviceId,
+} from "@/lib/preferences";
 import {
   readTheme,
   resolveDark,
@@ -118,6 +125,13 @@ function Home() {
   const { t, i18n } = useTranslation();
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [captureMic, setCaptureMic] = useState(readCaptureMic);
+  const live = useLiveInterview();
+
+  const handleCaptureMicChange = (value: boolean) => {
+    setCaptureMic(value);
+    saveCaptureMic(value);
+  };
   const [page, setPage] = useState<AppPage>(() =>
     localStorage.getItem(PAGE_KEY) === "mock" ? "mock" : "interview",
   );
@@ -195,9 +209,24 @@ function Home() {
   };
 
   const onClient = (client: PipecatClient) => {
-    client.on(RTVIEvent.MicUpdated, (mic) => {
-      (window as Window & { client?: PipecatClient }).client = client;
-      console.log("Mic updated:", mic);
+    // Device choices are global: remember every switch and re-apply them at
+    // the start of the next session (the page's own selector covers the rest).
+    client.on(RTVIEvent.MicUpdated, (mic) => saveDeviceId("mic", mic?.deviceId));
+    client.on(RTVIEvent.CamUpdated, (cam) => saveDeviceId("cam", cam?.deviceId));
+    client.on(RTVIEvent.SpeakerUpdated, (speaker) =>
+      saveDeviceId("speaker", speaker?.deviceId),
+    );
+
+    let applied = false;
+    client.on(RTVIEvent.Connected, () => {
+      if (applied) return;
+      applied = true;
+      const mic = readDeviceId("mic");
+      if (mic) client.updateMic(mic);
+      const cam = readDeviceId("cam");
+      if (cam) client.updateCam(cam);
+      const speaker = readDeviceId("speaker");
+      if (speaker) client.updateSpeaker(speaker);
     });
   };
 
@@ -258,21 +287,49 @@ function Home() {
           </div>
         )}
 
-        <div className="h-full min-w-0 flex-1">
+        <div className="flex h-full min-w-0 flex-1 flex-col">
           {/* Each page owns its Console and connection; switching pages
               unmounts the other, so the two sessions stay independent. */}
           {page === "interview" ? (
-            <Console
-              key="interview"
-              jotaiStore={liveStore}
-              {...SMALL_WEBRTC_PROPS}
-              layout="interview"
-              layoutPersistenceKey="live-interview"
-              titleText={t("nav.interview")}
-              noDTMF
-              headerSlot={headerSlot}
-              onClient={onClient}
-            />
+            <>
+              {live.micError && (
+                <div className="bg-destructive/10 text-destructive flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1">{live.micError}</span>
+                  <button
+                    type="button"
+                    aria-label={t("header.dismissError")}
+                    onClick={live.clearMicError}
+                    className="shrink-0 opacity-70 hover:opacity-100"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              <div className="min-h-0 flex-1">
+                <Console
+                  key="interview"
+                  jotaiStore={liveStore}
+                  transportType="smallwebrtc"
+                  transportFactory={live.transportFactory}
+                  startBotParams={live.startBotParams}
+                  beforeConnect={live.beforeConnect}
+                  disconnectSignal={live.disconnectSignal}
+                  liveConversation={{
+                    messages: live.extraMessages,
+                    interimText: live.interimText,
+                  }}
+                  onConnectionStateChange={
+                    live.handleTransportStateChange
+                  }
+                  layout="interview"
+                  layoutPersistenceKey="live-interview"
+                  titleText={t("nav.interview")}
+                  noDTMF
+                  headerSlot={headerSlot}
+                  onClient={onClient}
+                />
+              </div>
+            </>
           ) : (
             <Console
               key="mock"
@@ -291,6 +348,8 @@ function Home() {
           onClose={() => setSettingsOpen(false)}
           theme={theme}
           onThemeChange={handleThemeChange}
+          captureMic={captureMic}
+          onCaptureMicChange={handleCaptureMicChange}
         />
       </div>
     </TooltipProvider>

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LANGUAGES, setLanguage, type AppLanguage } from "@/i18n";
 import type { ThemeMode } from "@/lib/theme";
@@ -110,11 +111,15 @@ export function SettingsDialog({
   onClose,
   theme,
   onThemeChange,
+  captureMic,
+  onCaptureMicChange,
 }: {
   open: boolean;
   onClose: () => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  captureMic: boolean;
+  onCaptureMicChange: (value: boolean) => void;
 }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -341,6 +346,15 @@ export function SettingsDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </Field>
+
+              <Field label={t("settings.fields.captureMic")}>
+                <div className="flex h-8 items-center">
+                  <Switch
+                    checked={captureMic}
+                    onCheckedChange={onCaptureMicChange}
+                  />
+                </div>
               </Field>
             </TabsContent>
 

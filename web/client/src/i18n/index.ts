@@ -14,6 +14,11 @@ const zh = {
   errors: {
     startSession: "会话启动失败：{{message}}",
     disconnect: "断开连接失败：{{message}}",
+    captureCancelled: "已取消共享系统音频",
+    noSystemAudio:
+      "没有获取到系统音频，请选择「整个屏幕」并勾选「分享系统音频」",
+    captureUnsupported: "当前浏览器不支持共享系统音频",
+    micSession: "麦克风会话启动失败：{{message}}",
   },
   header: {
     expandInfo: "展开信息面板",
@@ -193,6 +198,7 @@ const zh = {
       language: "语言",
       appLanguage: "界面语言",
       theme: "主题",
+      captureMic: "采集麦克风（面试者）",
       baseUrl: "Base URL",
       apiKey: "API Key",
       systemPrompt: "系统提示词",
@@ -238,6 +244,11 @@ const en = {
   errors: {
     startSession: "Failed to start session: {{message}}",
     disconnect: "Failed to disconnect: {{message}}",
+    captureCancelled: "System audio sharing was cancelled",
+    noSystemAudio:
+      "No system audio was captured. Share the entire screen and tick “Share system audio”.",
+    captureUnsupported: "This browser cannot share system audio",
+    micSession: "Microphone session failed: {{message}}",
   },
   header: {
     expandInfo: "Expand info panel",
@@ -413,6 +424,7 @@ const en = {
       language: "Language",
       appLanguage: "Interface language",
       theme: "Theme",
+      captureMic: "Capture microphone (candidate)",
       baseUrl: "Base URL",
       apiKey: "API key",
       systemPrompt: "System prompt",
