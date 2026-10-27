@@ -1,0 +1,168 @@
+"""面试语音助手 —— 本地开发入口。
+
+- 复用 Pipecat 官方 dev runner（SmallWebRTC、/start、/api/offer 等）
+- 额外提供 /api/settings 读写配置
+- 用本项目构建的前端替换官方预置 UI（挂载在 /client）
+"""
+
+from pathlib import Path
+
+import aiohttp
+from fastapi import HTTPException, Request
+from fastapi.responses import RedirectResponse
+from loguru import logger
+from starlette.staticfiles import StaticFiles
+
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.frames.frames import LLMRunFrame
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.worker import PipelineParams, PipelineWorker, ProcessorUnusablePolicy
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
+import pipecat.runner.run as runner_run
+from pipecat.runner.run import app, main
+from pipecat.runner.types import RunnerArguments
+from pipecat.runner.utils import create_transport
+from pipecat.transports.base_transport import BaseTransport, TransportParams
+from pipecat.workers.runner import WorkerRunner
+
+from app.config import load_settings, save_settings
+from app.providers import build_llm, build_stt, build_tts
+
+ROOT = Path(__file__).resolve().parent
+DIST = ROOT / "web" / "client" / "dist"
+
+
+# --------------------------------------------------------------------------
+# 配置接口
+# --------------------------------------------------------------------------
+@app.get("/api/settings")
+async def get_settings():
+    return load_settings()
+
+
+@app.post("/api/settings")
+async def update_settings(request: Request):
+    try:
+        payload = await request.json()
+        return save_settings(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"保存配置失败: {e}")
+
+
+# --------------------------------------------------------------------------
+# 前端：用本项目构建的界面替换官方预置 UI
+#
+# Runner 在 main() 里调用 _setup_frontend_routes(app) 挂载官方 UI，
+# 这里替换该函数，让同一路径 /client 指向本项目的构建产物。
+# --------------------------------------------------------------------------
+_original_setup_frontend = runner_run._setup_frontend_routes
+
+
+def _setup_project_frontend(fastapi_app):
+    if not DIST.is_dir():
+        logger.warning(f"未找到前端构建产物 {DIST}，继续使用官方预置 UI")
+        _original_setup_frontend(fastapi_app)
+        return
+
+    fastapi_app.mount(
+        "/client", StaticFiles(directory=str(DIST), html=True), name="interview-ui"
+    )
+
+    @fastapi_app.get("/", include_in_schema=False)
+    async def root_redirect():
+        return RedirectResponse(url="/client/")
+
+
+runner_run._setup_frontend_routes = _setup_project_frontend
+
+
+# --------------------------------------------------------------------------
+# 语音 pipeline
+# --------------------------------------------------------------------------
+transport_params = {
+    "webrtc": lambda: TransportParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+    ),
+}
+
+
+async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
+    settings = load_settings()
+    logger.info(
+        "Starting bot with "
+        f"ASR={settings['asr'].get('provider')}/{settings['asr'].get('model')}, "
+        f"LLM={settings['llm'].get('provider')}/{settings['llm'].get('model')}, "
+        f"TTS={settings['tts'].get('provider')}/{settings['tts'].get('model')}"
+    )
+
+    async with aiohttp.ClientSession() as session:
+        stt = build_stt(settings["asr"])
+        llm = build_llm(settings["llm"])
+        tts = build_tts(settings["tts"], session)
+
+        context = LLMContext()
+        user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+            context,
+            user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+        )
+
+        pipeline = Pipeline(
+            [
+                transport.input(),
+                stt,
+                user_aggregator,
+                llm,
+                tts,
+                transport.output(),
+                assistant_aggregator,
+            ]
+        )
+
+        worker = PipelineWorker(
+            pipeline,
+            params=PipelineParams(
+                enable_metrics=True,
+                enable_usage_metrics=True,
+            ),
+            idle_timeout_secs=runner_args.pipeline_idle_timeout_secs,
+            processor_unusable_policy=ProcessorUnusablePolicy.END,
+        )
+
+        runner = WorkerRunner(handle_sigint=runner_args.handle_sigint)
+        await runner.add_workers(worker)
+
+        @transport.event_handler("on_client_connected")
+        async def on_client_connected(transport, client):
+            logger.info("Client connected")
+            context.add_message(
+                {"role": "developer", "content": "请先向候选人简短问好，然后开始面试。"}
+            )
+            await worker.queue_frames([LLMRunFrame()])
+
+        @transport.event_handler("on_client_disconnected")
+        async def on_client_disconnected(transport, client):
+            logger.info("Client disconnected")
+            await runner.cancel()
+
+        await runner.run()
+
+
+async def bot(runner_args: RunnerArguments):
+    """Runner 每个会话调用一次。"""
+    try:
+        transport = await create_transport(runner_args, transport_params)
+        await run_bot(transport, runner_args)
+    except ValueError as e:
+        logger.error(f"配置错误: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    main()

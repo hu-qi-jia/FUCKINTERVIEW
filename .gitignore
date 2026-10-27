@@ -1,0 +1,34 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 上游源码（git clone，不属于本项目）
+pipecat/
+
+# 前端
+web/client/node_modules/
+web/client/dist/
+
+# 运行时配置（含 API Key）
+config/settings.json
+.env
+
+# 本地启动配置（含本机绝对路径）
+.claude/launch.json
+
+# 日志
+*.log
+
+# pipecat-prebuilt 上游仓库中本项目不使用的部分（仅保留 web/client）
+web/.github/
+web/.claude/
+web/test/
+web/scripts/
+web/pipecat_ai_prebuilt/
+web/pyproject.toml
+web/uv.lock
+web/MANIFEST.in
+web/CHANGELOG.md
+web/README.md
+web/.gitignore
