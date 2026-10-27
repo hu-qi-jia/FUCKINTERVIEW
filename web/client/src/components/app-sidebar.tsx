@@ -1,6 +1,11 @@
 "use client";
 
-import { MicIcon, SettingsIcon } from "lucide-react";
+import {
+  MicIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -17,60 +22,101 @@ function SidebarItem({
   icon,
   label,
   active = false,
+  collapsed,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   active?: boolean;
+  collapsed: boolean;
   onClick?: () => void;
 }) {
+  const button = (
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={cn(
+        "h-9 w-full gap-2.5 px-2 text-sm font-normal",
+        collapsed ? "justify-center" : "justify-start",
+        "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        active &&
+          "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+      )}
+    >
+      {icon}
+      {!collapsed && <span className="truncate">{label}</span>}
+    </Button>
+  );
+
+  if (!collapsed) return button;
+
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="block w-full" />}>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={label}
-          aria-current={active ? "page" : undefined}
-          onClick={onClick}
-          className={cn(
-            "h-9 w-full justify-center gap-2.5 px-2 text-sm font-normal",
-            "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-            "lg:justify-start lg:px-3",
-            active &&
-              "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-          )}
-        >
-          {icon}
-          <span className="hidden truncate lg:inline">{label}</span>
-        </Button>
+        {button}
       </TooltipTrigger>
-      <TooltipContent side="right" className="lg:hidden">
-        {label}
-      </TooltipContent>
+      <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
   );
 }
 
 /**
- * 左侧导航：桌面端展开为 224px，平板折叠成 56px 图标栏，手机端隐藏。
- * 设置项打开设置弹窗（同一份设置界面）。
+ * 左侧导航：宽度由外层 ResizablePanel 控制，可拖拽调整；
+ * 折叠后只保留图标，悬停显示名称。
  */
-export function AppSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function AppSidebar({
+  collapsed,
+  onToggle,
+  onOpenSettings,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  onOpenSettings: () => void;
+}) {
   const { t } = useTranslation();
 
   return (
-    <aside className="hidden w-14 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex lg:w-56">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-3 lg:px-4">
-        <PipecatLogo height={16} className="shrink-0" />
-        <span className="hidden truncate text-sm font-semibold lg:block">
-          {t("app.title")}
-        </span>
+    <aside className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      <div
+        className={cn(
+          "flex h-12 shrink-0 items-center border-b border-sidebar-border",
+          collapsed ? "justify-center px-2" : "gap-2 px-3",
+        )}
+      >
+        {collapsed ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("nav.expand")}
+            onClick={onToggle}
+          >
+            <PanelLeftOpenIcon />
+          </Button>
+        ) : (
+          <>
+            <PipecatLogo height={16} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+              {t("app.title")}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("nav.collapse")}
+              onClick={onToggle}
+            >
+              <PanelLeftCloseIcon />
+            </Button>
+          </>
+        )}
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 p-2">
         <SidebarItem
           active
+          collapsed={collapsed}
           icon={<MicIcon className="size-4 shrink-0" />}
           label={t("nav.interview")}
         />
@@ -78,13 +124,11 @@ export function AppSidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
       <div className="flex flex-col gap-1 border-t border-sidebar-border p-2">
         <SidebarItem
+          collapsed={collapsed}
           icon={<SettingsIcon className="size-4 shrink-0" />}
           label={t("settings.title")}
           onClick={onOpenSettings}
         />
-        <div className="hidden px-2 pt-1 pb-1 text-[11px] text-muted-foreground lg:block">
-          {t("nav.footer")}
-        </div>
       </div>
     </aside>
   );

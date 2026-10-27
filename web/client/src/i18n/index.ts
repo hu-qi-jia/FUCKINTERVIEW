@@ -5,7 +5,9 @@ const zh = {
   app: { title: "面试语音助手" },
   nav: {
     interview: "实时面试",
-    footer: "SmallWebRTC · Pipecat",
+    collapse: "收起导航",
+    expand: "展开导航",
+    resize: "调整导航栏宽度",
   },
   errors: {
     startSession: "会话启动失败：{{message}}",
@@ -221,7 +223,9 @@ const en = {
   app: { title: "Interview Voice Assistant" },
   nav: {
     interview: "Live interview",
-    footer: "SmallWebRTC · Pipecat",
+    collapse: "Collapse sidebar",
+    expand: "Expand sidebar",
+    resize: "Resize sidebar",
   },
   errors: {
     startSession: "Failed to start session: {{message}}",
