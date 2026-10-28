@@ -212,17 +212,17 @@ function StepRow({
   children: React.ReactNode;
 }) {
   return (
-    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3">
+    <li className="grid grid-cols-[1.625rem_minmax(0,1fr)] gap-x-4">
       <div className="relative flex justify-center">
         {index < total - 1 && (
           <span
             aria-hidden
-            className="bg-border absolute top-7 bottom-0 w-px"
+            className="bg-border absolute top-6.5 bottom-0 w-px"
           />
         )}
         <span
           className={cn(
-            "relative z-10 flex size-7 items-center justify-center rounded-full border text-xs font-medium transition-colors",
+            "relative z-10 flex size-6.5 items-center justify-center rounded-full border text-xs font-medium transition-colors",
             completed
               ? "border-primary bg-primary text-primary-foreground"
               : open
@@ -242,7 +242,9 @@ function StepRow({
           className="flex w-full items-start gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">{title}</span>
+            <span className="block text-sm leading-[1.625rem] font-medium">
+              {title}
+            </span>
             {description && (
               <span className="text-muted-foreground mt-0.5 block text-xs">
                 {description}
@@ -251,7 +253,7 @@ function StepRow({
           </span>
           <ChevronDownIcon
             className={cn(
-              "text-muted-foreground mt-0.5 size-4 shrink-0 transition-transform",
+              "text-muted-foreground mt-1 size-4 shrink-0 transition-transform",
               open && "rotate-180",
             )}
           />
