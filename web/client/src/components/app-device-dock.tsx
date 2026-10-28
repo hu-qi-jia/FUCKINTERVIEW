@@ -179,7 +179,6 @@ export function CollapsedDeviceGroup({
   className?: string;
 }) {
   const { t } = useTranslation();
-  const { isCamEnabled } = usePipecatClientCamControl();
 
   return (
     <div
@@ -188,20 +187,30 @@ export function CollapsedDeviceGroup({
         className,
       )}
     >
-      <DevicePopover
-        label={t("devices.microphone")}
-        icon={<MicIcon />}
-        disabled={disabled?.mic}
-      >
-        <UserAudioControl className="w-full" />
-      </DevicePopover>
-      <DevicePopover
-        label={t("devices.camera")}
-        icon={<VideoIcon />}
-        disabled={disabled?.cam}
-      >
-        <UserVideoControl className="w-full" noVideo={!isCamEnabled} />
-      </DevicePopover>
+      <UserAudioControl
+        trigger={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("devices.microphone")}
+            disabled={disabled?.mic}
+          >
+            <MicIcon />
+          </Button>
+        }
+      />
+      <UserVideoControl
+        trigger={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("devices.camera")}
+            disabled={disabled?.cam}
+          >
+            <VideoIcon />
+          </Button>
+        }
+      />
       <DevicePopover
         label={t("devices.screenShare")}
         icon={<ScreenShareIcon />}

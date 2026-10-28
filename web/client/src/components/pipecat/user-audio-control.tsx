@@ -235,6 +235,11 @@ export interface UserAudioControlViewProps {
   className?: string;
   /** Extra content rendered inside the toggle, between label and visualizer. */
   children?: React.ReactNode;
+  /**
+   * Replaces the whole control with this trigger plus the device menu it
+   * opens (used by the collapsed sidebar rail).
+   */
+  trigger?: React.ReactElement;
 }
 
 /** Toggle or hold-to-talk microphone control. Loading takes precedence over unavailability. */
@@ -244,6 +249,7 @@ export function UserAudioControlView({
   isLoading = false,
   loadingText,
   unavailableText,
+  trigger,
   mics,
   selectedMic,
   onMicChange,
@@ -431,6 +437,98 @@ export function UserAudioControlView({
     [],
   );
 
+  const menuContent = (
+    <>
+            {/* Base UI requires GroupLabel to live inside a Group. */}
+            {hasMics && (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <MicIcon className="size-3" />
+                  {t("devices.microphones")}
+                </DropdownMenuLabel>
+                {mics!.map((device, index) => (
+                  <DropdownMenuCheckboxItem
+                    key={`mic-${device.deviceId || index}`}
+                    checked={selectedMic?.deviceId === device.deviceId}
+                    onCheckedChange={(checked) => {
+                      if (checked) onMicChange?.(device.deviceId);
+                    }}
+                  >
+                    {formatDeviceLabel(device, t("devices.microphone"))}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
+            )}
+            {hasMics && hasSpeakers && <DropdownMenuSeparator />}
+            {hasSpeakers && (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Volume2Icon className="size-3" />
+                  {t("devices.speakers")}
+                </DropdownMenuLabel>
+                {speakers!.map((device, index) => (
+                  <DropdownMenuCheckboxItem
+                    key={`speaker-${device.deviceId || index}`}
+                    checked={selectedSpeaker?.deviceId === device.deviceId}
+                    onCheckedChange={(checked) => {
+                      if (checked) onSpeakerChange?.(device.deviceId);
+                    }}
+                  >
+                    {formatDeviceLabel(device, t("devices.speaker"))}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
+            )}
+            {!hasMics && !hasSpeakers && (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-muted-foreground font-normal">
+                  {t("devices.none")}
+                </DropdownMenuLabel>
+              </DropdownMenuGroup>
+            )}
+            {showModeSwitch && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  {/* Enabling push-to-talk closes the menu and moves focus
+                      to the talk button — otherwise focus returns to the
+                      dropdown trigger, where Space reopens the menu instead
+                      of talking. Disabling keeps the menu open. */}
+                  <DropdownMenuItem
+                    closeOnClick={!isPtt}
+                    onClick={() => {
+                      const next = isPtt ? "toggle" : "push-to-talk";
+                      onModeChange?.(next);
+                      if (next === "push-to-talk") {
+                        requestAnimationFrame(() => toggleRef.current?.focus());
+                      }
+                    }}
+                  >
+                    {t("audio.pushToTalk")}
+                    {/* Inert visual — the menu item handles the toggle. */}
+                    <Switch
+                      checked={isPtt}
+                      tabIndex={-1}
+                      className="pointer-events-none ml-auto"
+                    />
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </>
+            )}
+    </>
+  );
+
+  if (trigger) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger render={trigger} />
+        <DropdownMenuContent align="start" className="min-w-80">
+          {menuContent}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   if (isLoading || unavailableText) {
     return (
       <ButtonGroup data-slot="user-audio-control" className={className}>
@@ -580,83 +678,8 @@ export function UserAudioControlView({
               </Button>
             }
           />
-          <DropdownMenuContent align="end" className="min-w-56">
-            {/* Base UI requires GroupLabel to live inside a Group. */}
-            {hasMics && (
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  <MicIcon className="size-3" />
-                  {t("devices.microphones")}
-                </DropdownMenuLabel>
-                {mics!.map((device, index) => (
-                  <DropdownMenuCheckboxItem
-                    key={`mic-${device.deviceId || index}`}
-                    checked={selectedMic?.deviceId === device.deviceId}
-                    onCheckedChange={(checked) => {
-                      if (checked) onMicChange?.(device.deviceId);
-                    }}
-                  >
-                    {formatDeviceLabel(device, t("devices.microphone"))}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            )}
-            {hasMics && hasSpeakers && <DropdownMenuSeparator />}
-            {hasSpeakers && (
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  <Volume2Icon className="size-3" />
-                  {t("devices.speakers")}
-                </DropdownMenuLabel>
-                {speakers!.map((device, index) => (
-                  <DropdownMenuCheckboxItem
-                    key={`speaker-${device.deviceId || index}`}
-                    checked={selectedSpeaker?.deviceId === device.deviceId}
-                    onCheckedChange={(checked) => {
-                      if (checked) onSpeakerChange?.(device.deviceId);
-                    }}
-                  >
-                    {formatDeviceLabel(device, t("devices.speaker"))}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            )}
-            {!hasMics && !hasSpeakers && (
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-muted-foreground font-normal">
-                  {t("devices.none")}
-                </DropdownMenuLabel>
-              </DropdownMenuGroup>
-            )}
-            {showModeSwitch && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  {/* Enabling push-to-talk closes the menu and moves focus
-                      to the talk button — otherwise focus returns to the
-                      dropdown trigger, where Space reopens the menu instead
-                      of talking. Disabling keeps the menu open. */}
-                  <DropdownMenuItem
-                    closeOnClick={!isPtt}
-                    onClick={() => {
-                      const next = isPtt ? "toggle" : "push-to-talk";
-                      onModeChange?.(next);
-                      if (next === "push-to-talk") {
-                        requestAnimationFrame(() => toggleRef.current?.focus());
-                      }
-                    }}
-                  >
-                    {t("audio.pushToTalk")}
-                    {/* Inert visual — the menu item handles the toggle. */}
-                    <Switch
-                      checked={isPtt}
-                      tabIndex={-1}
-                      className="pointer-events-none ml-auto"
-                    />
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </>
-            )}
+          <DropdownMenuContent align="end" className="min-w-80">
+            {menuContent}
           </DropdownMenuContent>
         </DropdownMenu>
       )}

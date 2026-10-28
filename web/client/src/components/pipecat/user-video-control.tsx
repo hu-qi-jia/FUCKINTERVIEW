@@ -111,6 +111,11 @@ export interface UserVideoControlViewProps {
   className?: string;
   /** Extra content rendered inside the toggle, after the label. */
   children?: React.ReactNode;
+  /**
+   * Replaces the whole control with this trigger plus the camera menu it
+   * opens (used by the collapsed sidebar rail).
+   */
+  trigger?: React.ReactElement;
 }
 
 /** Camera toggle and device picker with an optional preview. Loading takes precedence over unavailability. */
@@ -125,6 +130,7 @@ export function UserVideoControlView({
   onCamChange,
   noDevicePicker = false,
   noVideo = false,
+  trigger,
   video,
   activeText,
   inactiveText,
@@ -141,6 +147,22 @@ export function UserVideoControlView({
     : isCamEnabled
       ? activeText
       : inactiveText;
+
+  if (trigger) {
+    return (
+      <DeviceDropdownView
+        kind="videoinput"
+        devices={cams}
+        selectedDevice={selectedCam}
+        onDeviceChange={onCamChange}
+        isLoading={isLoading}
+        unavailableText={unavailableText}
+      >
+        <DeviceDropdownTrigger render={trigger} />
+        <DeviceDropdownContent align="start" className="min-w-80" />
+      </DeviceDropdownView>
+    );
+  }
 
   let toggle: React.ReactNode;
   if (isLoading || unavailableText) {
