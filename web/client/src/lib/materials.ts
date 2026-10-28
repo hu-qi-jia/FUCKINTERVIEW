@@ -56,6 +56,8 @@ export interface InterviewProfile {
   coachChat?: CoachMessage[];
   /** 教练估的补齐进度。 */
   coachProgress?: CoachProgress;
+  /** 每张卡已确认的维度：{ [cardSlug]: ["scale", "actions", …] }。 */
+  coachCoverage?: Record<string, string[]>;
   materialsRevision: number;
   createdAt: string;
   updatedAt: string;
@@ -73,6 +75,7 @@ export interface CoachProgress {
 
 export interface CoachReply {
   reply: string;
+  coverage: Record<string, string[]>;
   percent: number;
   remaining: string[];
 }
@@ -114,6 +117,7 @@ export interface ProfilePatch {
   cards?: ExperienceCard[];
   coachChat?: CoachMessage[];
   coachProgress?: CoachProgress;
+  coachCoverage?: Record<string, string[]>;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -203,11 +207,17 @@ export async function generateSkill(
   );
 }
 
+export type CoachIntent = "continue" | "skip";
+
 export async function coachReply(
   id: string,
   messages: CoachMessage[],
+  intent?: CoachIntent,
 ): Promise<CoachReply> {
-  return request<CoachReply>(`/api/profiles/${id}/coach`, json("POST", { messages }));
+  return request<CoachReply>(
+    `/api/profiles/${id}/coach`,
+    json("POST", intent ? { messages, intent } : { messages }),
+  );
 }
 
 export async function coachApply(

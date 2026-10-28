@@ -52,6 +52,8 @@ from app.materials import (
     update_profile,
 )
 from app.materials_ai import (
+    COACH_DIMENSION_KEYS,
+    COACH_DIMENSION_LABELS,
     build_live_system_prompt,
     coach_apply,
     coach_reply,
@@ -205,6 +207,43 @@ async def api_generate_skill(profile_id: str, slug: str):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
 
+def _coach_progress_payload(profile: dict, result: dict) -> dict:
+    """把这一轮确认的维度并入覆盖表，再按「已确认维度 / 全部维度」算进度。
+
+    只增不减：同一张卡的维度一旦确认就不会回退，进度条不会乱跳。
+    """
+    coverage = dict(profile.get("coachCoverage") or {})
+    slug = result.get("card")
+    confirmed = result.get("confirmed") or []
+    if slug and confirmed:
+        existing = list(coverage.get(slug) or [])
+        for key in confirmed:
+            if key in COACH_DIMENSION_KEYS and key not in existing:
+                existing.append(key)
+        coverage[slug] = existing
+
+    ready = [card for card in profile.get("cards") or [] if card.get("status") == "ready"]
+    total = len(ready) * len(COACH_DIMENSION_KEYS)
+    covered = 0
+    remaining: list[str] = []
+    for card in ready:
+        known = set(coverage.get(str(card.get("slug")) or "", []))
+        covered += len(known & set(COACH_DIMENSION_KEYS))
+        for key in COACH_DIMENSION_KEYS:
+            if key not in known and len(remaining) < 3:
+                remaining.append(
+                    f"{card.get('name') or '经历卡'} · {COACH_DIMENSION_LABELS[key]}"
+                )
+    percent = round(covered / total * 100) if total else 0
+
+    return {
+        "reply": result["reply"],
+        "coverage": coverage,
+        "percent": percent,
+        "remaining": remaining[:3],
+    }
+
+
 @app.post("/api/profiles/{profile_id}/coach")
 async def api_coach(profile_id: str, request: Request):
     """教练对话：返回 AI 的下一句（问题或确认）。前端自己保存对话历史。"""
@@ -214,11 +253,30 @@ async def api_coach(profile_id: str, request: Request):
     except Exception:
         payload = {}
     messages = payload.get("messages") if isinstance(payload, dict) else None
+    intent = payload.get("intent") if isinstance(payload, dict) else None
+    if intent not in ("continue", "skip"):
+        intent = None
     try:
-        result = await coach_reply(load_settings(), profile, messages)
+        result = await coach_reply(load_settings(), profile, messages, intent)
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    return result
+
+    response = _coach_progress_payload(profile, result)
+    # 覆盖表由服务端落盘：进度只增不减，不依赖前端回写。
+    try:
+        update_profile(
+            profile_id,
+            {
+                "coachCoverage": response["coverage"],
+                "coachProgress": {
+                    "percent": response["percent"],
+                    "remaining": response["remaining"],
+                },
+            },
+        )
+    except (KeyError, ValueError):
+        pass
+    return response
 
 
 @app.post("/api/profiles/{profile_id}/coach/apply")

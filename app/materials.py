@@ -107,7 +107,28 @@ def _sanitize_chat(raw: Any) -> list[dict[str, str]]:
             continue
         role = "user" if item.get("role") == "user" else "assistant"
         messages.append({"role": role, "content": content[:8000]})
-    return messages[-40:]
+    return messages[-80:]
+
+
+def _sanitize_coverage(raw: Any) -> dict[str, list[str]]:
+    """教练进度：每张卡已确认的维度 key。只做形状清洗，语义由服务端计算。"""
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, list[str]] = {}
+    for slug, keys in raw.items():
+        name = str(slug or "").strip()[:64]
+        if not name or not isinstance(keys, list):
+            continue
+        cleaned: list[str] = []
+        for key in keys:
+            text = str(key or "").strip()[:20]
+            if text and text not in cleaned:
+                cleaned.append(text)
+            if len(cleaned) >= 6:
+                break
+        if cleaned:
+            result[name] = cleaned
+    return result
 
 
 def _sanitize_progress(raw: Any) -> dict[str, Any]:
@@ -143,6 +164,7 @@ def _new_profile(name: str) -> dict[str, Any]:
         "cards": [],
         "coachChat": [],
         "coachProgress": {"percent": 0, "remaining": []},
+        "coachCoverage": {},
         "materialsRevision": 0,
         "createdAt": now,
         "updatedAt": now,
@@ -295,6 +317,8 @@ def update_profile(profile_id: str, patch: Any) -> dict[str, Any]:
             profile["coachChat"] = _sanitize_chat(patch["coachChat"])
         if "coachProgress" in patch:
             profile["coachProgress"] = _sanitize_progress(patch["coachProgress"])
+        if "coachCoverage" in patch:
+            profile["coachCoverage"] = _sanitize_coverage(patch["coachCoverage"])
 
         if bumped:
             profile["materialsRevision"] = int(profile.get("materialsRevision") or 0) + 1

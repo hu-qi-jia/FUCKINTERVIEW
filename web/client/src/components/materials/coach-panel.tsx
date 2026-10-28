@@ -17,11 +17,14 @@ import {
   coachApply,
   coachReply,
   type CardProposal,
+  type CoachIntent,
   type CoachMessage,
   type InterviewProfile,
   type ProfilePatch,
 } from "@/lib/materials";
 import { cn } from "@/lib/utils";
+
+type QueueEntry = { message: CoachMessage; intent?: CoachIntent };
 
 /**
  * 「和 AI 完善面试档案」：AI 像 grilling 一样一次问一个细节，
@@ -54,7 +57,7 @@ export function CoachPanel({
 
   // 发送是排队处理的：AI 还在回复时再发一条不会被丢掉，回复到了再按顺序处理。
   const sendingRef = useRef(false);
-  const queueRef = useRef<CoachMessage[]>([]);
+  const queueRef = useRef<QueueEntry[]>([]);
   const aliveRef = useRef(true);
   useEffect(
     () => () => {
@@ -77,8 +80,9 @@ export function CoachPanel({
 
   const pump = async () => {
     if (sendingRef.current) return;
-    const message = queueRef.current.shift();
-    if (!message) return;
+    const entry = queueRef.current.shift();
+    if (!entry) return;
+    const { message, intent } = entry;
     sendingRef.current = true;
     setSending(true);
     setError(null);
@@ -89,7 +93,7 @@ export function CoachPanel({
       index >= 0 ? current.slice(0, index + 1) : [...current, message];
 
     try {
-      const result = await coachReply(profile.id, history);
+      const result = await coachReply(profile.id, history, intent);
       if (!aliveRef.current) return;
       const after = messagesRef.current;
       const at = findIndex(after, message);
@@ -100,6 +104,7 @@ export function CoachPanel({
       });
       onPatch({
         coachChat: next,
+        coachCoverage: result.coverage,
         coachProgress: {
           percent: result.percent,
           remaining: result.remaining,
@@ -131,6 +136,7 @@ export function CoachPanel({
           ...messagesRef.current,
           { role: "assistant", content: result.reply },
         ],
+        coachCoverage: result.coverage,
         coachProgress: {
           percent: result.percent,
           remaining: result.remaining,
@@ -155,11 +161,15 @@ export function CoachPanel({
     if (messagesRef.current.length === 0) void openSession();
   };
 
-  const handleSend = async (text: string) => {
+  const enqueue = (text: string, intent?: CoachIntent) => {
     const message: CoachMessage = { role: "user", content: text };
-    queueRef.current.push(message);
+    queueRef.current.push({ message, intent });
     onPatch({ coachChat: [...messagesRef.current, message] });
     void pump();
+  };
+
+  const handleSend = async (text: string) => {
+    enqueue(text);
   };
 
   const prepareApply = async () => {
@@ -325,6 +335,25 @@ export function CoachPanel({
               {t("materials.coach.cancel")}
             </Button>
           </div>
+        </div>
+      )}
+
+      {messages.length > 0 && !proposal && (
+        <div className="flex flex-wrap items-center gap-1.5 px-(--card-spacing)">
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => enqueue(t("materials.coach.continueDeep"), "continue")}
+          >
+            {t("materials.coach.continueDeep")}
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => enqueue(t("materials.coach.skipMessage"), "skip")}
+          >
+            {t("materials.coach.skip")}
+          </Button>
         </div>
       )}
 
