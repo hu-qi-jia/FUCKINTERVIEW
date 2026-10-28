@@ -53,6 +53,8 @@ from app.materials import (
 )
 from app.materials_ai import (
     build_live_system_prompt,
+    coach_apply,
+    coach_reply,
     consolidate,
     generate_card,
     plan_units,
@@ -203,10 +205,41 @@ async def api_generate_skill(profile_id: str, slug: str):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
 
+@app.post("/api/profiles/{profile_id}/coach")
+async def api_coach(profile_id: str, request: Request):
+    """教练对话：返回 AI 的下一句（问题或确认）。前端自己保存对话历史。"""
+    profile = _profile_or_404(profile_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    messages = payload.get("messages") if isinstance(payload, dict) else None
+    try:
+        reply = await coach_reply(load_settings(), profile, messages)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"reply": reply}
+
+
+@app.post("/api/profiles/{profile_id}/coach/apply")
+async def api_coach_apply(profile_id: str, request: Request):
+    """把对话里新确认的事实整理成卡片更新（由前端确认后写盘）。"""
+    profile = _profile_or_404(profile_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    messages = payload.get("messages") if isinstance(payload, dict) else []
+    try:
+        cards = await coach_apply(load_settings(), profile, messages)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"cards": cards}
+
+
 @app.get("/api/storage")
 async def api_storage():
     return storage_info()
-
 
 @app.put("/api/storage")
 async def api_set_storage(request: Request):

@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { CardsStep } from "@/components/materials/cards-step";
+import { CoachPanel } from "@/components/materials/coach-panel";
 import { InlineConfirmButton } from "@/components/materials/inline-confirm-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,22 +174,26 @@ export function ProfileFlow({
   ];
 
   return (
-    <ol className="grid">
-      {steps.map((step, index) => (
-        <StepRow
-          key={step.key}
-          index={index}
-          total={steps.length}
-          title={step.title}
-          description={step.description}
-          completed={completed[index]}
-          open={openStep === index}
-          onToggle={() => setOpenStep(openStep === index ? -1 : index)}
-        >
-          {step.content}
-        </StepRow>
-      ))}
-    </ol>
+    <>
+      <ol className="grid">
+        {steps.map((step, index) => (
+          <StepRow
+            key={step.key}
+            index={index}
+            total={steps.length}
+            title={step.title}
+            description={step.description}
+            completed={completed[index]}
+            open={openStep === index}
+            onToggle={() => setOpenStep(openStep === index ? -1 : index)}
+          >
+            {step.content}
+          </StepRow>
+        ))}
+      </ol>
+
+      <CoachPanel profile={profile} busy={busy} onPatch={onPatch} />
+    </>
   );
 }
 

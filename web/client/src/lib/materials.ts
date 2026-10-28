@@ -52,9 +52,24 @@ export interface InterviewProfile {
   resume: MaterialSection;
   jobDescription: MaterialSection;
   cards: ExperienceCard[];
+  /** 和 AI 完善档案的对话记录（老档案可能没有这个字段）。 */
+  coachChat?: CoachMessage[];
   materialsRevision: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CoachMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** 教练对话整理出的卡片更新；确认后由前端写回。 */
+export interface CardProposal {
+  slug: string;
+  name: string;
+  description: string;
+  body: Record<CardBodyKey, string>;
 }
 
 export interface ProfileSummary {
@@ -84,6 +99,7 @@ export interface ProfilePatch {
   resume?: Partial<MaterialSection>;
   jobDescription?: Partial<MaterialSection>;
   cards?: ExperienceCard[];
+  coachChat?: CoachMessage[];
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -171,6 +187,28 @@ export async function generateSkill(
     `/api/profiles/${id}/skills/${encodeURIComponent(slug)}/generate`,
     json("POST", {}),
   );
+}
+
+export async function coachReply(
+  id: string,
+  messages: CoachMessage[],
+): Promise<string> {
+  const data = await request<{ reply: string }>(
+    `/api/profiles/${id}/coach`,
+    json("POST", { messages }),
+  );
+  return data.reply;
+}
+
+export async function coachApply(
+  id: string,
+  messages: CoachMessage[],
+): Promise<CardProposal[]> {
+  const data = await request<{ cards: CardProposal[] }>(
+    `/api/profiles/${id}/coach/apply`,
+    json("POST", { messages }),
+  );
+  return data.cards;
 }
 
 export async function fetchStorage(): Promise<StorageInfo> {

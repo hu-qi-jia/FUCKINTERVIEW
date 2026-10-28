@@ -94,6 +94,22 @@ def _new_material() -> dict[str, Any]:
     return {"original": "", "content": "", "updatedAt": None}
 
 
+def _sanitize_chat(raw: Any) -> list[dict[str, str]]:
+    """教练对话：只保留 user/assistant 两句角色，裁掉空消息和历史尾巴。"""
+    if not isinstance(raw, list):
+        return []
+    messages: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        role = "user" if item.get("role") == "user" else "assistant"
+        messages.append({"role": role, "content": content[:8000]})
+    return messages[-40:]
+
+
 def _new_profile(name: str) -> dict[str, Any]:
     now = _now()
     return {
@@ -103,6 +119,7 @@ def _new_profile(name: str) -> dict[str, Any]:
         "resume": _new_material(),
         "jobDescription": _new_material(),
         "cards": [],
+        "coachChat": [],
         "materialsRevision": 0,
         "createdAt": now,
         "updatedAt": now,
@@ -251,6 +268,8 @@ def update_profile(profile_id: str, patch: Any) -> dict[str, Any]:
             bumped = bumped or changed
         if "cards" in patch:
             profile["cards"] = _sanitize_cards(patch["cards"])
+        if "coachChat" in patch:
+            profile["coachChat"] = _sanitize_chat(patch["coachChat"])
 
         if bumped:
             profile["materialsRevision"] = int(profile.get("materialsRevision") or 0) + 1
