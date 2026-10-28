@@ -2,7 +2,6 @@
 
 import { usePipecatClientCamControl } from "@pipecat-ai/client-react";
 import {
-  CheckIcon,
   MicIcon,
   ScreenShareIcon,
   SlidersHorizontalIcon,
@@ -12,11 +11,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
-import {
-  formatDeviceLabel,
-  usePipecatDevices,
-  type DeviceKind,
-} from "@/components/pipecat/device-select";
 import { UserAudioControl } from "@/components/pipecat/user-audio-control";
 import { UserScreenControl } from "@/components/pipecat/user-screen-control";
 import { UserVideoControl } from "@/components/pipecat/user-video-control";
@@ -26,7 +20,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 /** Which controls are present but unusable on the current page. */
@@ -137,54 +130,7 @@ export function DeviceGroup({
   );
 }
 
-const DEVICE_FALLBACK: Record<DeviceKind, string> = {
-  audioinput: "devices.microphone",
-  audiooutput: "devices.speaker",
-  videoinput: "devices.camera",
-};
-
-/** Selectable device rows for one device kind. */
-function DeviceSelection({ kind, label }: { kind: DeviceKind; label: string }) {
-  const { t } = useTranslation();
-  const { devices, selectedDevice, updateDevice } = usePipecatDevices(kind);
-
-  return (
-    <div className="flex flex-col">
-      <div className="text-muted-foreground px-2 py-1 text-xs font-medium">
-        {label}
-      </div>
-      {devices.length === 0 ? (
-        <div className="text-muted-foreground px-2 py-1.5 text-xs">
-          {t("devices.none")}
-        </div>
-      ) : (
-        devices.map((device, index) => {
-          const selected = selectedDevice?.deviceId === device.deviceId;
-          return (
-            <button
-              key={`${kind}-${device.deviceId || index}`}
-              type="button"
-              onClick={() => updateDevice(device.deviceId)}
-              className={cn(
-                "hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
-                selected && "bg-accent",
-              )}
-            >
-              <CheckIcon
-                className={cn("size-4 shrink-0", !selected && "opacity-0")}
-              />
-              <span className="truncate">
-                {formatDeviceLabel(device, t(DEVICE_FALLBACK[kind]))}
-              </span>
-            </button>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-function SelectionPopover({
+function DevicePopover({
   label,
   icon,
   disabled,
@@ -209,8 +155,13 @@ function SelectionPopover({
           </Button>
         }
       />
-      <PopoverContent side="right" align="start" className="w-72 p-1.5">
-        {children}
+      <PopoverContent side="right" align="start" className="w-96 p-3">
+        <div className="flex flex-col gap-2">
+          <div className="text-muted-foreground px-1 text-[11px] font-medium tracking-wide uppercase">
+            {label}
+          </div>
+          <Disabled active={disabled}>{children}</Disabled>
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -218,7 +169,7 @@ function SelectionPopover({
 
 /**
  * Icon strip for the collapsed sidebar. Only the icons stay visible; each one
- * opens a device-selection popover beside the rail.
+ * opens the same control the expanded sidebar shows, beside the rail.
  */
 export function CollapsedDeviceGroup({
   disabled,
@@ -228,6 +179,7 @@ export function CollapsedDeviceGroup({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const { isCamEnabled } = usePipecatClientCamControl();
 
   return (
     <div
@@ -236,35 +188,27 @@ export function CollapsedDeviceGroup({
         className,
       )}
     >
-      <SelectionPopover
+      <DevicePopover
         label={t("devices.microphone")}
         icon={<MicIcon />}
         disabled={disabled?.mic}
       >
-        <DeviceSelection
-          kind="audioinput"
-          label={t("devices.microphones")}
-        />
-        <Separator className="my-1" />
-        <DeviceSelection
-          kind="audiooutput"
-          label={t("devices.speakers")}
-        />
-      </SelectionPopover>
-      <SelectionPopover
+        <UserAudioControl className="w-full" />
+      </DevicePopover>
+      <DevicePopover
         label={t("devices.camera")}
         icon={<VideoIcon />}
         disabled={disabled?.cam}
       >
-        <DeviceSelection kind="videoinput" label={t("devices.cameras")} />
-      </SelectionPopover>
-      <SelectionPopover
+        <UserVideoControl className="w-full" noVideo={!isCamEnabled} />
+      </DevicePopover>
+      <DevicePopover
         label={t("devices.screenShare")}
         icon={<ScreenShareIcon />}
         disabled={disabled?.screen}
       >
         <UserScreenControl className="w-full" />
-      </SelectionPopover>
+      </DevicePopover>
     </div>
   );
 }
