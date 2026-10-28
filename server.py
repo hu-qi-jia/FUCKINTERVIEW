@@ -208,21 +208,8 @@ async def api_generate_skill(profile_id: str, slug: str):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
 
-def _coach_progress_payload(profile: dict, result: dict) -> dict:
-    """把这一轮确认的维度并入覆盖表，再按「已确认维度 / 全部维度」算进度。
-
-    只增不减：同一张卡的维度一旦确认就不会回退，进度条不会乱跳。
-    """
-    coverage = dict(profile.get("coachCoverage") or {})
-    slug = result.get("card")
-    confirmed = result.get("confirmed") or []
-    if slug and confirmed:
-        existing = list(coverage.get(slug) or [])
-        for key in confirmed:
-            if key in COACH_DIMENSION_KEYS and key not in existing:
-                existing.append(key)
-        coverage[slug] = existing
-
+def _coach_progress(profile: dict, coverage: dict) -> dict:
+    """按「已覆盖维度 / 全部维度」算进度。覆盖表只增不减，进度条不会回退。"""
     ready = [card for card in profile.get("cards") or [] if card.get("status") == "ready"]
     total = len(ready) * len(COACH_DIMENSION_KEYS)
     covered = 0
@@ -236,13 +223,7 @@ def _coach_progress_payload(profile: dict, result: dict) -> dict:
                     f"{card.get('name') or '经历卡'} · {COACH_DIMENSION_LABELS[key]}"
                 )
     percent = round(covered / total * 100) if total else 0
-
-    return {
-        "reply": result["reply"],
-        "coverage": coverage,
-        "percent": percent,
-        "remaining": remaining[:3],
-    }
+    return {"percent": percent, "remaining": remaining[:3]}
 
 
 @app.post("/api/profiles/{profile_id}/coach")
@@ -277,22 +258,21 @@ async def api_coach(profile_id: str, request: Request):
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    response = _coach_progress_payload(profile, result)
-    # 覆盖表由服务端落盘：进度只增不减，不依赖前端回写。
+    coverage = result["coverage"]
+    progress = _coach_progress(profile, coverage)
+    # 覆盖表和「这一轮问的是哪个维度」都由服务端落盘，不依赖前端回写。
     try:
         update_profile(
             profile_id,
             {
-                "coachCoverage": response["coverage"],
-                "coachProgress": {
-                    "percent": response["percent"],
-                    "remaining": response["remaining"],
-                },
+                "coachCoverage": coverage,
+                "coachPending": result["pending"],
+                "coachProgress": progress,
             },
         )
     except (KeyError, ValueError):
         pass
-    return response
+    return {"reply": result["reply"], "coverage": coverage, **progress}
 
 
 @app.post("/api/profiles/{profile_id}/coach/apply")

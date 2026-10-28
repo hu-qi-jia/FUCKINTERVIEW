@@ -153,6 +153,17 @@ def _sanitize_progress(raw: Any) -> dict[str, Any]:
     return {"percent": percent, "remaining": remaining}
 
 
+def _sanitize_pending(raw: Any) -> dict[str, str] | None:
+    """上一次提问指向的卡和维度；回答下一句时用来标记已覆盖。"""
+    if not isinstance(raw, dict):
+        return None
+    slug = str(raw.get("slug") or "").strip()[:64]
+    dimension = str(raw.get("dimension") or "").strip()[:20]
+    if not slug or not dimension:
+        return None
+    return {"slug": slug, "dimension": dimension}
+
+
 def _new_profile(name: str) -> dict[str, Any]:
     now = _now()
     return {
@@ -165,6 +176,7 @@ def _new_profile(name: str) -> dict[str, Any]:
         "coachChat": [],
         "coachProgress": {"percent": 0, "remaining": []},
         "coachCoverage": {},
+        "coachPending": None,
         "materialsRevision": 0,
         "createdAt": now,
         "updatedAt": now,
@@ -319,6 +331,8 @@ def update_profile(profile_id: str, patch: Any) -> dict[str, Any]:
             profile["coachProgress"] = _sanitize_progress(patch["coachProgress"])
         if "coachCoverage" in patch:
             profile["coachCoverage"] = _sanitize_coverage(patch["coachCoverage"])
+        if "coachPending" in patch:
+            profile["coachPending"] = _sanitize_pending(patch["coachPending"])
 
         if bumped:
             profile["materialsRevision"] = int(profile.get("materialsRevision") or 0) + 1

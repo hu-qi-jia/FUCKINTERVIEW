@@ -66,6 +66,8 @@ export function CoachPanel({
   // 发送是排队处理的：AI 还在回复时再发一条不会被丢掉，回复到了再按顺序处理。
   const sendingRef = useRef(false);
   const queueRef = useRef<QueueEntry[]>([]);
+  // 续聊请求还在飞的时候用户就发了消息：丢弃续聊的回复，避免出现两条连续提问。
+  const resumeAliveRef = useRef(false);
   const aliveRef = useRef(true);
   useEffect(
     () => () => {
@@ -132,10 +134,12 @@ export function CoachPanel({
     sendingRef.current = true;
     setSending(true);
     setError(null);
+    if (intent === "resume") resumeAliveRef.current = true;
     try {
       const history = intent === "resume" ? messagesRef.current : [];
       const result = await coachReply(profile.id, history, intent);
       if (!aliveRef.current) return;
+      if (intent === "resume" && !resumeAliveRef.current) return;
       onPatch({
         coachChat: [
           ...messagesRef.current,
@@ -170,6 +174,7 @@ export function CoachPanel({
   const enqueue = (text: string, intent?: CoachIntent) => {
     const message: CoachMessage = { role: "user", content: text };
     const index = messagesRef.current.length;
+    resumeAliveRef.current = false;
     queueRef.current.push({ message, intent, index });
     onPatch({ coachChat: [...messagesRef.current, message] });
     void pump();
