@@ -110,11 +110,15 @@ export function ConsolePanelContent({
   className,
   scroll = true,
   children,
+  ref,
+  onScroll,
   ...props
 }: React.ComponentProps<typeof CardContent> & { scroll?: boolean }) {
   if (!scroll) {
     return (
       <CardContent
+        ref={ref}
+        onScroll={onScroll}
         className={cn("min-h-0 flex-1 overflow-auto", className)}
         data-slot="console-panel-content"
         {...props}
@@ -128,10 +132,13 @@ export function ConsolePanelContent({
     <CardContent
       className="min-h-0 flex-1 overflow-hidden p-0"
       data-slot="console-panel-content"
-      {...props}
     >
       <ScrollArea
         className="h-full"
+        viewportRef={ref as React.Ref<HTMLDivElement>}
+        onViewportScroll={
+          onScroll as ((event: Event) => void) | undefined
+        }
         contentClassName={cn("px-(--card-spacing)", className)}
       >
         {children}

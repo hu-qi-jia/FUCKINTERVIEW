@@ -140,7 +140,7 @@ export function LiveConversationPanel({
                     "max-w-[85%] whitespace-pre-wrap",
                     line.from === "interviewer"
                       ? "bg-muted rounded-2xl rounded-tl-sm px-3 py-2 text-sm"
-                      : "text-right text-sm",
+                      : "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-3 py-2 text-right text-sm",
                   )}
                 >
                   {line.text}
@@ -152,7 +152,7 @@ export function LiveConversationPanel({
             ))}
             {interimText && (
               <div className="flex flex-col items-end gap-1">
-                <div className="text-muted-foreground max-w-[85%] text-right text-sm whitespace-pre-wrap opacity-70">
+                <div className="bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-tr-sm px-3 py-2 text-right text-sm whitespace-pre-wrap opacity-70">
                   {interimText}
                 </div>
               </div>

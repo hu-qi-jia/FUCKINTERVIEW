@@ -91,6 +91,15 @@ export function ConversationView({
     maybeScrollToEdge();
   }, [messages, maybeScrollToEdge, noAutoscroll]);
 
+  // 流式回答时 messages 不一定会换引用，每次渲染都检查一次：
+  // 只要还贴着边缘，就把最新内容留在可视区底部。
+  useEffect(() => {
+    if (noAutoscroll) return;
+    const element = scrollRef.current;
+    if (!element || !isScrolledToEdge.current) return;
+    element.scrollTop = reverseOrder ? 0 : element.scrollHeight;
+  });
+
   if (messages.length === 0) {
     return (
       <div

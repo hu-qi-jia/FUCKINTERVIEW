@@ -74,7 +74,7 @@ export function ConsoleAnswerPanel({
           </ConsolePanelActions>
         )}
       </div>
-      <ConsolePanelContent>
+      <ConsolePanelContent scroll={false}>
         <Conversation
           roles={ANSWER_ROLES}
           textRenderMode={renderMode}

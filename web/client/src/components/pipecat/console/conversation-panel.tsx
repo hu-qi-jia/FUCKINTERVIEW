@@ -110,7 +110,7 @@ export function ConsoleConversationPanel({
             keepMounted
             className="flex min-h-0 flex-1 flex-col data-[hidden]:hidden"
           >
-            <ConsolePanelContent>
+            <ConsolePanelContent scroll={false}>
               <Conversation
                 textRenderMode={renderMode}
                 {...conversationProps}
