@@ -24,7 +24,15 @@ import {
 } from "@/lib/materials";
 import { cn } from "@/lib/utils";
 
-type QueueEntry = { message: CoachMessage; intent?: CoachIntent };
+type QueueEntry = { message: CoachMessage; intent?: CoachIntent; index: number };
+
+const sameMessage = (
+  candidate: CoachMessage | undefined,
+  message: CoachMessage,
+) =>
+  Boolean(candidate) &&
+  candidate?.role === message.role &&
+  candidate?.content === message.content;
 
 /**
  * 「和 AI 完善面试档案」：AI 像 grilling 一样一次问一个细节，
@@ -66,42 +74,38 @@ export function CoachPanel({
     [],
   );
 
-  const findIndex = (list: CoachMessage[], message: CoachMessage) => {
-    for (let index = 0; index < list.length; index += 1) {
-      if (
-        list[index].role === message.role &&
-        list[index].content === message.content
-      ) {
-        return index;
-      }
-    }
-    return -1;
-  };
-
   const pump = async () => {
     if (sendingRef.current) return;
     const entry = queueRef.current.shift();
     if (!entry) return;
-    const { message, intent } = entry;
+    const { message, intent, index } = entry;
     sendingRef.current = true;
     setSending(true);
     setError(null);
 
     const current = messagesRef.current;
-    const index = findIndex(current, message);
+    // 用入队时记下的位置定位这条消息：同样的文字可能在更早的对话里出现过，
+    // 不能按内容找第一条，否则回复会被插到旧消息后面、看起来像没回。
+    const startAt = sameMessage(current[index], message) ? index : -1;
     const history =
-      index >= 0 ? current.slice(0, index + 1) : [...current, message];
+      startAt >= 0 ? current.slice(0, startAt + 1) : [...current, message];
 
     try {
       const result = await coachReply(profile.id, history, intent);
       if (!aliveRef.current) return;
       const after = messagesRef.current;
-      const at = findIndex(after, message);
+      const pos = sameMessage(after[index], message) ? index : -1;
+      const reply: CoachMessage = { role: "assistant", content: result.reply };
       const next = [...after];
-      next.splice(at >= 0 ? at + 1 : next.length, 0, {
-        role: "assistant",
-        content: result.reply,
-      });
+      if (pos >= 0) {
+        next.splice(pos + 1, 0, reply);
+        // 插在中间后，后面排队消息的位置都要往后挪一位。
+        for (const queued of queueRef.current) {
+          if (queued.index > pos) queued.index += 1;
+        }
+      } else {
+        next.push(reply);
+      }
       onPatch({
         coachChat: next,
         coachCoverage: result.coverage,
@@ -165,7 +169,8 @@ export function CoachPanel({
 
   const enqueue = (text: string, intent?: CoachIntent) => {
     const message: CoachMessage = { role: "user", content: text };
-    queueRef.current.push({ message, intent });
+    const index = messagesRef.current.length;
+    queueRef.current.push({ message, intent, index });
     onPatch({ coachChat: [...messagesRef.current, message] });
     void pump();
   };
