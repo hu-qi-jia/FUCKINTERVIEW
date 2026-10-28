@@ -1,12 +1,7 @@
 "use client";
 
 import { usePipecatClientCamControl } from "@pipecat-ai/client-react";
-import {
-  MicIcon,
-  ScreenShareIcon,
-  SlidersHorizontalIcon,
-  VideoIcon,
-} from "lucide-react";
+import { SlidersHorizontalIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -85,7 +80,10 @@ function Disabled({
     <div
       aria-disabled={active || undefined}
       inert={active || undefined}
-      className={cn("w-full", active && "pointer-events-none opacity-50")}
+      className={cn(
+        "flex w-full justify-center",
+        active && "pointer-events-none opacity-50",
+      )}
     >
       {children}
     </div>
@@ -109,10 +107,16 @@ export function DeviceGroup({
         {t("devices.title")}
       </div>
       <Disabled active={disabled?.mic}>
-        <UserAudioControl className="w-full" />
+        {/* The stock controls reserve 8rem for the label; the sidebar can be
+            160px wide, so let the group shrink instead of pushing the device
+            chevron out of the rail. */}
+        <UserAudioControl className="w-full [&>button]:!min-w-0" />
       </Disabled>
       <Disabled active={disabled?.cam}>
-        <UserVideoControl className="w-full" noVideo={!isCamEnabled} />
+        <UserVideoControl
+          className="w-full [&>button]:!min-w-0"
+          noVideo={!isCamEnabled}
+        />
       </Disabled>
       <Disabled active={disabled?.screen}>
         <UserScreenControl className="w-full" />
@@ -121,40 +125,11 @@ export function DeviceGroup({
   );
 }
 
-function DevicePopover({
-  label,
-  icon,
-  disabled,
-  children,
-}: {
-  label: string;
-  icon: ReactNode;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={label}
-            disabled={disabled}
-            className={cn(disabled && "opacity-50")}
-          >
-            {icon}
-          </Button>
-        }
-      />
-      <PopoverContent side="right" align="start" className="w-72 p-3">
-        <Disabled active={disabled}>{children}</Disabled>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** Icon strip for the collapsed sidebar; each icon opens its own control. */
+/**
+ * Icon strip for the collapsed sidebar. The controls render at icon size, so
+ * the mute / camera / screen buttons and their device pickers stay usable
+ * without a popover.
+ */
 export function CollapsedDeviceGroup({
   disabled,
   className,
@@ -162,7 +137,6 @@ export function CollapsedDeviceGroup({
   disabled?: DeviceDisabled;
   className?: string;
 }) {
-  const { t } = useTranslation();
   const { isCamEnabled } = usePipecatClientCamControl();
 
   return (
@@ -172,27 +146,15 @@ export function CollapsedDeviceGroup({
         className,
       )}
     >
-      <DevicePopover
-        label={t("devices.microphone")}
-        icon={<MicIcon />}
-        disabled={disabled?.mic}
-      >
-        <UserAudioControl className="w-full" />
-      </DevicePopover>
-      <DevicePopover
-        label={t("devices.camera")}
-        icon={<VideoIcon />}
-        disabled={disabled?.cam}
-      >
-        <UserVideoControl className="w-full" noVideo={!isCamEnabled} />
-      </DevicePopover>
-      <DevicePopover
-        label={t("devices.screenShare")}
-        icon={<ScreenShareIcon />}
-        disabled={disabled?.screen}
-      >
-        <UserScreenControl className="w-full" />
-      </DevicePopover>
+      <Disabled active={disabled?.mic}>
+        <UserAudioControl size="icon-xs" />
+      </Disabled>
+      <Disabled active={disabled?.cam}>
+        <UserVideoControl size="icon-xs" noVideo={!isCamEnabled} />
+      </Disabled>
+      <Disabled active={disabled?.screen}>
+        <UserScreenControl size="icon-xs" />
+      </Disabled>
     </div>
   );
 }
