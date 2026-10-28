@@ -37,6 +37,21 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.workers.runner import WorkerRunner
 
 from app.config import load_settings, save_settings
+from app.materials import (
+    apply_plan,
+    create_profile,
+    delete_profile,
+    find_card,
+    get_profile,
+    list_profiles,
+    open_folder,
+    set_data_dir,
+    storage_info,
+    update_card,
+    update_profile,
+)
+from app.materials_ai import consolidate, generate_card, plan_units
+from app.ai import LLMError
 from app.providers import build_llm, build_stt, build_tts
 
 ROOT = Path(__file__).resolve().parent
@@ -60,6 +75,156 @@ async def update_settings(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"保存配置失败: {e}")
+
+
+# --------------------------------------------------------------------------
+# 面试材料：面试档案（简历 / 岗位描述 / 经历卡）与数据目录
+# --------------------------------------------------------------------------
+def _profile_or_404(profile_id: str):
+    try:
+        return get_profile(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="档案不存在")
+
+
+@app.get("/api/profiles")
+async def api_list_profiles():
+    return {"profiles": list_profiles()}
+
+
+@app.post("/api/profiles")
+async def api_create_profile(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    name = str(payload.get("name") or "") if isinstance(payload, dict) else ""
+    return create_profile(name)
+
+
+@app.get("/api/profiles/{profile_id}")
+async def api_get_profile(profile_id: str):
+    return _profile_or_404(profile_id)
+
+
+@app.patch("/api/profiles/{profile_id}")
+async def api_patch_profile(profile_id: str, request: Request):
+    payload = await request.json()
+    try:
+        return update_profile(profile_id, payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="档案不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/profiles/{profile_id}")
+async def api_delete_profile(profile_id: str):
+    try:
+        delete_profile(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="档案不存在")
+    return {"ok": True}
+
+
+@app.post("/api/profiles/{profile_id}/consolidate")
+async def api_consolidate(profile_id: str, request: Request):
+    profile = _profile_or_404(profile_id)
+    payload = await request.json()
+    kind = str(payload.get("kind") or "")
+    if kind not in ("resume", "jobDescription"):
+        raise HTTPException(status_code=400, detail="kind 必须是 resume 或 jobDescription")
+
+    content = str(payload.get("content") or "")
+    if not content.strip():
+        content = str(profile[kind].get("content") or "")
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="没有可以整合的内容")
+
+    language = str(payload.get("language") or profile.get("language") or "zh")
+    try:
+        text = await consolidate(load_settings(), content=content, language=language)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"content": text}
+
+
+@app.post("/api/profiles/{profile_id}/skills/plan")
+async def api_plan_skills(profile_id: str):
+    profile = _profile_or_404(profile_id)
+    resume = str(profile["resume"].get("content") or "")
+    description = str(profile["jobDescription"].get("content") or "")
+    if not resume.strip():
+        raise HTTPException(status_code=400, detail="简历为空，无法生成经历卡")
+    if not description.strip():
+        raise HTTPException(status_code=400, detail="岗位描述为空，无法生成经历卡")
+
+    try:
+        units = await plan_units(
+            load_settings(),
+            resume=resume,
+            job_description=description,
+            language=str(profile.get("language") or "zh"),
+        )
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return apply_plan(profile_id, units)
+
+
+@app.post("/api/profiles/{profile_id}/skills/{slug}/generate")
+async def api_generate_skill(profile_id: str, slug: str):
+    profile = _profile_or_404(profile_id)
+    try:
+        card = find_card(profile_id, slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    try:
+        fields = await generate_card(
+            load_settings(),
+            unit=card,
+            resume=str(profile["resume"].get("content") or ""),
+            job_description=str(profile["jobDescription"].get("content") or ""),
+            language=str(profile.get("language") or "zh"),
+        )
+    except LLMError as e:
+        update_card(profile_id, slug, {"status": "failed", "error": str(e)})
+        raise HTTPException(status_code=502, detail=str(e))
+
+    try:
+        return update_card(profile_id, slug, fields)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+
+@app.get("/api/storage")
+async def api_storage():
+    return storage_info()
+
+
+@app.put("/api/storage")
+async def api_set_storage(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        return set_data_dir(
+            str(payload.get("dataDir") or ""),
+            migrate=bool(payload.get("migrate", True)),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"切换目录失败：{e}")
+
+
+@app.post("/api/storage/open")
+async def api_open_storage():
+    try:
+        open_folder()
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"打开目录失败：{e}")
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------

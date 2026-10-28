@@ -168,4 +168,21 @@ body,
   html {
     @apply font-sans;
   }
+
+  /* 兜底：没被 ScrollArea 包裹的原生滚动区（textarea、浏览器自带弹层）也用细滚动条。
+     ScrollArea 的 viewport 靠 base-ui 的 base-ui-disable-scrollbar 隐藏原生滚动条，
+     这里必须排除它，否则会把它重新打开。 */
+  *:not(.base-ui-disable-scrollbar) {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent)
+      transparent;
+  }
+
+  /* 文本框右下角的拖拽手柄：浏览器默认的三角太抢眼，换成两笔细斜线。 */
+  textarea::-webkit-resizer {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M10.5 4.5 4.5 10.5M10.5 8.5l-2 2' stroke='%239aa0aa' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right bottom;
+    background-size: 12px 12px;
+  }
 }

@@ -41,7 +41,10 @@ export function ConsoleBotVideoPanel({
           <ConsolePanelTitle>{t("media.botVideo")}</ConsolePanelTitle>
         </ConsolePanelHeader>
       )}
-      <ConsolePanelContent className="flex items-center justify-center overflow-hidden">
+      <ConsolePanelContent
+        scroll={false}
+        className="flex items-center justify-center overflow-hidden"
+      >
         {track ? (
           <PipecatClientVideo
             participant="bot"

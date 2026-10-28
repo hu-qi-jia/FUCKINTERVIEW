@@ -51,7 +51,10 @@ export function ConsoleBotAudioPanel({
           )}
         </ConsolePanelHeader>
       )}
-      <ConsolePanelContent className="text-agent-foreground flex items-center justify-center overflow-hidden">
+      <ConsolePanelContent
+        scroll={false}
+        className="text-agent-foreground flex items-center justify-center overflow-hidden"
+      >
         {track ? (
           <AudioVisualizerBar
             participantType="bot"

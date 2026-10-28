@@ -15,6 +15,7 @@ import {
   PortalTo,
   SidebarDevices,
 } from "@/components/app-device-dock";
+import { MaterialsPage } from "@/components/materials/materials-page";
 import { Console, type ConsoleProps } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
 import { AppSidebar, type AppPage } from "@/components/app-sidebar";
@@ -75,9 +76,13 @@ function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
 }
 
-const PAGES: AppPage[] = ["interview", "mock"];
+const PAGES: AppPage[] = ["interview", "mock", "materials"];
 const pageLabelKey = (page: AppPage) =>
-  page === "mock" ? "nav.mockInterview" : "nav.interview";
+  page === "mock"
+    ? "nav.mockInterview"
+    : page === "materials"
+      ? "nav.materials"
+      : "nav.interview";
 
 /**
  * Small-screen page switcher. The sidebar is hidden below 768px, so the
@@ -133,9 +138,12 @@ function Home() {
     setCaptureMic(value);
     saveCaptureMic(value);
   };
-  const [page, setPage] = useState<AppPage>(() =>
-    localStorage.getItem(PAGE_KEY) === "mock" ? "mock" : "interview",
-  );
+  const [page, setPage] = useState<AppPage>(() => {
+    const stored = localStorage.getItem(PAGE_KEY);
+    return stored === "mock" || stored === "materials" ? stored : "interview";
+  });
+  // 设置里切换数据目录后，让面试材料页重新拉一次档案。
+  const [dataVersion, setDataVersion] = useState(0);
 
   // Leaving the live page must end both sessions and stop the system-audio
   // capture; the Console only tears down its own client on unmount.
@@ -357,7 +365,7 @@ function Home() {
                 />
               </div>
             </>
-          ) : (
+          ) : page === "mock" ? (
             <Console
               key="mock"
               jotaiStore={mockStore}
@@ -370,6 +378,16 @@ function Home() {
               noScreenControl
               headerSlot={mockHeaderSlot}
               onClient={onClient}
+            />
+          ) : (
+            <MaterialsPage
+              dataVersion={dataVersion}
+              headerExtras={
+                <>
+                  {pageSwitch}
+                  {settingsButton}
+                </>
+              }
             />
           )}
         </div>
@@ -389,7 +407,10 @@ function Home() {
 
         <SettingsDialog
           open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setDataVersion((version) => version + 1);
+          }}
           theme={theme}
           onThemeChange={handleThemeChange}
           captureMic={captureMic}

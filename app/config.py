@@ -41,6 +41,10 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "group_id": "",
         "language": "zh",
     },
+    # 面试档案（以及以后的问答库、热词库）存放的目录；相对路径按项目根目录解析。
+    "storage": {
+        "data_dir": "config",
+    },
 }
 
 SECTIONS = ("asr", "llm", "tts")
@@ -68,6 +72,18 @@ def load_settings() -> dict[str, Any]:
     return _merge(json.loads(json.dumps(DEFAULT_SETTINGS)), stored)
 
 
+def _write_settings(settings: dict[str, Any]) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=CONFIG_DIR, suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, CONFIG_PATH)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 def save_settings(incoming: dict[str, Any]) -> dict[str, Any]:
     """校验后原子写入配置文件，返回合并后的完整配置。"""
     if not isinstance(incoming, dict):
@@ -81,13 +97,13 @@ def save_settings(incoming: dict[str, Any]) -> dict[str, Any]:
         clean[section] = {str(k): v for k, v in value.items() if isinstance(k, str)}
 
     merged = _merge(load_settings(), clean)
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=CONFIG_DIR, suffix=".json")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(merged, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, CONFIG_PATH)
-    finally:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+    _write_settings(merged)
     return merged
+
+
+def save_storage(data_dir: str) -> dict[str, Any]:
+    """只更新数据目录，其余配置保持不动。"""
+    settings = load_settings()
+    settings["storage"] = {"data_dir": data_dir}
+    _write_settings(settings)
+    return settings

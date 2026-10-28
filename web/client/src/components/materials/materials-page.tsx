@@ -1,0 +1,422 @@
+"use client";
+
+import {
+  ArrowLeftIcon,
+  ChevronRightIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { ProfileFlow } from "@/components/materials/profile-flow";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useProfileEditor } from "@/hooks/use-profile-editor";
+import {
+  createProfile,
+  deleteProfile,
+  listProfiles,
+  type ProfileSummary,
+} from "@/lib/materials";
+
+type Segment = "profiles" | "questions" | "terms";
+
+const SEGMENT_KEY = "interview-assistant.materials-segment";
+
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+function readSegment(): Segment {
+  const stored = localStorage.getItem(SEGMENT_KEY);
+  return stored === "questions" || stored === "terms" ? stored : "profiles";
+}
+
+function formatTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : dateFormatter.format(date);
+}
+
+/**
+ * 面试材料：顶部滑块切换 面试档案 / 问答库 / 热词库。
+ * 面试档案先显示列表，点进某份档案才进入五步流程；本期其余两段是占位。
+ */
+export function MaterialsPage({
+  headerExtras,
+  dataVersion = 0,
+}: {
+  headerExtras?: React.ReactNode;
+  dataVersion?: number;
+}) {
+  const { t } = useTranslation();
+  const {
+    profile,
+    loadError,
+    status,
+    saveError,
+    open,
+    clear,
+    patch,
+    replace,
+    applyCard,
+    flush,
+    reload,
+  } = useProfileEditor();
+
+  const [summaries, setSummaries] = useState<ProfileSummary[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [segment, setSegment] = useState<Segment>(readSegment);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [focusNameToken, setFocusNameToken] = useState(0);
+  const [pendingDelete, setPendingDelete] = useState(false);
+
+  const detailIdRef = useRef<string | null>(null);
+  detailIdRef.current = detailId;
+
+  const refresh = useCallback(async () => {
+    setListLoading(true);
+    setListError(null);
+    try {
+      const next = await listProfiles();
+      setSummaries(next);
+      if (detailIdRef.current && !next.some((item) => item.id === detailIdRef.current)) {
+        // 正在看的档案被删掉了（比如换了数据目录）。
+        clear();
+        setDetailId(null);
+      }
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setListLoading(false);
+    }
+  }, [clear]);
+
+  useEffect(() => {
+    void refresh();
+    if (detailIdRef.current) void reload();
+    // 只在挂载和数据目录变化时重新拉取；其余切换由交互触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
+
+  const changeSegment = (next: string) => {
+    if (busy) return;
+    const value = next as Segment;
+    setSegment(value);
+    localStorage.setItem(SEGMENT_KEY, value);
+  };
+
+  const openDetail = async (id: string) => {
+    if (busy) return;
+    setPendingDelete(false);
+    setDetailId(id);
+    await open(id);
+  };
+
+  const backToList = async () => {
+    if (busy) return;
+    await flush();
+    clear();
+    setDetailId(null);
+    setPendingDelete(false);
+    await refresh();
+  };
+
+  const create = async () => {
+    if (busy) return;
+    await flush();
+    try {
+      const created = await createProfile(t("materials.newProfileName"));
+      setSegment("profiles");
+      localStorage.setItem(SEGMENT_KEY, "profiles");
+      await refresh();
+      await openDetail(created.id);
+      setFocusNameToken((token) => token + 1);
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const remove = async () => {
+    if (!profile) return;
+    try {
+      await deleteProfile(profile.id);
+      setPendingDelete(false);
+      clear();
+      setDetailId(null);
+      await refresh();
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const saveLabel =
+    status === "saving"
+      ? t("materials.save.saving")
+      : status === "saved"
+        ? t("materials.save.saved")
+        : status === "failed"
+          ? t("materials.save.failedShort")
+          : "";
+
+  const inDetail = Boolean(detailId);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* 与其他页面一致的顶栏：小屏放页面切换和设置入口，桌面端留空。 */}
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+        <span className="min-w-0 flex-1" />
+        {headerExtras}
+      </header>
+
+      <div className="shrink-0 pt-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-4">
+          <Tabs value={segment} onValueChange={changeSegment}>
+            <TabsList className="h-8">
+              <TabsTrigger value="profiles" className="px-2.5">
+                {t("materials.tabs.profiles")}
+              </TabsTrigger>
+              <TabsTrigger value="questions" className="px-2.5">
+                {t("materials.tabs.questions")}
+              </TabsTrigger>
+              <TabsTrigger value="terms" className="px-2.5">
+                {t("materials.tabs.terms")}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {segment === "profiles" && (
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              {inDetail ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void backToList()}
+                >
+                  <ArrowLeftIcon />
+                  {t("materials.backToList")}
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => void create()}>
+                  <PlusIcon />
+                  {t("materials.newProfile")}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {segment === "profiles" && inDetail && profile && (
+        <div className="shrink-0 pt-3">
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4">
+            <h2 className="min-w-0 flex-1 truncate text-base font-semibold">
+              {profile.name || t("materials.untitled")}
+            </h2>
+            {saveLabel && (
+              <span
+                className="text-muted-foreground shrink-0 text-xs"
+                title={status === "failed" ? (saveError ?? "") : undefined}
+              >
+                {saveLabel}
+              </span>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t("materials.moreActions")}
+                    disabled={busy}
+                  />
+                }
+              >
+                <MoreHorizontalIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => setFocusNameToken((token) => token + 1)}
+                >
+                  {t("materials.rename")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setPendingDelete(true)}
+                >
+                  {t("materials.delete")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      )}
+
+      {pendingDelete && profile && (
+        <div className="bg-destructive/5 flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs">
+          <span className="text-destructive min-w-0 flex-1">
+            {t("materials.deleteConfirm", {
+              name: profile.name || t("materials.untitled"),
+            })}
+          </span>
+          <Button size="xs" variant="destructive" onClick={() => void remove()}>
+            {t("materials.confirmDelete")}
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => setPendingDelete(false)}>
+            {t("materials.cancel")}
+          </Button>
+        </div>
+      )}
+
+      {status === "failed" && saveError && (
+        <div className="text-destructive shrink-0 border-b px-4 py-1.5 text-xs">
+          {t("materials.save.failed", { message: saveError })}
+        </div>
+      )}
+
+      {listError && (inDetail || summaries.length > 0) && (
+        <div className="text-destructive shrink-0 border-b px-4 py-1.5 text-xs">
+          {listError}
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        {segment !== "profiles" ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <p className="text-sm font-medium">
+              {t("materials.comingSoon.title")}
+            </p>
+            <p className="text-muted-foreground max-w-sm text-xs">
+              {t("materials.comingSoon.hint")}
+            </p>
+          </div>
+        ) : inDetail ? (
+          !profile ? (
+            loadError ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="text-destructive text-sm">
+                  {t("materials.loadFailed", { message: loadError })}
+                </p>
+                <Button size="sm" variant="outline" onClick={() => void backToList()}>
+                  {t("materials.backToList")}
+                </Button>
+              </div>
+            ) : (
+              <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
+                <Spinner />
+                {t("materials.loading")}
+              </div>
+            )
+          ) : (
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="mx-auto w-full max-w-3xl px-4 py-4">
+                <ProfileFlow
+                  profile={profile}
+                  busy={busy}
+                  focusNameToken={focusNameToken}
+                  onPatch={patch}
+                  onReplace={replace}
+                  onApplyCard={applyCard}
+                  onFlush={flush}
+                  onBusyChange={setBusy}
+                />
+              </div>
+            </ScrollArea>
+          )
+        ) : listLoading && summaries.length === 0 ? (
+          <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
+            <Spinner />
+            {t("materials.loading")}
+          </div>
+        ) : listError && summaries.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-destructive text-sm">
+              {t("materials.loadFailed", { message: listError })}
+            </p>
+            <Button size="sm" variant="outline" onClick={() => void refresh()}>
+              {t("materials.retry")}
+            </Button>
+          </div>
+        ) : summaries.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-sm font-medium">{t("materials.empty.title")}</p>
+            <p className="text-muted-foreground max-w-sm text-xs">
+              {t("materials.empty.hint")}
+            </p>
+            <Button size="sm" onClick={() => void create()}>
+              <PlusIcon />
+              {t("materials.empty.create")}
+            </Button>
+          </div>
+        ) : (
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="mx-auto w-full max-w-3xl px-4 py-4">
+              <ul className="grid gap-2">
+                {summaries.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => void openDetail(item.id)}
+                      disabled={busy}
+                      className="bg-card ring-foreground/10 hover:bg-muted/40 flex w-full items-center gap-3 rounded-xl p-3 text-left ring-1 transition-colors disabled:opacity-60"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm font-medium">
+                            {item.name || t("materials.untitled")}
+                          </span>
+                          <span className="text-muted-foreground shrink-0 text-xs">
+                            {t(
+                              item.language === "en"
+                                ? "materials.steps.language.en"
+                                : "materials.steps.language.zh",
+                            )}
+                          </span>
+                        </div>
+                        <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                          {formatTime(item.updatedAt) && (
+                            <span>
+                              {t("materials.list.updatedAt", {
+                                time: formatTime(item.updatedAt),
+                              })}
+                            </span>
+                          )}
+                          <span>
+                            {t("materials.list.cards", {
+                              count: item.cardCount,
+                            })}
+                          </span>
+                          {!item.hasResume && (
+                            <span>{t("materials.list.missingResume")}</span>
+                          )}
+                          {!item.hasJobDescription && (
+                            <span>
+                              {t("materials.list.missingJobDescription")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </ScrollArea>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,11 +1,12 @@
 "use client";
 
-import { SettingsIcon, XIcon } from "lucide-react";
+import { FolderOpenIcon, SettingsIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -17,7 +18,18 @@ import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { LANGUAGES, setLanguage, type AppLanguage } from "@/i18n";
+import {
+  fetchStorage,
+  openStorageFolder,
+  saveStorage,
+  type StorageInfo,
+} from "@/lib/materials";
 import type { ThemeMode } from "@/lib/theme";
 import {
   ASR_PROVIDERS,
@@ -125,6 +137,11 @@ export function SettingsDialog({
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"general" | "models">("general");
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [storageDir, setStorageDir] = useState("");
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [storageMessage, setStorageMessage] = useState("");
+  const [storageFailed, setStorageFailed] = useState(false);
   const { t, i18n } = useTranslation();
 
   useEffect(() => {
@@ -147,6 +164,55 @@ export function SettingsDialog({
       cancelled = true;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setStorageMessage("");
+    setStorageFailed(false);
+    fetchStorage()
+      .then((info) => {
+        if (cancelled) return;
+        setStorage(info);
+        setStorageDir(info.dataDir);
+      })
+      .catch((error: Error) => {
+        if (cancelled) return;
+        setStorageFailed(true);
+        setStorageMessage(error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const applyStorage = useCallback(async () => {
+    const value = storageDir.trim();
+    if (!value) return;
+    setStorageBusy(true);
+    setStorageMessage("");
+    setStorageFailed(false);
+    try {
+      const info = await saveStorage(value, true);
+      setStorage(info);
+      setStorageDir(info.dataDir);
+      setStorageMessage(t("settings.storage.saved"));
+    } catch (error) {
+      setStorageFailed(true);
+      setStorageMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStorageBusy(false);
+    }
+  }, [storageDir, t]);
+
+  const revealStorage = useCallback(async () => {
+    try {
+      await openStorageFolder();
+    } catch (error) {
+      setStorageFailed(true);
+      setStorageMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -298,7 +364,7 @@ export function SettingsDialog({
             </TabsList>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <ScrollArea className="min-h-0 flex-1" contentClassName="p-4">
             <TabsContent value="general" className="grid max-w-md gap-3">
               <Field label={t("settings.fields.appLanguage")}>
                 <Select
@@ -356,6 +422,64 @@ export function SettingsDialog({
                   />
                 </div>
               </Field>
+
+              <Separator className="my-1" />
+
+              <div className="grid min-w-0 gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("settings.fields.dataDir")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={storageDir}
+                    placeholder="config"
+                    spellCheck={false}
+                    onChange={(event) => setStorageDir(event.target.value)}
+                    className="h-8 min-w-0 flex-1"
+                  />
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          aria-label={t("settings.storage.open")}
+                          disabled={storageBusy}
+                          onClick={() => void revealStorage()}
+                        />
+                      }
+                    >
+                      <FolderOpenIcon />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {t("settings.storage.open")}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Button
+                    variant="outline"
+                    className="h-8"
+                    disabled={storageBusy || !storageDir.trim()}
+                    onClick={() => void applyStorage()}
+                  >
+                    {storageBusy && <Spinner className="size-3.5" />}
+                    {t("settings.storage.apply")}
+                  </Button>
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t("settings.storage.hint", { file: storage?.file ?? "" })}
+                </p>
+                {storageMessage && (
+                  <span
+                    className={`text-xs ${
+                      storageFailed
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {storageMessage}
+                  </span>
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value="models">
@@ -577,7 +701,7 @@ export function SettingsDialog({
                 </div>
               )}
             </TabsContent>
-          </div>
+          </ScrollArea>
         </Tabs>
 
         <div className="flex h-14 shrink-0 items-center justify-between border-t border-border px-4">

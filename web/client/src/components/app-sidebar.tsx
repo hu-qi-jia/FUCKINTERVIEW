@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpenIcon,
   ClipboardListIcon,
   MicIcon,
   PanelLeftCloseIcon,
@@ -20,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Top-level pages. Each renders its own Console and connection. */
-export type AppPage = "interview" | "mock";
+export type AppPage = "interview" | "mock" | "materials";
 
 function SidebarItem({
   icon,
@@ -100,6 +101,11 @@ export function AppSidebar({
       id: "mock",
       label: t("nav.mockInterview"),
       icon: <ClipboardListIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "materials",
+      label: t("nav.materials"),
+      icon: <BookOpenIcon className="size-4 shrink-0" />,
     },
   ];
 

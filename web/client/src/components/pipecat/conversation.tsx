@@ -14,6 +14,7 @@ import {
   type ConversationMessageItemProps,
   type TextRenderMode,
 } from "@/components/pipecat/conversation-message";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 export interface ConversationViewProps extends Omit<
@@ -112,10 +113,11 @@ export function ConversationView({
       data-slot="conversation"
       className={cn("relative flex h-full flex-col", className)}
     >
-      <div
-        ref={scrollRef}
-        onScroll={updateScrollState}
-        className="relative flex-1 overflow-y-auto p-4"
+      <ScrollArea
+        className="relative min-h-0 flex-1"
+        viewportRef={scrollRef}
+        onViewportScroll={updateScrollState}
+        contentClassName="p-4"
       >
         <div className="flex flex-col gap-4">
           {(reverseOrder ? [...messages].reverse() : messages).map(
@@ -129,7 +131,7 @@ export function ConversationView({
             ),
           )}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

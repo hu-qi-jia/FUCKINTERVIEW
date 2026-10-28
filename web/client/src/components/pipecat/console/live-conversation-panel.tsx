@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { ConsolePanel } from "@/components/pipecat/console/panel";
 import { TextInput } from "@/components/pipecat/text-input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { LiveMessage } from "@/lib/live-message";
 import { cn } from "@/lib/utils";
 
@@ -108,13 +109,14 @@ export function LiveConversationPanel({
         <span className="text-sm font-medium">{t("conversation.title")}</span>
       </div>
 
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto p-4"
+      <ScrollArea
+        className="min-h-0 flex-1"
+        viewportRef={scrollRef}
+        onViewportScroll={onScroll}
+        contentClassName="flex min-h-full flex-col p-4"
       >
         {!hasContent ? (
-          <div className="flex h-full items-center justify-center px-4 text-center">
+          <div className="flex flex-1 items-center justify-center px-4 text-center">
             <p className="text-muted-foreground max-w-md text-sm">
               {isConnecting
                 ? t("conversation.connecting")
@@ -157,7 +159,7 @@ export function LiveConversationPanel({
             )}
           </div>
         )}
-      </div>
+      </ScrollArea>
 
       {!noTextInput && (
         <div className="border-t p-(--card-spacing)">

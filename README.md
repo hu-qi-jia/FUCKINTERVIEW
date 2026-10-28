@@ -12,10 +12,14 @@
 ├── app/
 │   ├── config.py                # 读写 config/settings.json
 │   ├── providers.py             # 按配置构建 STT / LLM / TTS
+│   ├── materials.py             # 面试档案的本地 JSON 存储与数据目录
+│   ├── materials_ai.py          # 简历整合 / 经历单元 / 经历卡的提示词
+│   ├── ai.py                    # 直接调用配置里的 LLM（不经过语音 pipeline）
 │   └── services/
 │       ├── qwen_stt.py          # Qwen ASR（DashScope OpenAI 兼容接口）
 │       └── qwen_tts.py          # Qwen TTS（DashScope 多模态生成接口）
 ├── config/settings.json         # 运行时配置（含密钥，勿提交）
+├── config/profiles.json         # 面试档案（含个人简历，勿提交）
 ├── web/client/                  # 前端源码（pipecat-prebuilt 的 React 应用）
 │   └── dist/                    # npm run build 产物，server.py 托管在 /client
 ├── pipecat/                     # Pipecat 源码（editable 安装）
@@ -36,7 +40,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 ## 界面与语言
 
-- 左侧导航：**实时面试**、**模拟面试** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（顶栏改为页面下拉 + 设置入口）
+- 左侧导航：**实时面试**、**模拟面试**、**面试材料** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（顶栏改为页面下拉 + 设置入口）
 - **实时面试**：点「连接」先弹出系统音频选择器（选「整个屏幕」并勾选「分享系统音频」），
   采集面试官的系统声音；对话 / 回答 / 指标 三栏，栏间可拖拽改宽，指标栏拖窄到阈值后折叠成图标条
 - 实时面试建立两条会话：系统音频跑「STT + LLM」生成答案，麦克风只跑 STT 做复盘转写；
@@ -48,10 +52,34 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
   小屏隐藏侧栏时入口在顶栏。实时面试只启用麦克风，摄像头与屏幕共享置灰
 - 默认中文；语言与主题都在「设置 → 通用设置」里切换（主题支持浅色 / 深色 / 跟随系统），选择保存在浏览器 localStorage
 - 文案统一走 `web/client/src/i18n/index.ts`（i18next），新增文案在 `zh` / `en` 两份资源里同步添加
-- 设置页分两页：「通用设置」（界面语言、主题、采集麦克风）与「模型配置」（ASR / LLM / TTS 三段，同页滚动）
+- 设置页分两页：「通用设置」（界面语言、主题、采集麦克风、数据目录）与「模型配置」（ASR / LLM / TTS 三段，同页滚动）
 - 界面只保留浏览器直连的 **SmallWebRTC**。Daily、LiveKit、Twilio、MoQ、原始 WebSocket
   等属于电话/第三方云/调试场景的传输，已从下拉框移除
 - 电话拨号盘（DTMF 键盘）用于拨打 IVR 按键菜单，语音面试用不到，已移除
+
+## 面试材料
+
+侧栏第三项「面试材料」，顶部滑块分三段：**面试档案**、问答库、热词库；本期只实现面试档案，
+后两段是占位页。
+
+面试档案支持多份（一个岗位一份），页面是自上而下的五步流程图：
+
+1. **命名**
+2. **面试语言**：中文 / English，只影响这份档案生成的文字，不改界面语言
+3. **简历**：粘贴全文；「AI 整合」把它改写成更简洁、更有结构的一版（纯文本小标题 + 「- 」条目，
+   只压缩描述、不丢事实），替换后可撤销
+4. **岗位描述**：同上
+5. **经历卡**：先切出 0–10 段经历单元（可改名、可勾掉），确认后逐张生成；
+   每张卡有名称、描述和六段正文（事实底座 / 现场防守答案 / 连续追问 / 边界转向 / 深度地图 L1–L5 /
+   待补的一个问题），可编辑、删除、手动新增、上下移动，单张也能重新生成；
+   生成中可以「停止」，回来点「继续生成」接着做
+
+改过简历或岗位描述后，已生成的卡会标注「可能过期」，但不会自动重做；切换面试语言只提示新内容用新语言。
+
+所有编辑自动保存（停手 800ms 后写盘）。档案默认存在 `config/profiles.json`，可在
+「设置 → 通用设置 → 数据目录」换成别的目录（切换时把现有文件复制过去，旧文件保留 `.bak` 备份）。
+这个文件含个人简历，已在 `.gitignore` 里。AI 整合与经历卡生成直接用「设置 → 模型配置」里的 LLM，
+不经过语音 pipeline。
 
 ## 设置页
 
@@ -86,6 +114,17 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 | --- | --- | --- |
 | GET | `/api/settings` | 读取当前配置 |
 | POST | `/api/settings` | 保存配置（合并写入） |
+| GET | `/api/profiles` | 面试档案列表（摘要） |
+| POST | `/api/profiles` | 新建档案 |
+| GET | `/api/profiles/{id}` | 读取一份档案（含经历卡） |
+| PATCH | `/api/profiles/{id}` | 局部更新（名称、语言、简历、岗位描述、经历卡） |
+| DELETE | `/api/profiles/{id}` | 删除档案 |
+| POST | `/api/profiles/{id}/consolidate` | AI 整合简历或岗位描述（`kind=resume|jobDescription`） |
+| POST | `/api/profiles/{id}/skills/plan` | 切分经历单元，生成待生成的卡 |
+| POST | `/api/profiles/{id}/skills/{slug}/generate` | 生成单张经历卡 |
+| GET | `/api/storage` | 数据目录信息 |
+| PUT | `/api/storage` | 切换数据目录（默认迁移现有文件） |
+| POST | `/api/storage/open` | 在资源管理器中打开数据目录 |
 | GET | `/status` | Runner 状态与可用传输 |
 | POST | `/start` | 建立会话（Pipecat 官方协议）；`body.mode` 选择管道 |
 | POST | `/api/offer` | SmallWebRTC 信令 |
@@ -128,3 +167,8 @@ npm --prefix web/client run dev
 ```
 
 后端修改后重启 `server.py` 即可（`pipecat/` 是 editable 安装，改源码无需重装）。
+
+前端所有滚动区统一用 `web/client/src/components/ui/scroll-area.tsx`（base-ui `ScrollArea` 封装的
+浮层滚动条，不占内容宽度）；新增页面也用它，别再写 `overflow-y-auto`。多选框统一用
+`components/ui/checkbox.tsx`。`textarea`、下拉/选择器浮层这类包不到的原生滚动区由 `index.css` 里的
+`scrollbar-width: thin` 兜底，文本框右下角的拖拽手柄也在那里换成了细斜线。

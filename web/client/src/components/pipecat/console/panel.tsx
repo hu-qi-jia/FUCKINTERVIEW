@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 /**
@@ -107,14 +108,35 @@ export function ConsolePanelActions({
 
 export function ConsolePanelContent({
   className,
+  scroll = true,
+  children,
   ...props
-}: React.ComponentProps<typeof CardContent>) {
+}: React.ComponentProps<typeof CardContent> & { scroll?: boolean }) {
+  if (!scroll) {
+    return (
+      <CardContent
+        className={cn("min-h-0 flex-1 overflow-auto", className)}
+        data-slot="console-panel-content"
+        {...props}
+      >
+        {children}
+      </CardContent>
+    );
+  }
+
   return (
     <CardContent
-      className={cn("min-h-0 flex-1 overflow-auto", className)}
+      className="min-h-0 flex-1 overflow-hidden p-0"
       data-slot="console-panel-content"
       {...props}
-    />
+    >
+      <ScrollArea
+        className="h-full"
+        contentClassName={cn("px-(--card-spacing)", className)}
+      >
+        {children}
+      </ScrollArea>
+    </CardContent>
   );
 }
 
