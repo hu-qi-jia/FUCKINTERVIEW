@@ -110,6 +110,28 @@ def _sanitize_chat(raw: Any) -> list[dict[str, str]]:
     return messages[-40:]
 
 
+def _sanitize_progress(raw: Any) -> dict[str, Any]:
+    """教练进度：0–100 的百分比 + 最多 3 条还缺的信息。"""
+    if not isinstance(raw, dict):
+        return {"percent": 0, "remaining": []}
+    try:
+        percent = int(raw.get("percent") or 0)
+    except (TypeError, ValueError):
+        percent = 0
+    percent = max(0, min(100, percent))
+
+    remaining: list[str] = []
+    items = raw.get("remaining")
+    if isinstance(items, list):
+        for item in items:
+            text = str(item or "").strip()
+            if text:
+                remaining.append(text[:40])
+            if len(remaining) >= 3:
+                break
+    return {"percent": percent, "remaining": remaining}
+
+
 def _new_profile(name: str) -> dict[str, Any]:
     now = _now()
     return {
@@ -120,6 +142,7 @@ def _new_profile(name: str) -> dict[str, Any]:
         "jobDescription": _new_material(),
         "cards": [],
         "coachChat": [],
+        "coachProgress": {"percent": 0, "remaining": []},
         "materialsRevision": 0,
         "createdAt": now,
         "updatedAt": now,
@@ -270,6 +293,8 @@ def update_profile(profile_id: str, patch: Any) -> dict[str, Any]:
             profile["cards"] = _sanitize_cards(patch["cards"])
         if "coachChat" in patch:
             profile["coachChat"] = _sanitize_chat(patch["coachChat"])
+        if "coachProgress" in patch:
+            profile["coachProgress"] = _sanitize_progress(patch["coachProgress"])
 
         if bumped:
             profile["materialsRevision"] = int(profile.get("materialsRevision") or 0) + 1

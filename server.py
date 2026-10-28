@@ -215,10 +215,10 @@ async def api_coach(profile_id: str, request: Request):
         payload = {}
     messages = payload.get("messages") if isinstance(payload, dict) else None
     try:
-        reply = await coach_reply(load_settings(), profile, messages)
+        result = await coach_reply(load_settings(), profile, messages)
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    return {"reply": reply}
+    return result
 
 
 @app.post("/api/profiles/{profile_id}/coach/apply")

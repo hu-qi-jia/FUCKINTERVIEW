@@ -39,6 +39,7 @@ export function CoachPanel({
 }) {
   const { t } = useTranslation();
   const messages = profile.coachChat ?? [];
+  const progress = profile.coachProgress ?? { percent: 0, remaining: [] };
   const readyCards = profile.cards.filter((card) => card.status === "ready");
 
   const [open, setOpen] = useState(false);
@@ -51,34 +52,114 @@ export function CoachPanel({
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
-  const ask = async (history: CoachMessage[]) => {
+  // 发送是排队处理的：AI 还在回复时再发一条不会被丢掉，回复到了再按顺序处理。
+  const sendingRef = useRef(false);
+  const queueRef = useRef<CoachMessage[]>([]);
+  const aliveRef = useRef(true);
+  useEffect(
+    () => () => {
+      aliveRef.current = false;
+    },
+    [],
+  );
+
+  const findIndex = (list: CoachMessage[], message: CoachMessage) => {
+    for (let index = 0; index < list.length; index += 1) {
+      if (
+        list[index].role === message.role &&
+        list[index].content === message.content
+      ) {
+        return index;
+      }
+    }
+    return -1;
+  };
+
+  const pump = async () => {
+    if (sendingRef.current) return;
+    const message = queueRef.current.shift();
+    if (!message) return;
+    sendingRef.current = true;
+    setSending(true);
+    setError(null);
+
+    const current = messagesRef.current;
+    const index = findIndex(current, message);
+    const history =
+      index >= 0 ? current.slice(0, index + 1) : [...current, message];
+
+    try {
+      const result = await coachReply(profile.id, history);
+      if (!aliveRef.current) return;
+      const after = messagesRef.current;
+      const at = findIndex(after, message);
+      const next = [...after];
+      next.splice(at >= 0 ? at + 1 : next.length, 0, {
+        role: "assistant",
+        content: result.reply,
+      });
+      onPatch({
+        coachChat: next,
+        coachProgress: {
+          percent: result.percent,
+          remaining: result.remaining,
+        },
+      });
+    } catch (cause) {
+      if (aliveRef.current) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    } finally {
+      sendingRef.current = false;
+      if (aliveRef.current) {
+        setSending(false);
+        void pump();
+      }
+    }
+  };
+
+  const openSession = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     setError(null);
     try {
-      const reply = await coachReply(profile.id, history);
+      const result = await coachReply(profile.id, []);
+      if (!aliveRef.current) return;
       onPatch({
-        coachChat: [...history, { role: "assistant", content: reply }],
+        coachChat: [
+          ...messagesRef.current,
+          { role: "assistant", content: result.reply },
+        ],
+        coachProgress: {
+          percent: result.percent,
+          remaining: result.remaining,
+        },
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (aliveRef.current) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
-      setSending(false);
+      sendingRef.current = false;
+      if (aliveRef.current) {
+        setSending(false);
+        void pump();
+      }
     }
   };
 
   const start = () => {
     setOpen(true);
     setProposal(null);
-    if (messagesRef.current.length === 0) void ask([]);
+    if (messagesRef.current.length === 0) void openSession();
   };
 
   const handleSend = async (text: string) => {
-    const next: CoachMessage[] = [
-      ...messagesRef.current,
-      { role: "user", content: text },
-    ];
-    onPatch({ coachChat: next });
-    await ask(next);
+    const message: CoachMessage = { role: "user", content: text };
+    queueRef.current.push(message);
+    onPatch({ coachChat: [...messagesRef.current, message] });
+    void pump();
   };
 
   const prepareApply = async () => {
@@ -177,6 +258,27 @@ export function CoachPanel({
           </Button>
         </ConsolePanelActions>
       </ConsolePanelHeader>
+
+      <div className="grid gap-1 px-(--card-spacing)">
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <span className="shrink-0">
+            {t("materials.coach.progress", { percent: progress.percent })}
+          </span>
+          <div className="bg-muted h-1 min-w-0 flex-1 overflow-hidden rounded-full">
+            <div
+              className="bg-primary h-full rounded-full transition-[width] duration-300"
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+        </div>
+        {progress.remaining.length > 0 && (
+          <p className="text-muted-foreground truncate text-xs">
+            {t("materials.coach.remaining", {
+              items: progress.remaining.join("、"),
+            })}
+          </p>
+        )}
+      </div>
 
       <div className="px-(--card-spacing)">
         <ScrollArea className="max-h-80" viewportRef={viewportRef}>

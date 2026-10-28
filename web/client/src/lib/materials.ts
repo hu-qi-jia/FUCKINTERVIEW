@@ -54,6 +54,8 @@ export interface InterviewProfile {
   cards: ExperienceCard[];
   /** 和 AI 完善档案的对话记录（老档案可能没有这个字段）。 */
   coachChat?: CoachMessage[];
+  /** 教练估的补齐进度。 */
+  coachProgress?: CoachProgress;
   materialsRevision: number;
   createdAt: string;
   updatedAt: string;
@@ -62,6 +64,17 @@ export interface InterviewProfile {
 export interface CoachMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+export interface CoachProgress {
+  percent: number;
+  remaining: string[];
+}
+
+export interface CoachReply {
+  reply: string;
+  percent: number;
+  remaining: string[];
 }
 
 /** 教练对话整理出的卡片更新；确认后由前端写回。 */
@@ -100,6 +113,7 @@ export interface ProfilePatch {
   jobDescription?: Partial<MaterialSection>;
   cards?: ExperienceCard[];
   coachChat?: CoachMessage[];
+  coachProgress?: CoachProgress;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -192,12 +206,8 @@ export async function generateSkill(
 export async function coachReply(
   id: string,
   messages: CoachMessage[],
-): Promise<string> {
-  const data = await request<{ reply: string }>(
-    `/api/profiles/${id}/coach`,
-    json("POST", { messages }),
-  );
-  return data.reply;
+): Promise<CoachReply> {
+  return request<CoachReply>(`/api/profiles/${id}/coach`, json("POST", { messages }));
 }
 
 export async function coachApply(
