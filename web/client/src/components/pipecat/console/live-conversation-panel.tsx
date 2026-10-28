@@ -90,6 +90,18 @@ export function LiveConversationPanel({
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
   }, [lines, interimText]);
 
+  // 拖动栏宽或缩放窗口后重新排版，只要还贴着底部就继续跟住最新消息。
+  React.useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      if (!stickToBottom.current) return;
+      element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const onScroll = () => {
     const element = scrollRef.current;
     if (!element) return;

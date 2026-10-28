@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TextInputView } from "@/components/pipecat/text-input";
+import {
+  ConsolePanel,
+  ConsolePanelActions,
+  ConsolePanelHeader,
+  ConsolePanelTitle,
+} from "@/components/pipecat/console/panel";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
@@ -127,34 +133,36 @@ export function CoachPanel({
 
   if (!open) {
     return (
-      <section className="mt-6 flex flex-wrap items-center gap-2 border-t pt-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{t("materials.coach.title")}</p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {readyCards.length > 0
-              ? t("materials.coach.hint")
-              : t("materials.coach.needCards")}
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy || readyCards.length === 0}
-          onClick={start}
-        >
-          {messages.length > 0
-            ? t("materials.coach.resume")
-            : t("materials.coach.start")}
-        </Button>
-      </section>
+      <ConsolePanel className="mt-6 h-auto">
+        <ConsolePanelHeader>
+          <ConsolePanelTitle>{t("materials.coach.title")}</ConsolePanelTitle>
+          <ConsolePanelActions>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || readyCards.length === 0}
+              onClick={start}
+            >
+              {messages.length > 0
+                ? t("materials.coach.resume")
+                : t("materials.coach.start")}
+            </Button>
+          </ConsolePanelActions>
+        </ConsolePanelHeader>
+        <p className="text-muted-foreground px-(--card-spacing) text-xs">
+          {readyCards.length > 0
+            ? t("materials.coach.hint")
+            : t("materials.coach.needCards")}
+        </p>
+      </ConsolePanel>
     );
   }
 
   return (
-    <section className="mt-6 grid gap-3 border-t pt-4">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{t("materials.coach.title")}</span>
-        <div className="ml-auto flex items-center gap-1.5">
+    <ConsolePanel className="mt-6 h-auto">
+      <ConsolePanelHeader>
+        <ConsolePanelTitle>{t("materials.coach.title")}</ConsolePanelTitle>
+        <ConsolePanelActions>
           <Button
             size="sm"
             variant="outline"
@@ -167,62 +175,70 @@ export function CoachPanel({
           <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
             {t("materials.coach.close")}
           </Button>
-        </div>
-      </div>
+        </ConsolePanelActions>
+      </ConsolePanelHeader>
 
-      <ScrollArea className="max-h-80" viewportRef={viewportRef}>
-        <div className="flex flex-col gap-2 pb-1">
-          {messages.map((message, index) => (
-            <div
-              key={`${index}-${message.role}`}
-              className={cn(
-                "flex",
-                message.role === "user" ? "justify-end" : "justify-start",
-              )}
-            >
+      <div className="px-(--card-spacing)">
+        <ScrollArea className="max-h-80" viewportRef={viewportRef}>
+          <div className="flex flex-col gap-2 pb-1">
+            {messages.map((message, index) => (
               <div
+                key={`${index}-${message.role}`}
                 className={cn(
-                  "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap",
-                  message.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-tr-sm"
-                    : "bg-muted rounded-tl-sm",
+                  "flex",
+                  message.role === "user" ? "justify-end" : "justify-start",
                 )}
               >
-                {message.content}
+                <div
+                  className={cn(
+                    "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap",
+                    message.role === "user"
+                      ? "bg-primary text-primary-foreground rounded-tr-sm"
+                      : "bg-muted rounded-tl-sm",
+                  )}
+                >
+                  {message.content}
+                </div>
               </div>
-            </div>
-          ))}
-          {sending && (
-            <p className="text-muted-foreground text-xs">
-              {t("materials.coach.thinking")}
-            </p>
-          )}
-        </div>
-      </ScrollArea>
+            ))}
+            {sending && (
+              <p className="text-muted-foreground text-xs">
+                {t("materials.coach.thinking")}
+              </p>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
 
       {proposal && (
-        <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs">
-          <span className="min-w-0 flex-1">
-            {t("materials.coach.confirm", { count: proposal.length })}
-          </span>
-          <Button size="xs" onClick={confirmApply}>
-            {t("materials.coach.confirmApply")}
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => setProposal(null)}>
-            {t("materials.coach.cancel")}
-          </Button>
+        <div className="px-(--card-spacing)">
+          <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs">
+            <span className="min-w-0 flex-1">
+              {t("materials.coach.confirm", { count: proposal.length })}
+            </span>
+            <Button size="xs" onClick={confirmApply}>
+              {t("materials.coach.confirmApply")}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => setProposal(null)}>
+              {t("materials.coach.cancel")}
+            </Button>
+          </div>
         </div>
       )}
 
-      <TextInputView
-        multiline
-        placeholder={t("materials.coach.placeholder")}
-        aria-label={t("materials.coach.placeholder")}
-        disabled={Boolean(proposal)}
-        onSend={handleSend}
-      />
+      <div className="border-t p-(--card-spacing)">
+        <TextInputView
+          multiline
+          placeholder={t("materials.coach.placeholder")}
+          aria-label={t("materials.coach.placeholder")}
+          disabled={Boolean(proposal)}
+          onSend={handleSend}
+        />
+      </div>
 
-      {error && <p className="text-destructive text-xs">{error}</p>}
-    </section>
+      {error && (
+        <p className="text-destructive px-(--card-spacing) text-xs">{error}</p>
+      )}
+    </ConsolePanel>
   );
 }

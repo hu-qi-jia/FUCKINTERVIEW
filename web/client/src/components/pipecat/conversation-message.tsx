@@ -397,6 +397,8 @@ export interface ConversationMessageItemProps {
   botOutputRenderers?: Record<string, BotOutputRenderer>;
   aggregationMetadata?: Record<string, AggregationMetadata>;
   textRenderMode?: TextRenderMode;
+  /** Hide the role label above the message (e.g. the answer pane). */
+  showRole?: boolean;
   className?: string;
 }
 
@@ -411,6 +413,7 @@ export function ConversationMessageItem({
   botOutputRenderers,
   aggregationMetadata,
   textRenderMode,
+  showRole = true,
   className,
 }: ConversationMessageItemProps) {
   if (message.role === "function_call" && message.functionCall) {
@@ -430,13 +433,15 @@ export function ConversationMessageItem({
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <MessageRole
-        role={message.role}
-        assistantLabel={assistantLabel}
-        clientLabel={clientLabel}
-        systemLabel={systemLabel}
-        functionCallLabel={functionCallLabel}
-      />
+      {showRole && (
+        <MessageRole
+          role={message.role}
+          assistantLabel={assistantLabel}
+          clientLabel={clientLabel}
+          systemLabel={systemLabel}
+          functionCallLabel={functionCallLabel}
+        />
+      )}
       <MessageContent
         message={message}
         botOutputRenderers={botOutputRenderers}

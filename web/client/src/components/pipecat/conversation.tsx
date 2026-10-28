@@ -100,6 +100,18 @@ export function ConversationView({
     element.scrollTop = reverseOrder ? 0 : element.scrollHeight;
   });
 
+  // 拖动栏宽或缩放窗口会重新排版；仍然贴着边缘时继续跟住最新内容。
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || noAutoscroll) return;
+    const observer = new ResizeObserver(() => {
+      if (!isScrolledToEdge.current) return;
+      element.scrollTop = reverseOrder ? 0 : element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [noAutoscroll, reverseOrder]);
+
   if (messages.length === 0) {
     return (
       <div

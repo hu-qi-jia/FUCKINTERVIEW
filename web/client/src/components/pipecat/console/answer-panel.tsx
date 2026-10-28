@@ -77,6 +77,7 @@ export function ConsoleAnswerPanel({
       <ConsolePanelContent scroll={false}>
         <Conversation
           roles={ANSWER_ROLES}
+          showRole={false}
           textRenderMode={renderMode}
           empty={
             <div className="text-muted-foreground text-sm">
