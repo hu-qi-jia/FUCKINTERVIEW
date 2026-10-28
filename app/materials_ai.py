@@ -169,6 +169,85 @@ async def plan_units(
 CARD_KEYS = ("facts", "defense", "pushback", "boundaries", "depth", "nextQuestion")
 
 
+# --------------------------------------------------------------------------
+# 实时面试：候选人视角的系统提示词
+# --------------------------------------------------------------------------
+LIVE_SYSTEM_TEMPLATE = """你正在参加一场真实的面试。你扮演候选人本人，面试官通过语音提问，
+你要用第一人称直接回答问题。
+
+铁律：
+1. 只使用 <profile> 里确认过的事实。材料没写的细节一律当作不知道，
+   不要编造项目、数据、职责、技术选型或上线细节。
+2. 不要加入你自己的观点、评价、建议或推测；不要评论问题本身，
+   不要复述或总结面试官的话，也不要反问（确需澄清时最多问一句）。
+3. 不夸大、不美化：没有量化结果就说没有；不是自己做的就说这部分由团队负责。
+4. 先给结论，再用一两句事实或机制支撑；一般 3–6 句，对方明显在深挖时再展开。
+5. 输出会直接显示为文字：不要 Markdown、列表、代码块或表情符号。
+6. 用{language}回答。"""
+
+LIVE_EMPTY_PROFILE = """<profile>
+（没有提供候选人档案。涉及个人经历的问题，如实说明你还需要结合具体材料，
+不要编造任何经历、数据或细节。）
+</profile>"""
+
+
+def _clip(value: Any, limit: int) -> str:
+    text = str(value or "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def build_live_system_prompt(profile: dict[str, Any] | None) -> str:
+    """实时面试用的系统提示词：候选人视角，且只依据档案事实。"""
+    if not profile:
+        return LIVE_SYSTEM_TEMPLATE.format(language=LANGUAGE_LABEL["zh"]) + "\n\n" + LIVE_EMPTY_PROFILE
+
+    language = str(profile.get("language") or "zh")
+    prompt = LIVE_SYSTEM_TEMPLATE.format(
+        language=LANGUAGE_LABEL.get(language, LANGUAGE_LABEL["zh"])
+    )
+
+    resume = _clip(profile.get("resume", {}).get("content"), 4000)
+    description = _clip(profile.get("jobDescription", {}).get("content"), 2000)
+
+    cards = sorted(
+        (card for card in profile.get("cards") or [] if card.get("status") == "ready"),
+        key=lambda card: int(card.get("position") or 0),
+    )
+
+    blocks: list[str] = []
+    budget = 12000
+    for card in cards:
+        body = card.get("body") or {}
+        chunk = "\n".join(
+            [
+                f"### {_clip(card.get('name'), 120)}",
+                _clip(card.get("description"), 600),
+                f"事实：{_clip(body.get('facts'), 700)}",
+                f"防守答案：{_clip(body.get('defense'), 900)}",
+                f"连续追问：{_clip(body.get('pushback'), 700)}",
+                f"边界：{_clip(body.get('boundaries'), 600)}",
+                f"深度：{_clip(body.get('depth'), 700)}",
+            ]
+        )
+        if len(chunk) > budget:
+            break
+        blocks.append(chunk)
+        budget -= len(chunk)
+
+    parts = ["<profile>"]
+    if resume:
+        parts.append(f"简历：\n{resume}")
+    if description:
+        parts.append(f"岗位描述：\n{description}")
+    if blocks:
+        parts.append("经历卡：\n\n" + "\n\n".join(blocks))
+    if not resume and not description and not blocks:
+        parts.append("（这份档案还没有填简历、岗位描述或经历卡。）")
+    parts.append("</profile>")
+
+    return prompt + "\n\n" + "\n\n".join(parts)
+
+
 async def generate_card(
     settings: dict[str, Any],
     *,

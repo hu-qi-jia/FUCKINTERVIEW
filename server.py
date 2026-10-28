@@ -43,6 +43,7 @@ from app.materials import (
     delete_profile,
     find_card,
     get_profile,
+    latest_profile,
     list_profiles,
     open_folder,
     set_data_dir,
@@ -50,7 +51,12 @@ from app.materials import (
     update_card,
     update_profile,
 )
-from app.materials_ai import consolidate, generate_card, plan_units
+from app.materials_ai import (
+    build_live_system_prompt,
+    consolidate,
+    generate_card,
+    plan_units,
+)
 from app.ai import LLMError
 from app.providers import build_llm, build_stt, build_tts
 
@@ -283,6 +289,17 @@ class TextOnlyOutput(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+def _live_profile(body: dict) -> dict | None:
+    """实时面试要用的档案：优先用前端传来的 profileId，否则取最近编辑的一份。"""
+    profile_id = str(body.get("profileId") or "").strip()
+    if profile_id:
+        try:
+            return get_profile(profile_id)
+        except KeyError:
+            logger.warning(f"实时面试找不到档案 {profile_id}，改用最近编辑的一份")
+    return latest_profile()
+
+
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     settings = load_settings()
     body = runner_args.body if isinstance(runner_args.body, dict) else {}
@@ -302,7 +319,20 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         # live 模式用不到 TTS：答案只以文本形式推给前端。
         # listen 是实时面试的第二路（麦克风），只做转写。
-        llm = build_llm(settings["llm"]) if mode != "listen" else None
+        # live 用「候选人视角」的提示词，并把绑定档案的事实塞进去；
+        # mock 仍然用设置页里那份面试官提示词。
+        if mode == "listen":
+            llm = None
+        elif mode == "live":
+            profile = _live_profile(body)
+            llm_settings = dict(settings["llm"])
+            llm_settings["system_prompt"] = build_live_system_prompt(profile)
+            logger.info(
+                f"Live interview profile={(profile or {}).get('name') or '(none)'}"
+            )
+            llm = build_llm(llm_settings)
+        else:
+            llm = build_llm(settings["llm"])
         tts = build_tts(settings["tts"], session) if mode == "mock" else None
 
         context = LLMContext()

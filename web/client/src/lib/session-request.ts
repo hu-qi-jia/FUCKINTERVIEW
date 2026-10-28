@@ -12,13 +12,18 @@ export const WEBRTC_REQUEST_DATA = {
 
 /**
  * `/start` request for one session. The runner only forwards `body` to the
- * bot, so the mode must live there.
+ * bot, so the mode (and any extra fields such as the bound interview
+ * profile) must live there.
  */
-export function startBotParams(mode?: SessionMode): APIRequest {
+export function startBotParams(
+  mode?: SessionMode,
+  extraBody?: Record<string, string>,
+): APIRequest {
+  const body = mode ? { mode, ...extraBody } : extraBody;
   return {
     endpoint: "/start",
-    requestData: mode
-      ? { ...WEBRTC_REQUEST_DATA, body: { mode } }
+    requestData: body
+      ? { ...WEBRTC_REQUEST_DATA, body }
       : { ...WEBRTC_REQUEST_DATA },
   };
 }

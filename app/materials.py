@@ -192,6 +192,15 @@ def get_profile(profile_id: str) -> dict[str, Any]:
         return _find(_read_store(), profile_id)
 
 
+def latest_profile() -> dict[str, Any] | None:
+    """最近编辑过的一份档案；没有档案时返回 None。"""
+    with _lock:
+        profiles = _read_store()["profiles"]
+    if not profiles:
+        return None
+    return max(profiles, key=lambda profile: str(profile.get("updatedAt") or ""))
+
+
 def _apply_material(current: dict[str, Any], incoming: Any) -> tuple[dict[str, Any], bool]:
     incoming = incoming if isinstance(incoming, dict) else {}
     original = str(current.get("original") or "")

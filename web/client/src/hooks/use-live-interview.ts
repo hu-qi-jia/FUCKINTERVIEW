@@ -24,7 +24,12 @@ import { SystemAudioMediaManager } from "@/lib/system-audio-media-manager";
  * user gesture, and the system-audio track has to exist before the transport
  * negotiates.
  */
-export function useLiveInterview() {
+export function useLiveInterview({
+  profileId,
+}: {
+  /** 实时面试绑定的面试档案；随 /start 下发给后端。 */
+  profileId?: string | null;
+} = {}) {
   const { t } = useTranslation();
   const managerRef = useRef<SystemAudioMediaManager | null>(null);
   if (!managerRef.current) managerRef.current = new SystemAudioMediaManager();
@@ -86,7 +91,10 @@ export function useLiveInterview() {
     [manager],
   );
 
-  const liveStartBotParams = buildStartBotParams("live");
+  const liveStartBotParams = buildStartBotParams(
+    "live",
+    profileId ? { profileId } : undefined,
+  );
 
   const stopCapture = useCallback(() => {
     manager.stop();

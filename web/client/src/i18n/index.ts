@@ -42,6 +42,11 @@ const zh = {
       missingResume: "未填简历",
       missingJobDescription: "未填岗位描述",
     },
+    liveProfile: {
+      label: "面试档案",
+      empty: "没有面试档案",
+      hint: "实时面试按这份档案的事实回答，下次连接生效。",
+    },
     empty: {
       title: "还没有面试档案",
       hint: "一份档案对应一个岗位：命名、填简历和岗位描述，再生成经历卡。",
@@ -405,6 +410,11 @@ const en = {
       cards: "{{count}} cards",
       missingResume: "No resume",
       missingJobDescription: "No job description",
+    },
+    liveProfile: {
+      label: "Profile",
+      empty: "No profiles",
+      hint: "Live answers are grounded in this profile; applies on the next connect.",
     },
     empty: {
       title: "No interview profiles yet",

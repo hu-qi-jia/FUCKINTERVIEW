@@ -16,6 +16,7 @@ import {
   SidebarDevices,
 } from "@/components/app-device-dock";
 import { MaterialsPage } from "@/components/materials/materials-page";
+import { LiveProfileSelect } from "@/components/materials/live-profile-select";
 import { Console, type ConsoleProps } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
 import { AppSidebar, type AppPage } from "@/components/app-sidebar";
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLiveInterview } from "@/hooks/use-live-interview";
+import { readLiveProfileId, saveLiveProfileId } from "@/lib/live-profile";
 import {
   readCaptureMic,
   readDeviceId,
@@ -132,7 +134,15 @@ function Home() {
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureMic, setCaptureMic] = useState(readCaptureMic);
-  const live = useLiveInterview();
+  const [liveProfileId, setLiveProfileId] = useState<string | null>(
+    readLiveProfileId,
+  );
+  const live = useLiveInterview({ profileId: liveProfileId });
+
+  const handleLiveProfileChange = (id: string | null) => {
+    setLiveProfileId(id);
+    saveLiveProfileId(id);
+  };
 
   const handleCaptureMicChange = (value: boolean) => {
     setCaptureMic(value);
@@ -276,6 +286,12 @@ function Home() {
   const liveHeaderSlot = (
     <>
       <div id={HEADER_SLOT} />
+      <LiveProfileSelect
+        className="hidden md:flex"
+        dataVersion={dataVersion}
+        value={liveProfileId}
+        onChange={handleLiveProfileChange}
+      />
       {pageSwitch}
       {settingsButton}
     </>
