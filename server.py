@@ -56,6 +56,7 @@ from app.materials_ai import (
     COACH_DIMENSION_LABELS,
     build_live_system_prompt,
     coach_apply,
+    coach_extract_coverage,
     coach_reply,
     consolidate,
     generate_card,
@@ -256,6 +257,21 @@ async def api_coach(profile_id: str, request: Request):
     intent = payload.get("intent") if isinstance(payload, dict) else None
     if intent not in ("continue", "skip", "resume"):
         intent = None
+
+    # 老档案没有覆盖表：先用历史对话补一次，进度才不会从 0 开始重算。
+    history = messages if isinstance(messages, list) else []
+    if not (profile.get("coachCoverage") or {}) and len(history) >= 2:
+        try:
+            inferred = await coach_extract_coverage(load_settings(), profile, history)
+        except LLMError:
+            inferred = {}
+        if inferred:
+            profile = {**profile, "coachCoverage": inferred}
+            try:
+                update_profile(profile_id, {"coachCoverage": inferred})
+            except (KeyError, ValueError):
+                pass
+
     try:
         result = await coach_reply(load_settings(), profile, messages, intent)
     except LLMError as e:

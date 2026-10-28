@@ -311,6 +311,67 @@ _CONTINUE_HINT = (
     "也不要复述或评价。）"
 )
 
+COACH_EXTRACT_SYSTEM = """你在整理一次面试备战对话的进度：根据 <conversation> 判断每张经历卡
+已经确认了哪些维度。
+
+规则：
+1. 只有用户明确给出具体事实（数字、动作、方案、时间、分工、验证方式）才算确认；
+   教练的问句、用户的含糊回答、反问都不算。
+2. 维度只能取：scale / actions / team / mechanism / verification / reflection，
+   分别对应 规模与数据口径 / 你具体做了什么 / 团队分工与你的边界 / 技术或流程细节 /
+   结果怎么验证 / 如果重做会怎么改。
+3. 某张卡没有确认任何维度就不要出现在结果里。
+
+只输出 JSON：{{"coverage": {{"经历卡 slug": ["scale", "actions"]}}}}"""
+
+
+async def coach_extract_coverage(
+    settings: dict[str, Any],
+    profile: dict[str, Any],
+    messages: Any,
+) -> dict[str, list[str]]:
+    """把旧对话里已经确认过的维度补进覆盖表（老档案第一次续聊时用）。"""
+    ready = [card for card in profile.get("cards") or [] if card.get("status") == "ready"]
+    history = _conversation_messages(messages)
+    if not ready or not history:
+        return {}
+
+    cards = "\n".join(
+        f"- {card.get('name') or '经历卡'}（slug: {card.get('slug')}）" for card in ready
+    )
+    conversation = "\n".join(
+        f"{'候选人' if item['role'] == 'user' else '教练'}：{item['content']}"
+        for item in history
+    )[-8000:]
+    user = f"<cards>\n{cards}\n</cards>\n\n<conversation>\n{conversation}\n</conversation>"
+
+    data = await complete_json(
+        _section(settings),
+        [{"role": "system", "content": COACH_EXTRACT_SYSTEM}, {"role": "user", "content": user}],
+        max_tokens=800,
+    )
+
+    valid = {str(card.get("slug")) for card in ready}
+    raw = data.get("coverage")
+    result: dict[str, list[str]] = {}
+    if not isinstance(raw, dict):
+        return result
+    for slug, keys in raw.items():
+        name = str(slug or "").strip()
+        if name not in valid or not isinstance(keys, list):
+            continue
+        cleaned: list[str] = []
+        for key in keys:
+            value = str(key or "").strip()
+            if value in COACH_DIMENSION_LABELS and value not in cleaned:
+                cleaned.append(value)
+            if len(cleaned) >= len(COACH_DIMENSION_KEYS):
+                break
+        if cleaned:
+            result[name] = cleaned
+    return result
+
+
 COACH_APPLY_SYSTEM = """你是一名面试档案编辑器。根据 <conversation> 里新确认的事实，更新 <cards> 里的经历卡。
 
 规则：
