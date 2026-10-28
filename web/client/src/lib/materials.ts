@@ -207,7 +207,7 @@ export async function generateSkill(
   );
 }
 
-export type CoachIntent = "continue" | "skip";
+export type CoachIntent = "continue" | "skip" | "resume";
 
 export async function coachReply(
   id: string,

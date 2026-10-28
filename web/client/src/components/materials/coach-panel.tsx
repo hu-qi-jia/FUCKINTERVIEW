@@ -123,13 +123,14 @@ export function CoachPanel({
     }
   };
 
-  const openSession = async () => {
+  const openSession = async (intent?: CoachIntent) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
     setError(null);
     try {
-      const result = await coachReply(profile.id, []);
+      const history = intent === "resume" ? messagesRef.current : [];
+      const result = await coachReply(profile.id, history, intent);
       if (!aliveRef.current) return;
       onPatch({
         coachChat: [
@@ -158,7 +159,8 @@ export function CoachPanel({
   const start = () => {
     setOpen(true);
     setProposal(null);
-    if (messagesRef.current.length === 0) void openSession();
+    // 有历史时让 AI 先回看对话，再接着问下一个问题；没有历史就从头开始。
+    void openSession(messagesRef.current.length > 0 ? "resume" : undefined);
   };
 
   const enqueue = (text: string, intent?: CoachIntent) => {
@@ -335,25 +337,6 @@ export function CoachPanel({
               {t("materials.coach.cancel")}
             </Button>
           </div>
-        </div>
-      )}
-
-      {messages.length > 0 && !proposal && (
-        <div className="flex flex-wrap items-center gap-1.5 px-(--card-spacing)">
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => enqueue(t("materials.coach.continueDeep"), "continue")}
-          >
-            {t("materials.coach.continueDeep")}
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => enqueue(t("materials.coach.skipMessage"), "skip")}
-          >
-            {t("materials.coach.skip")}
-          </Button>
         </div>
       )}
 

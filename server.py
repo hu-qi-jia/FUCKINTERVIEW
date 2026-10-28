@@ -254,7 +254,7 @@ async def api_coach(profile_id: str, request: Request):
         payload = {}
     messages = payload.get("messages") if isinstance(payload, dict) else None
     intent = payload.get("intent") if isinstance(payload, dict) else None
-    if intent not in ("continue", "skip"):
+    if intent not in ("continue", "skip", "resume"):
         intent = None
     try:
         result = await coach_reply(load_settings(), profile, messages, intent)
