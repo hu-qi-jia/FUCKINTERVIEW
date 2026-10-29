@@ -388,12 +388,12 @@ const zh = {
     },
     storage: {
       apply: "应用",
-      open: "打开文件夹",
-      hint: "面试档案和问答库保存在 {{file}} 所在目录。切换目录会把现有数据复制过去，旧文件保留为备份。",
+      pick: "选择文件夹",
+      hint: "切换时会把现有数据复制过去，旧文件保留备份。",
       saved: "已切换数据目录",
     },
     modelDir: {
-      hint: "向量模型缓存在这里，不进数据目录——它是二进制资产，不需要跟着数据走。首次使用需要联网下载（约 90MB）。",
+      hint: "向量模型缓存目录，首次使用会自动下载（约 90MB）。",
       saved: "已切换模型目录",
     },
     embedding: {
@@ -888,12 +888,12 @@ const en = {
     },
     storage: {
       apply: "Apply",
-      open: "Open folder",
-      hint: "Interview profiles and the question bank live in the folder containing {{file}}. Switching folders copies the existing data and keeps the old one as a backup.",
+      pick: "Choose folder",
+      hint: "Switching copies the existing data over and keeps a backup.",
       saved: "Data folder updated",
     },
     modelDir: {
-      hint: "The embedding model is cached here, outside the data folder — it's a binary asset that doesn't need to travel with your data. The first use downloads about 90MB.",
+      hint: "Cache folder for the embedding model; downloaded on first use (~90MB).",
       saved: "Model folder updated",
     },
     embedding: {

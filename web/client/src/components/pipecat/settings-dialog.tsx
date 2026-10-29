@@ -26,10 +26,9 @@ import {
 import { LANGUAGES, setLanguage, type AppLanguage } from "@/i18n";
 import {
   fetchStorage,
-  openStorageFolder,
+  pickFolder,
   saveModelDir,
   saveStorage,
-  type StorageInfo,
 } from "@/lib/materials";
 import { qaStats, reindexQa, type QaStats } from "@/lib/qa";
 import type { ThemeMode } from "@/lib/theme";
@@ -70,6 +69,26 @@ function Field({
     <label className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
+    </label>
+  );
+}
+
+/** 开关类设置：标题和开关同一行，标签可点。以后新增开关也用它。 */
+function SwitchRow({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex min-h-8 items-center justify-between gap-3">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} />
     </label>
   );
 }
@@ -122,7 +141,6 @@ export function SettingsDialog({
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"general" | "models">("general");
-  const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [storageDir, setStorageDir] = useState("");
   const [storageBusy, setStorageBusy] = useState(false);
   const [storageMessage, setStorageMessage] = useState("");
@@ -164,7 +182,6 @@ export function SettingsDialog({
     fetchStorage()
       .then((info) => {
         if (cancelled) return;
-        setStorage(info);
         setStorageDir(info.dataDir);
         setModelDir(info.modelDir ?? "");
       })
@@ -186,7 +203,6 @@ export function SettingsDialog({
     setStorageFailed(false);
     try {
       const info = await saveStorage(value, true);
-      setStorage(info);
       setStorageDir(info.dataDir);
       setStorageMessage(t("settings.storage.saved"));
     } catch (error) {
@@ -197,14 +213,25 @@ export function SettingsDialog({
     }
   }, [storageDir, t]);
 
-  const revealStorage = useCallback(async () => {
+  const pickStorageDir = useCallback(async () => {
     try {
-      await openStorageFolder();
+      const path = await pickFolder(storageDir);
+      if (path) setStorageDir(path);
     } catch (error) {
       setStorageFailed(true);
       setStorageMessage(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [storageDir]);
+
+  const pickModelDir = useCallback(async () => {
+    try {
+      const path = await pickFolder(modelDir);
+      if (path) setModelDir(path);
+    } catch (error) {
+      setModelFailed(true);
+      setModelMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, [modelDir]);
 
   useEffect(() => {
     if (!open) return;
@@ -227,7 +254,6 @@ export function SettingsDialog({
     setModelFailed(false);
     try {
       const info = await saveModelDir(value);
-      setStorage(info);
       setModelDir(info.modelDir ?? value);
       setModelMessage(t("settings.modelDir.saved"));
     } catch (error) {
@@ -454,14 +480,11 @@ export function SettingsDialog({
                 </Select>
               </Field>
 
-              <Field label={t("settings.fields.captureMic")}>
-                <div className="flex h-8 items-center">
-                  <Switch
-                    checked={captureMic}
-                    onCheckedChange={onCaptureMicChange}
-                  />
-                </div>
-              </Field>
+              <SwitchRow
+                label={t("settings.fields.captureMic")}
+                checked={captureMic}
+                onChange={onCaptureMicChange}
+              />
 
               <Separator className="my-1" />
 
@@ -483,16 +506,16 @@ export function SettingsDialog({
                         <Button
                           size="icon"
                           variant="outline"
-                          aria-label={t("settings.storage.open")}
+                          aria-label={t("settings.storage.pick")}
                           disabled={storageBusy}
-                          onClick={() => void revealStorage()}
+                          onClick={() => void pickStorageDir()}
                         />
                       }
                     >
                       <FolderOpenIcon />
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      {t("settings.storage.open")}
+                      {t("settings.storage.pick")}
                     </TooltipContent>
                   </Tooltip>
                   <Button
@@ -506,7 +529,7 @@ export function SettingsDialog({
                   </Button>
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t("settings.storage.hint", { file: storage?.file ?? "" })}
+                  {t("settings.storage.hint")}
                 </p>
                 {storageMessage && (
                   <span
@@ -533,6 +556,24 @@ export function SettingsDialog({
                     onChange={(event) => setModelDir(event.target.value)}
                     className="h-8 min-w-0 flex-1"
                   />
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          aria-label={t("settings.storage.pick")}
+                          disabled={modelBusy}
+                          onClick={() => void pickModelDir()}
+                        />
+                      }
+                    >
+                      <FolderOpenIcon />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {t("settings.storage.pick")}
+                    </TooltipContent>
+                  </Tooltip>
                   <Button
                     variant="outline"
                     className="h-8"

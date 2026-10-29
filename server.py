@@ -11,6 +11,7 @@ import aiohttp
 from fastapi import File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from loguru import logger
+from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -49,6 +50,7 @@ from app.materials import (
     latest_profile,
     list_profiles,
     open_folder,
+    pick_folder,
     set_data_dir,
     storage_info,
     update_card,
@@ -367,6 +369,23 @@ async def api_set_storage(request: Request):
         qa_index.invalidate()
 
     return _storage_payload()
+
+
+@app.post("/api/storage/pick")
+async def api_pick_folder(request: Request):
+    """弹系统文件夹选择器，返回选中的路径（取消时为空串）。"""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    initial = ""
+    if isinstance(payload, dict):
+        initial = str(payload.get("path") or "").strip()
+    try:
+        path = await run_in_threadpool(pick_folder, initial)
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"path": path}
 
 
 @app.post("/api/storage/open")

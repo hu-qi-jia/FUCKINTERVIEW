@@ -506,7 +506,8 @@ export function QaLibrary({
                             {item.answer}
                           </p>
 
-                          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                          {/* 负 margin 抵掉第一个 chip 的内边距，让标签文字和上面的标题对齐 */}
+                          <div className="-ml-1.5 mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
                             <TypeBadge type={item.type} />
                             {item.category && (
                               <span className="text-muted-foreground text-[11px] leading-none">

@@ -253,6 +253,15 @@ export async function openStorageFolder(): Promise<void> {
   await request<{ ok: boolean }>("/api/storage/open", { method: "POST" });
 }
 
+/** 弹出系统文件夹选择器；用户取消时返回空串。 */
+export async function pickFolder(initial: string): Promise<string> {
+  const data = await request<{ path: string }>(
+    "/api/storage/pick",
+    json("POST", { path: initial }),
+  );
+  return data.path ?? "";
+}
+
 /** 只改模型缓存目录，数据目录不动。 */
 export async function saveModelDir(modelDir: string): Promise<StorageInfo> {
   return request<StorageInfo>("/api/storage", json("PUT", { modelDir }));

@@ -480,3 +480,41 @@ def open_folder() -> None:
         subprocess.Popen(["open", str(target)])
     else:
         subprocess.Popen(["xdg-open", str(target)])
+
+
+_pick_lock = threading.Lock()
+
+
+def pick_folder(initial: str = "") -> str:
+    """弹出系统文件夹选择器，返回选中的路径；取消时返回空串。
+
+    单机应用，对话框开在这台电脑上。tkinter 是标准库自带的，不引入额外依赖；
+    它不能同时开两个对话框，用锁串起来。
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError as error:  # 精简过的 Python 可能没有 tkinter
+        raise OSError("当前 Python 没有 tkinter，无法弹出文件夹选择器") from error
+
+    start = initial.strip() if initial else ""
+    with _pick_lock:
+        try:
+            root = tk.Tk()
+        except Exception as error:  # 没有图形界面
+            raise OSError(f"无法打开文件夹选择器：{error}") from error
+        try:
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+                root.update()
+            except tk.TclError:
+                pass
+            chosen = filedialog.askdirectory(
+                parent=root,
+                title="选择文件夹",
+                initialdir=start if start and Path(start).is_dir() else None,
+            )
+        finally:
+            root.destroy()
+    return str(chosen or "").strip()
