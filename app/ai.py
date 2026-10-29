@@ -17,6 +17,10 @@ from loguru import logger
 
 DEFAULT_TIMEOUT_SECONDS = 120
 
+# Anthropic 的 max_tokens 是必填项，只能给一个够大的值；
+# OpenAI 兼容接口则不传这个字段，让服务商自己按模型上限决定。
+ANTHROPIC_MAX_OUTPUT = 8192
+
 
 class LLMError(RuntimeError):
     """调用失败：未配置、HTTP 错误或返回内容不可用。"""
@@ -38,13 +42,13 @@ async def complete(
     messages: list[dict[str, str]],
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
-    max_tokens: int = 4096,
+    max_tokens: int | None = None,
     attempts: int = 2,
 ) -> str:
     """调一次模型拿文本。
 
-    空回复是兼容接口的偶发抖动（200，但 content 为空），重试一次基本都能拿到；
-    被 max_tokens 截断属于确定性问题，不重试，直接把原因报出来。
+    默认不限制输出长度（不传 max_tokens），由服务商按模型上限决定；
+    兼容接口的偶发空回复会自动重试一次，真被截断则直接报原因。
     """
     last: LLMError | None = None
     for attempt in range(max(1, attempts)):
@@ -67,7 +71,7 @@ async def _complete_once(
     messages: list[dict[str, str]],
     *,
     timeout: float,
-    max_tokens: int,
+    max_tokens: int | None,
 ) -> str:
     provider = str(section.get("provider") or "openai_compatible")
     if provider == "anthropic":
@@ -80,7 +84,7 @@ async def _openai_compatible(
     messages: list[dict[str, str]],
     *,
     timeout: float,
-    max_tokens: int,
+    max_tokens: int | None,
 ) -> str:
     provider = str(section.get("provider") or "openai_compatible")
     if provider == "qwen":
@@ -98,13 +102,14 @@ async def _openai_compatible(
     if not url.endswith("/chat/completions"):
         url = f"{url}/chat/completions"
 
-    payload = {
+    payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": max_tokens,
         "stream": False,
     }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
@@ -140,7 +145,7 @@ async def _anthropic(
     messages: list[dict[str, str]],
     *,
     timeout: float,
-    max_tokens: int,
+    max_tokens: int | None,
 ) -> str:
     key = _require_key(section, "LLM (Anthropic)", "ANTHROPIC_API_KEY")
     base_url = str(section.get("base_url") or "").strip() or "https://api.anthropic.com"
@@ -163,7 +168,8 @@ async def _anthropic(
 
     payload: dict[str, Any] = {
         "model": model,
-        "max_tokens": max_tokens,
+        # 这个字段在 Anthropic 上是必填的，不限制时给一个足够大的值。
+        "max_tokens": max_tokens or ANTHROPIC_MAX_OUTPUT,
         "messages": conversation,
     }
     if system:
@@ -274,7 +280,7 @@ async def complete_json(
     messages: list[dict[str, str]],
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
-    max_tokens: int = 4096,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
     """要结构化输出；解析失败时用纠正提示重试一次。"""
     raw = await complete(section, messages, timeout=timeout, max_tokens=max_tokens)
