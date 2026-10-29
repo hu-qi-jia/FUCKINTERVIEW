@@ -191,7 +191,8 @@ export function MaterialsPage({
       <div className="shrink-0 pt-4">
         <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-4">
           <Tabs value={segment} onValueChange={changeSegment}>
-            <TabsList className="h-8">
+            {/* p-0：滑块容器去掉默认的 3px 内边距，让选中块和下面的卡片左边缘对齐 */}
+            <TabsList className="h-8 overflow-hidden p-0">
               <TabsTrigger value="profiles" className="px-2.5">
                 {t("materials.tabs.profiles")}
               </TabsTrigger>
