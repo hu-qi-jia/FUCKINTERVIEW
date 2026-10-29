@@ -27,10 +27,18 @@ export interface TtsSettings {
   language: string;
 }
 
+export interface EmbeddingSettings {
+  /** 本地向量模型名，默认 BAAI/bge-small-zh-v1.5（ONNX，不需要 torch）。 */
+  model: string;
+  /** 实时面试里「命中即直出」的相似度阈值，本期只存不用。 */
+  relevance_threshold?: number;
+}
+
 export interface AppSettings {
   asr: AsrSettings;
   llm: LlmSettings;
   tts: TtsSettings;
+  embedding: EmbeddingSettings;
 }
 
 export interface ProviderMeta {

@@ -99,6 +99,8 @@ export interface StorageInfo {
   file: string;
   exists: boolean;
   fileExists: boolean;
+  /** 向量模型缓存目录（独立于数据目录）。 */
+  modelDir?: string;
 }
 
 export type MaterialKind = "resume" | "jobDescription";
@@ -249,6 +251,11 @@ export async function saveStorage(
 
 export async function openStorageFolder(): Promise<void> {
   await request<{ ok: boolean }>("/api/storage/open", { method: "POST" });
+}
+
+/** 只改模型缓存目录，数据目录不动。 */
+export async function saveModelDir(modelDir: string): Promise<StorageInfo> {
+  return request<StorageInfo>("/api/storage", json("PUT", { modelDir }));
 }
 
 /** 空卡片（手动新增时用）。 */

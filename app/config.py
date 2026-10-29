@@ -42,13 +42,20 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "group_id": "",
         "language": "zh",
     },
+    # 问答库的向量化配置。模型在本地跑，不依赖任何 API。
+    "embedding": {
+        "model": "BAAI/bge-small-zh-v1.5",
+        "relevance_threshold": 0.75,
+    },
     # 面试档案（以及以后的问答库、热词库）存放的目录；相对路径按项目根目录解析。
+    # model_dir 单独放：模型是二进制资产，不该跟着用户数据迁移。
     "storage": {
         "data_dir": "config",
+        "model_dir": "config/models",
     },
 }
 
-SECTIONS = ("asr", "llm", "tts")
+SECTIONS = ("asr", "llm", "tts", "embedding")
 
 
 def _merge(defaults: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -114,6 +121,14 @@ def save_settings(incoming: dict[str, Any]) -> dict[str, Any]:
 def save_storage(data_dir: str) -> dict[str, Any]:
     """只更新数据目录，其余配置保持不动。"""
     settings = load_settings()
-    settings["storage"] = {"data_dir": data_dir}
+    settings["storage"] = {**settings.get("storage", {}), "data_dir": data_dir}
+    _write_settings(settings)
+    return settings
+
+
+def save_model_dir(model_dir: str) -> dict[str, Any]:
+    """只更新模型缓存目录，数据目录不动。"""
+    settings = load_settings()
+    settings["storage"] = {**settings.get("storage", {}), "model_dir": model_dir}
     _write_settings(settings)
     return settings

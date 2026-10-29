@@ -14,12 +14,18 @@
 │   ├── providers.py             # 按配置构建 STT / LLM / TTS
 │   ├── materials.py             # 面试档案的本地 JSON 存储与数据目录
 │   ├── materials_ai.py          # 简历整合 / 经历单元 / 经历卡的提示词
+│   ├── qa.py                    # 问答库的 SQLite 存储、全文索引、去重
+│   ├── qa_index.py              # 向量模型、后台索引线程、混合检索
+│   ├── qa_import.py             # xlsx / csv / md 的解析、预览与导入
 │   ├── ai.py                    # 直接调用配置里的 LLM（不经过语音 pipeline）
 │   └── services/
 │       ├── qwen_stt.py          # Qwen ASR（DashScope OpenAI 兼容接口）
 │       └── qwen_tts.py          # Qwen TTS（DashScope 多模态生成接口）
 ├── config/settings.json         # 运行时配置（含密钥，勿提交）
 ├── config/profiles.json         # 面试档案（含个人简历，勿提交）
+├── config/qa.db                 # 问答库（SQLite，勿提交）
+├── config/models/               # 向量模型缓存（约 90MB，勿提交）
+├── docs/qa-library-design.md    # 问答库的设计说明
 ├── web/client/                  # 前端源码（pipecat-prebuilt 的 React 应用）
 │   └── dist/                    # npm run build 产物，server.py 托管在 /client
 ├── pipecat/                     # Pipecat 源码（editable 安装）
@@ -62,8 +68,8 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 ## 面试材料
 
-侧栏第三项「面试材料」，顶部滑块分三段：**面试档案**、问答库、热词库；本期只实现面试档案，
-后两段是占位页。
+侧栏第三项「面试材料」，顶部滑块分三段：**面试档案**、**问答库**、热词库。
+热词库仍是占位页，问答库见下一节。
 
 面试档案支持多份（一个岗位一份），页面是自上而下的五步流程图：
 
@@ -101,6 +107,50 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 实时面试页顶栏可以选一份档案：连接时把 `profileId` 随 `/start` 下发，后端用候选人视角的提示词把
 简历、岗位描述和已生成的经历卡拼进上下文（见上一节）。
+
+## 问答库
+
+「面试材料 → 问答库」是你自己整理的面试问答。一条 = **主问题 + 答案 + 别名问法 + 标签 +
+分类 / 类型 / 熟练度**，存在 `config/qa.db`（SQLite 单文件），和 `profiles.json` 同住数据目录。
+按档案隔离预留了 `profile_id` 字段，本期按全局一个库使用。
+
+**三种检索同时生效**：
+
+- **语义**：本地向量模型 `BAAI/bge-small-zh-v1.5`（512 维，ONNX，**不需要 torch**），
+  主问题和每个别名各算一条向量，检索时取最高分——所以「简单介绍一下你自己」能命中
+  「请做一下自我介绍」
+- **关键词**：SQLite 自带的 FTS5（`trigram` 分词器，中文不需要 jieba）。两字词低于 trigram
+  的 3 字符下限，会自动退化成子串扫描
+- **分类 / 类型 / 标签**：普通筛选，用于浏览
+
+两路召回用 RRF 融合后排序，页面上显示的是余弦相似度。检索是**问题对问题**，所以查询侧不加
+bge 的指令前缀（实测加了反而把同义问题的相似度从 0.82 压到 0.70）。答案也向量化，
+但只用于页面内的答案侧搜索，不参与问题检索。
+
+**导入**支持 Excel（`.xlsx`）、CSV 和 Markdown，页面里有模板下载：
+
+| 列 | 说明 |
+| --- | --- |
+| 问题 / 答案 | 必填 |
+| 别名 / 标签 | 多个用 `\|` 或 `;` 分隔 |
+| 分类 | 自由文本 |
+| 类型 | 通用 / 行为面 / 知识 / 项目技术 |
+| 熟练度 | 1–5 |
+
+Markdown 用 `# 分类` + `## 问题` + 紧随其后的 `> 别名: …` 元数据行，正文到下一个标题为止。
+导入前会出**预览**：新增 / 更新（主问题归一化后同名）/ 跳过（内容完全相同）/ 疑似重复
+（问法不同但向量相似度 > 0.95，只提示不合并）。确认后可选「撤销新增」删掉这一批新加的条目。
+
+**索引是后台异步算的**：保存或导入只写库、界面立刻返回，向量由一条后台线程补算，
+列表上用小圆点显示「已索引 / 待索引 / 失败」。模型常驻内存（约 200MB），首次使用会从
+`hf-mirror.com` 下载约 90MB（HuggingFace 直连不通），缓存在 `config/models`，
+可在「设置 → 通用设置 → 模型目录」换位置；**模型不进数据目录**，因为它是二进制资产。
+
+「类型」这一栏是给下一期用的：实时面试接上以后，`通用 / 行为面 / 知识` 命中就原样贴出你写的
+答案，`项目技术` 永远走 LLM + 档案——避免库里的标准答案盖掉你项目卡里更具体的细节。
+本期只做到页面和检索接口（`POST /api/qa/search`）。
+
+完整表结构与设计取舍见 [docs/qa-library-design.md](docs/qa-library-design.md)。
 
 ## 设置页
 

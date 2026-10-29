@@ -8,7 +8,7 @@
 from pathlib import Path
 
 import aiohttp
-from fastapi import HTTPException, Request
+from fastapi import File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from loguru import logger
 from starlette.staticfiles import StaticFiles
@@ -36,7 +36,9 @@ from pipecat.runner.utils import create_transport
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.workers.runner import WorkerRunner
 
-from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_settings
+from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_model_dir, save_settings
+from app import qa as qa_store
+from app import qa_import, qa_index
 from app.materials import (
     apply_coach_result,
     apply_plan,
@@ -332,24 +334,39 @@ async def api_coach_apply(profile_id: str, request: Request):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
 
+def _storage_payload() -> dict:
+    return {**storage_info(), "modelDir": str(qa_index.model_dir())}
+
+
 @app.get("/api/storage")
 async def api_storage():
-    return storage_info()
+    return _storage_payload()
+
 
 @app.put("/api/storage")
 async def api_set_storage(request: Request):
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
-    try:
-        return set_data_dir(
-            str(payload.get("dataDir") or ""),
-            migrate=bool(payload.get("migrate", True)),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except OSError as e:
-        raise HTTPException(status_code=400, detail=f"切换目录失败：{e}")
+
+    model_dir = payload.get("modelDir")
+    if isinstance(model_dir, str) and model_dir.strip():
+        save_model_dir(model_dir.strip())
+        qa_index.invalidate()
+
+    data_dir_value = str(payload.get("dataDir") or "").strip()
+    if data_dir_value:
+        old_db = qa_store.db_path()
+        new_dir = set_data_dir(data_dir_value, migrate=bool(payload.get("migrate", True)))
+        try:
+            qa_store.migrate_db(old_db, Path(new_dir["dataDir"]) / qa_store.QA_FILENAME)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise HTTPException(status_code=400, detail=f"迁移问答库失败：{e}")
+        qa_index.invalidate()
+
+    return _storage_payload()
 
 
 @app.post("/api/storage/open")
@@ -359,6 +376,162 @@ async def api_open_storage():
     except OSError as e:
         raise HTTPException(status_code=400, detail=f"打开目录失败：{e}")
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# 问答库
+#
+# 写入只落库，向量由后台线程异步补算，所以界面不会被索引卡住。
+# 静态路径必须声明在 /api/qa/{qa_id} 之前，否则会被当成 id 解析。
+# --------------------------------------------------------------------------
+@app.get("/api/qa/facets")
+async def api_qa_facets():
+    return qa_store.facets()
+
+
+@app.get("/api/qa/stats")
+async def api_qa_stats():
+    return qa_index.status()
+
+
+@app.post("/api/qa/reindex")
+async def api_qa_reindex(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    scope = str((payload or {}).get("scope") or "stale")
+    if scope not in ("all", "failed", "stale"):
+        raise HTTPException(status_code=400, detail="scope 必须是 all / failed / stale")
+    return {"queued": qa_index.reindex(scope)}
+
+
+@app.post("/api/qa/search")
+async def api_qa_search(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    try:
+        return qa_index.search(
+            str(payload.get("q") or ""),
+            limit=int(payload.get("limit") or 20),
+            types=[str(v) for v in payload.get("types") or []],
+            categories=[str(v) for v in payload.get("categories") or []],
+            tags=[str(v) for v in payload.get("tags") or []],
+            profile_id=str(payload.get("profileId") or "") or None,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/qa")
+async def api_qa_list(
+    q: str = "",
+    category: str = "",
+    type_: str = Query("", alias="type"),
+    tag: str = "",
+    status: str = "",
+    profileId: str = "",
+    limit: int = 50,
+    offset: int = 0,
+):
+    return qa_store.list_qa(
+        q=q,
+        category=category,
+        type_=type_,
+        tag=tag,
+        status=status,
+        profile_id=profileId or None,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.post("/api/qa")
+async def api_qa_create(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        item = qa_store.create_qa(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    qa_index.enqueue(item["id"])
+    return item
+
+
+@app.get("/api/qa/{qa_id}")
+async def api_qa_get(qa_id: int):
+    item = qa_store.get_qa(qa_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="问答不存在")
+    return item
+
+
+@app.patch("/api/qa/{qa_id}")
+async def api_qa_patch(qa_id: int, request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        item = qa_store.update_qa(qa_id, payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="问答不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    qa_index.enqueue(qa_id)
+    return item
+
+
+@app.delete("/api/qa/{qa_id}")
+async def api_qa_delete(qa_id: int):
+    qa_store.delete_qa(qa_id)
+    qa_index.invalidate()
+    return {"ok": True}
+
+
+@app.post("/api/qa/bulk-delete")
+async def api_qa_bulk_delete(request: Request):
+    payload = await request.json()
+    ids = payload.get("ids") if isinstance(payload, dict) else None
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="ids 必须是数组")
+    deleted = qa_store.bulk_delete([int(i) for i in ids])
+    qa_index.invalidate()
+    return {"deleted": deleted}
+
+
+@app.post("/api/qa/import/preview")
+async def api_qa_import_preview(file: UploadFile = File(...)):
+    raw = await file.read()
+    try:
+        return qa_import.preview(raw, file.filename or "")
+    except qa_import.ImportError_ as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/qa/import/commit")
+async def api_qa_import_commit(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        return qa_import.commit(
+            str(payload.get("token") or ""),
+            mode=str(payload.get("mode") or "merge"),
+        )
+    except qa_import.ImportError_ as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/qa/imports/{import_id}")
+async def api_qa_undo_import(import_id: int):
+    return {"deleted": qa_store.undo_import(import_id)}
 
 
 # --------------------------------------------------------------------------

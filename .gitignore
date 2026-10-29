@@ -34,3 +34,10 @@ web/MANIFEST.in
 web/CHANGELOG.md
 web/README.md
 web/.gitignore
+
+# 问答库（含个人整理的问答）与向量模型缓存
+config/qa.db
+config/qa.db-wal
+config/qa.db-shm
+config/models/
+config/imports/

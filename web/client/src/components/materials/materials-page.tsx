@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ProfileFlow } from "@/components/materials/profile-flow";
+import { QaLibrary } from "@/components/materials/qa-library";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -294,13 +295,15 @@ export function MaterialsPage({
       )}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {segment !== "profiles" ? (
+        {segment === "questions" ? (
+          <QaLibrary dataVersion={dataVersion} />
+        ) : segment === "terms" ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <p className="text-sm font-medium">
               {t("materials.comingSoon.title")}
             </p>
             <p className="text-muted-foreground max-w-sm text-xs">
-              {t("materials.comingSoon.hint")}
+              {t("materials.comingSoon.termsHint")}
             </p>
           </div>
         ) : inDetail ? (

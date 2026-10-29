@@ -27,9 +27,11 @@ import { LANGUAGES, setLanguage, type AppLanguage } from "@/i18n";
 import {
   fetchStorage,
   openStorageFolder,
+  saveModelDir,
   saveStorage,
   type StorageInfo,
 } from "@/lib/materials";
+import { qaStats, reindexQa, type QaStats } from "@/lib/qa";
 import type { ThemeMode } from "@/lib/theme";
 import {
   ASR_PROVIDERS,
@@ -43,7 +45,7 @@ import {
   type TtsProviderMeta,
 } from "@/lib/settings";
 
-type Section = "asr" | "llm" | "tts";
+type Section = "asr" | "llm" | "tts" | "embedding";
 type Status = "idle" | "loading" | "saving" | "saved" | "error";
 
 /** 表单规范见 web/client/FORM_SPEC.md：两列等宽、gap-3、控件统一 h-8。 */
@@ -125,6 +127,12 @@ export function SettingsDialog({
   const [storageBusy, setStorageBusy] = useState(false);
   const [storageMessage, setStorageMessage] = useState("");
   const [storageFailed, setStorageFailed] = useState(false);
+  const [modelDir, setModelDir] = useState("");
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelMessage, setModelMessage] = useState("");
+  const [modelFailed, setModelFailed] = useState(false);
+  const [qaStatus, setQaStatus] = useState<QaStats | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
   const { t, i18n } = useTranslation();
 
   useEffect(() => {
@@ -158,6 +166,7 @@ export function SettingsDialog({
         if (cancelled) return;
         setStorage(info);
         setStorageDir(info.dataDir);
+        setModelDir(info.modelDir ?? "");
       })
       .catch((error: Error) => {
         if (cancelled) return;
@@ -194,6 +203,54 @@ export function SettingsDialog({
     } catch (error) {
       setStorageFailed(true);
       setStorageMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    qaStats()
+      .then((data) => {
+        if (!cancelled) setQaStatus(data);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const applyModelDir = useCallback(async () => {
+    const value = modelDir.trim();
+    if (!value) return;
+    setModelBusy(true);
+    setModelMessage("");
+    setModelFailed(false);
+    try {
+      const info = await saveModelDir(value);
+      setStorage(info);
+      setModelDir(info.modelDir ?? value);
+      setModelMessage(t("settings.modelDir.saved"));
+    } catch (error) {
+      setModelFailed(true);
+      setModelMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setModelBusy(false);
+    }
+  }, [modelDir, t]);
+
+  const rebuildIndex = useCallback(async () => {
+    setRebuilding(true);
+    try {
+      await reindexQa("all");
+      // 队列是异步的，状态稍后再取一次。
+      window.setTimeout(() => {
+        void qaStats().then(setQaStatus).catch(() => undefined);
+      }, 1500);
+    } catch (error) {
+      setModelFailed(true);
+      setModelMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRebuilding(false);
     }
   }, []);
 
@@ -463,6 +520,42 @@ export function SettingsDialog({
                   </span>
                 )}
               </div>
+
+              <div className="grid min-w-0 gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("settings.fields.modelDir")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={modelDir}
+                    placeholder="config/models"
+                    spellCheck={false}
+                    onChange={(event) => setModelDir(event.target.value)}
+                    className="h-8 min-w-0 flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    className="h-8"
+                    disabled={modelBusy || !modelDir.trim()}
+                    onClick={() => void applyModelDir()}
+                  >
+                    {modelBusy && <Spinner className="size-3.5" />}
+                    {t("settings.storage.apply")}
+                  </Button>
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t("settings.modelDir.hint")}
+                </p>
+                {modelMessage && (
+                  <span
+                    className={`text-xs ${
+                      modelFailed ? "text-destructive" : "text-muted-foreground"
+                    }`}
+                  >
+                    {modelMessage}
+                  </span>
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value="models">
@@ -675,6 +768,57 @@ export function SettingsDialog({
                         }
                       />
                     </Field>
+                  </section>
+
+                  <section className="grid gap-3" data-slot="settings-section">
+                    <h3 className="text-sm font-semibold">
+                      {t("settings.sections.embedding")}
+                    </h3>
+                    <Field label={t("settings.fields.embeddingModel")}>
+                      <Input
+                        value={settings.embedding.model}
+                        placeholder="BAAI/bge-small-zh-v1.5"
+                        spellCheck={false}
+                        onChange={(event) =>
+                          patch("embedding", "model", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      {t("settings.embedding.hint")}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {t("settings.embedding.indexed", {
+                          ready: qaStatus?.ready ?? 0,
+                          total: qaStatus?.total ?? 0,
+                        })}
+                      </span>
+                      {qaStatus && qaStatus.failed > 0 && (
+                        <span className="text-destructive">
+                          {t("qa.failedRetry", { count: qaStatus.failed })}
+                        </span>
+                      )}
+                      {qaStatus && qaStatus.pending + qaStatus.indexing > 0 && (
+                        <span>
+                          {t("qa.indexing", {
+                            count: qaStatus.pending + qaStatus.indexing,
+                          })}
+                        </span>
+                      )}
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={rebuilding}
+                        onClick={() => void rebuildIndex()}
+                      >
+                        {rebuilding && <Spinner className="size-3" />}
+                        {t("settings.embedding.rebuild")}
+                      </Button>
+                    </div>
+                    {qaStatus?.lastError && (
+                      <p className="text-destructive text-xs">{qaStatus.lastError}</p>
+                    )}
                   </section>
                 </div>
               )}
