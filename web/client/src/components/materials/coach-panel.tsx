@@ -30,7 +30,6 @@ import {
   type CoachSlot,
   type CoachSlots,
   type InterviewProfile,
-  type ProfilePatch,
 } from "@/lib/materials";
 import { cn } from "@/lib/utils";
 
@@ -53,13 +52,14 @@ function filledCount(slots: CoachSlots, slug: string) {
 export function CoachPanel({
   profile,
   busy,
-  onPatch,
+  onCoachSlots,
   onReplace,
   onFlush,
 }: {
   profile: InterviewProfile;
   busy: boolean;
-  onPatch: (patch: ProfilePatch) => void;
+  /** 清单已经由接口落盘，这里只同步本地状态，不再回写服务器。 */
+  onCoachSlots: (slots: CoachSlots) => void;
   onReplace: (profile: InterviewProfile) => void;
   onFlush: () => Promise<void>;
 }) {
@@ -82,6 +82,19 @@ export function CoachPanel({
   const advanceFrom = useRef<CoachDimension | null>(null);
   // 回答保存后要跳到下一格，用这个标记区分「刚保存完」和「用户主动点开」。
   const advanceRef = useRef(false);
+  // 异步请求返回时档案可能已经换了一份：用它把上一份的结果丢掉。
+  const profileIdRef = useRef(profile.id);
+  profileIdRef.current = profile.id;
+
+  // 换档案时全部重置，别把上一份问题出的结果带到这一份上。
+  useEffect(() => {
+    requested.current.clear();
+    advanceFrom.current = null;
+    advanceRef.current = false;
+    setActive(null);
+    setDraft("");
+    setError(null);
+  }, [profile.id]);
 
   // 默认选第一张还没补完的卡。
   useEffect(() => {
@@ -93,26 +106,38 @@ export function CoachPanel({
   }, [cards, slug, slots]);
 
   const cardSlots = slug ? (slots[slug] ?? {}) : {};
+  const slugValid = Boolean(slug) && cards.some((card) => card.slug === slug);
   const questionsReady =
     Boolean(slug) &&
     COACH_DIMENSIONS.every((dimension) => Boolean(cardSlots[dimension]?.q));
 
   // 第一次打开这张卡：让 AI 出题，落盘后本地跟着更新。
   useEffect(() => {
-    if (!slug || questionsReady || requested.current.has(slug)) return;
+    if (!slug || !slugValid || questionsReady || requested.current.has(slug)) {
+      return;
+    }
+    const profileId = profile.id;
     requested.current.add(slug);
     setError(null);
     void (async () => {
       try {
-        const next = await coachQuestions(profile.id, slug);
-        onPatch({ coachSlots: { ...(profile.coachSlots ?? {}), [slug]: next } });
+        const next = await coachQuestions(profileId, slug);
+        if (profileIdRef.current !== profileId) return;
+        // 服务端会补全缺失的维度；真回不全就不要停在骨架屏上，给个可重试的错。
+        if (!COACH_DIMENSIONS.every((dimension) => next[slug]?.[dimension]?.q)) {
+          requested.current.delete(slug);
+          setError(t("materials.coach.incomplete"));
+          return;
+        }
+        onCoachSlots(next);
       } catch (cause) {
+        if (profileIdRef.current !== profileId) return;
         requested.current.delete(slug);
         setError(cause instanceof Error ? cause.message : String(cause));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, questionsReady, profile.id, retryToken]);
+  }, [slug, slugValid, questionsReady, profile.id, retryToken]);
 
   // 切卡时清空编辑状态。
   useEffect(() => {
@@ -156,14 +181,17 @@ export function CoachPanel({
   const save = async (dimension: CoachDimension) => {
     const text = draft.trim();
     if (!text || saving) return;
+    const profileId = profile.id;
     setSaving(dimension);
     setError(null);
     try {
-      const next = await coachAnswer(profile.id, slug, dimension, text);
+      const next = await coachAnswer(profileId, slug, dimension, text);
+      if (profileIdRef.current !== profileId) return;
       advanceFrom.current = dimension;
       advanceRef.current = true;
-      onPatch({ coachSlots: { ...(profile.coachSlots ?? {}), [slug]: next } });
+      onCoachSlots(next);
     } catch (cause) {
+      if (profileIdRef.current !== profileId) return;
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSaving(null);
@@ -172,11 +200,13 @@ export function CoachPanel({
 
   const writeBack = async () => {
     if (writing || !slug) return;
+    const profileId = profile.id;
     setWriting(true);
     setError(null);
     try {
       await onFlush();
-      const next = await coachWriteBack(profile.id, slug);
+      const next = await coachWriteBack(profileId, slug);
+      if (profileIdRef.current !== profileId) return;
       onReplace(next);
       // 写回后直接停到下一个还没答的维度上，不用再点一次。
       const after = next.coachSlots?.[slug] ?? {};
@@ -185,6 +215,7 @@ export function CoachPanel({
       );
       setDraft("");
     } catch (cause) {
+      if (profileIdRef.current !== profileId) return;
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setWriting(false);
@@ -240,7 +271,10 @@ export function CoachPanel({
             value={slug}
             onValueChange={(value) => setSlug(String(value))}
           >
-            <SelectTrigger className="h-8 min-w-0 flex-1" disabled={busy || writing}>
+            <SelectTrigger
+              className="h-8 min-w-0 flex-1"
+              disabled={busy || writing || saving !== null}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>

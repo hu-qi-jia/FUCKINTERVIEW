@@ -334,6 +334,13 @@ def apply_plan(profile_id: str, units: list[dict[str, Any]]) -> dict[str, Any]:
             )
 
         profile["cards"] = cards
+        # 重新规划后旧卡的补全清单已经没有对应卡片，一起清掉。
+        live = {str(card.get("slug")) for card in cards}
+        profile["coachSlots"] = {
+            slug: slots
+            for slug, slots in (profile.get("coachSlots") or {}).items()
+            if slug in live
+        }
         profile["updatedAt"] = _now()
         _write_store(store)
         return profile
@@ -361,6 +368,65 @@ def find_card(profile_id: str, slug: str) -> dict[str, Any]:
         if card.get("slug") == slug:
             return card
     raise KeyError(slug)
+
+
+def update_coach_slots(profile_id: str, slug: str, slots: dict[str, Any]) -> dict[str, Any]:
+    """只替换这张卡的补全清单，返回整份档案。
+
+    必须整段读改写：出题要等模型好几秒，期间用户可能在另一张卡上答题，
+    拿请求开始时的快照整表覆盖会把那几条回答冲掉。
+    """
+    with _lock:
+        store = _read_store()
+        profile = _find(store, profile_id)
+        cleaned = _sanitize_coach_slots({slug: slots}).get(slug) or {}
+        all_slots = dict(profile.get("coachSlots") or {})
+        if cleaned:
+            all_slots[slug] = cleaned
+        else:
+            all_slots.pop(slug, None)
+        profile["coachSlots"] = all_slots
+        profile["updatedAt"] = _now()
+        _write_store(store)
+        return profile
+
+
+def apply_coach_result(
+    profile_id: str,
+    slug: str,
+    fields: dict[str, Any],
+    applied_dimensions: list[str],
+) -> dict[str, Any]:
+    """写回合并结果，并在同一次写盘里把这几格标成已写入（避免写一半）。"""
+    with _lock:
+        store = _read_store()
+        profile = _find(store, profile_id)
+        index = next(
+            (
+                position
+                for position, card in enumerate(profile["cards"])
+                if card.get("slug") == slug
+            ),
+            None,
+        )
+        if index is None:
+            raise KeyError(slug)
+
+        merged = dict(profile["cards"][index])
+        merged.update(fields)
+        profile["cards"][index] = _sanitize_card(merged, index)
+
+        all_slots = dict(profile.get("coachSlots") or {})
+        slots = dict(all_slots.get(slug) or {})
+        for dimension in applied_dimensions:
+            if dimension in slots:
+                slots[dimension] = {**slots[dimension], "applied": True}
+        all_slots[slug] = slots
+        profile["coachSlots"] = all_slots
+
+        profile["updatedAt"] = _now()
+        _write_store(store)
+        return profile
 
 
 # --------------------------------------------------------------------------

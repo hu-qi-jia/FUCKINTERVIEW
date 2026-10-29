@@ -6,18 +6,24 @@ Anthropic 走 /v1/messages。这里只负责拿到文本；结构化输出由调
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 from typing import Any
 
 import aiohttp
+from loguru import logger
 
 DEFAULT_TIMEOUT_SECONDS = 120
 
 
 class LLMError(RuntimeError):
     """调用失败：未配置、HTTP 错误或返回内容不可用。"""
+
+
+class EmptyResponse(LLMError):
+    """HTTP 200 但正文为空。兼容接口偶发，重试一次通常就好。"""
 
 
 def _require_key(section: dict[str, Any], label: str, env: str) -> str:
@@ -33,6 +39,35 @@ async def complete(
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     max_tokens: int = 4096,
+    attempts: int = 2,
+) -> str:
+    """调一次模型拿文本。
+
+    空回复是兼容接口的偶发抖动（200，但 content 为空），重试一次基本都能拿到；
+    被 max_tokens 截断属于确定性问题，不重试，直接把原因报出来。
+    """
+    last: LLMError | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return await _complete_once(
+                section, messages, timeout=timeout, max_tokens=max_tokens
+            )
+        except EmptyResponse as error:
+            last = error
+            if attempt + 1 < attempts:
+                logger.warning(f"{error}；重试")
+                await asyncio.sleep(0.6)
+    if last is None:  # 兜底：循环至少执行一次，正常到不了这里
+        raise LLMError("LLM 调用失败")
+    raise last
+
+
+async def _complete_once(
+    section: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    timeout: float,
+    max_tokens: int,
 ) -> str:
     provider = str(section.get("provider") or "openai_compatible")
     if provider == "anthropic":
@@ -76,8 +111,13 @@ async def _openai_compatible(
     }
 
     data = await _post_json(url, payload, headers, timeout, "LLM")
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices:
+        # 兼容接口偶尔回 200 但 choices 为空，和空正文一样按抖动处理。
+        raise EmptyResponse(f"LLM 返回了空内容（choices 为空）：{_short(data)}")
     try:
-        content = data["choices"][0]["message"]["content"]
+        choice = choices[0]
+        content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError) as error:
         raise LLMError(f"LLM 返回格式异常：{_short(data)}") from error
     if isinstance(content, list):
@@ -86,7 +126,12 @@ async def _openai_compatible(
             part.get("text", "") for part in content if isinstance(part, dict)
         )
     if not isinstance(content, str) or not content.strip():
-        raise LLMError("LLM 返回了空内容")
+        finish = str(choice.get("finish_reason") or "") if isinstance(choice, dict) else ""
+        if finish == "length":
+            raise LLMError(
+                "LLM 输出被 max_tokens 截断，没有产生正文；请调大模型输出上限后重试"
+            )
+        raise EmptyResponse(f"LLM 返回了空内容（finish_reason={finish or '未提供'}）")
     return content.strip()
 
 
@@ -140,7 +185,12 @@ async def _anthropic(
     except (KeyError, TypeError) as error:
         raise LLMError(f"Anthropic 返回格式异常：{_short(data)}") from error
     if not text.strip():
-        raise LLMError("LLM 返回了空内容")
+        stop = str(data.get("stop_reason") or "")
+        if stop == "max_tokens":
+            raise LLMError(
+                "LLM 输出被 max_tokens 截断，没有产生正文；请调大模型输出上限后重试"
+            )
+        raise EmptyResponse(f"LLM 返回了空内容（stop_reason={stop or '未提供'}）")
     return text.strip()
 
 

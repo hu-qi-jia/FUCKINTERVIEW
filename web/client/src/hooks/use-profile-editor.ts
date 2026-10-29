@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getProfile,
   patchProfile,
+  type CoachSlots,
   type ExperienceCard,
   type InterviewProfile,
   type ProfilePatch,
@@ -216,6 +217,19 @@ export function useProfileEditor() {
     });
   }, []);
 
+  /**
+   * 补全清单已经由教练接口写盘：只同步本地，不再 PATCH 回服务器。
+   * 否则整表回写会在另一个标签页刚写完时把它冲掉。
+   */
+  const applyCoachSlots = useCallback((slots: CoachSlots) => {
+    setProfile((current) => {
+      if (!current || current.id !== idRef.current) return current;
+      const next = { ...current, coachSlots: slots };
+      profileRef.current = next;
+      return next;
+    });
+  }, []);
+
   useEffect(
     () => () => {
       void flush();
@@ -234,6 +248,7 @@ export function useProfileEditor() {
     patch,
     replace,
     applyCard,
+    applyCoachSlots,
     flush,
     reload,
   };

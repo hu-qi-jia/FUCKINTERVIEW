@@ -267,6 +267,27 @@ COACH_DIMENSION_LABELS = {
 }
 COACH_DIMENSION_KEYS = tuple(COACH_DIMENSION_LABELS)
 
+# 模型偶尔只回一部分维度。缺哪一格就用这句兜底，保证清单永远是完整的 6 项，
+# 否则前端会一直停在「正在准备问题」上。
+COACH_FALLBACK_QUESTIONS = {
+    "zh": {
+        "scale": "这个项目的规模有多大？数据量、并发量或用户量大概是多少？",
+        "actions": "这件事里你本人动手做了哪些部分？",
+        "team": "团队一共几个人，你负责到哪一步？",
+        "mechanism": "你具体用了什么技术或流程？关键细节是什么？",
+        "verification": "结果是怎么验证的？用什么指标、和什么对比？",
+        "reflection": "如果现在重做这件事，你会改哪一步？",
+    },
+    "en": {
+        "scale": "How big was this project — data volume, traffic or users?",
+        "actions": "What did you personally build or change?",
+        "team": "How many people worked on it, and what was yours to own?",
+        "mechanism": "What did you actually implement, and what were the key details?",
+        "verification": "How did you verify the result — which metric, against what?",
+        "reflection": "If you redid it now, what would you change?",
+    },
+}
+
 COACH_QUESTIONS_SYSTEM = """你是一名面试备战教练，要给一张经历卡设计 6 个补全问题，
 让候选人把卡片里还缺的细节补上。
 
@@ -349,13 +370,12 @@ async def coach_questions(
         max_tokens=1500,
     )
 
+    fallback = COACH_FALLBACK_QUESTIONS["en" if language == "en" else "zh"]
+    source = data if isinstance(data, dict) else {}
     result: dict[str, str] = {}
     for key in COACH_DIMENSION_KEYS:
-        text = str(data.get(key) or "").strip().strip("\"“”").strip()
-        if text:
-            result[key] = text[:200]
-    if not result:
-        raise LLMError("教练没有生成出问题")
+        text = str(source.get(key) or "").strip().strip("\"“”").strip()
+        result[key] = text[:200] if text else fallback[key]
     return result
 
 

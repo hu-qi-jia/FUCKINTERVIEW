@@ -70,6 +70,7 @@ export function MaterialsPage({
     patch,
     replace,
     applyCard,
+    applyCoachSlots,
     flush,
     reload,
   } = useProfileEditor();
@@ -329,6 +330,7 @@ export function MaterialsPage({
                   onPatch={patch}
                   onReplace={replace}
                   onApplyCard={applyCard}
+                  onApplyCoachSlots={applyCoachSlots}
                   onFlush={flush}
                   onBusyChange={setBusy}
                 />

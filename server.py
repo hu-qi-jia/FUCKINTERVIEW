@@ -38,6 +38,7 @@ from pipecat.workers.runner import WorkerRunner
 
 from app.config import load_settings, save_settings
 from app.materials import (
+    apply_coach_result,
     apply_plan,
     create_profile,
     delete_profile,
@@ -49,6 +50,7 @@ from app.materials import (
     set_data_dir,
     storage_info,
     update_card,
+    update_coach_slots,
     update_profile,
 )
 from app.materials_ai import (
@@ -220,19 +222,13 @@ def _ordered_slots(slots: dict) -> dict:
     return {key: slots[key] for key in COACH_DIMENSION_KEYS if key in slots}
 
 
-def _save_slots(profile_id: str, profile: dict, slug: str, slots: dict) -> None:
-    try:
-        update_profile(
-            profile_id,
-            {
-                "coachSlots": {
-                    **(profile.get("coachSlots") or {}),
-                    slug: _ordered_slots(slots),
-                }
-            },
-        )
-    except (KeyError, ValueError):
-        pass
+def _slots_response(profile: dict, slug: str) -> dict:
+    """返回这张卡的清单 + 整张表：前端用整表覆盖，避免拿着旧快照互相覆盖。"""
+    all_slots = profile.get("coachSlots") or {}
+    return {
+        "slots": _ordered_slots(all_slots.get(slug) or {}),
+        "coachSlots": all_slots,
+    }
 
 
 @app.post("/api/profiles/{profile_id}/coach/questions")
@@ -260,9 +256,9 @@ async def api_coach_questions(profile_id: str, request: Request):
             text = generated.get(key)
             if text:
                 slots[key] = {**(slots.get(key) or {}), "q": text}
-        _save_slots(profile_id, profile, slug, slots)
+        profile = update_coach_slots(profile_id, slug, slots)
 
-    return {"slots": _ordered_slots(slots)}
+    return _slots_response(profile, slug)
 
 
 @app.post("/api/profiles/{profile_id}/coach/answer")
@@ -288,8 +284,8 @@ async def api_coach_answer(profile_id: str, request: Request):
     slots = _slots_of(profile, slug)
     slot = slots.get(dimension) or {}
     slots[dimension] = {**slot, "a": answer[:4000], "applied": False}
-    _save_slots(profile_id, profile, slug, slots)
-    return {"slots": _ordered_slots(slots)}
+    saved = update_coach_slots(profile_id, slug, slots)
+    return _slots_response(saved, slug)
 
 
 @app.post("/api/profiles/{profile_id}/coach/apply")
@@ -326,15 +322,14 @@ async def api_coach_apply(profile_id: str, request: Request):
 
     fields["sourceRevision"] = int(profile.get("materialsRevision") or 0)
     try:
-        update_card(profile_id, slug, fields)
+        return apply_coach_result(
+            profile_id,
+            slug,
+            fields,
+            [item["dimension"] for item in pending],
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="经历卡不存在")
-
-    for item in pending:
-        key = item["dimension"]
-        slots[key] = {**(slots.get(key) or {}), "applied": True}
-    _save_slots(profile_id, profile, slug, slots)
-    return get_profile(profile_id)
 
 
 @app.get("/api/storage")

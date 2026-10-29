@@ -199,30 +199,30 @@ export async function generateSkill(
   );
 }
 
-/** 取一张卡的补全清单；第一次调用会让 AI 出 6 个问题并落盘。 */
+/** 取一张卡的补全清单；第一次调用会让 AI 出 6 个问题并落盘。返回整张表。 */
 export async function coachQuestions(
   id: string,
   slug: string,
-): Promise<CoachSlots[string]> {
-  const data = await request<{ slots: CoachSlots[string] }>(
+): Promise<CoachSlots> {
+  const data = await request<{ coachSlots: CoachSlots }>(
     `/api/profiles/${id}/coach/questions`,
     json("POST", { slug }),
   );
-  return data.slots;
+  return data.coachSlots ?? {};
 }
 
-/** 保存一格回答（纯本地写盘，不经过模型）。 */
+/** 保存一格回答（纯本地写盘，不经过模型）。返回整张表。 */
 export async function coachAnswer(
   id: string,
   slug: string,
   dimension: CoachDimension,
   answer: string,
-): Promise<CoachSlots[string]> {
-  const data = await request<{ slots: CoachSlots[string] }>(
+): Promise<CoachSlots> {
+  const data = await request<{ coachSlots: CoachSlots }>(
     `/api/profiles/${id}/coach/answer`,
     json("POST", { slug, dimension, answer }),
   );
-  return data.slots;
+  return data.coachSlots ?? {};
 }
 
 /** 把还没写回的回答合并进经历卡，返回整份档案。 */
