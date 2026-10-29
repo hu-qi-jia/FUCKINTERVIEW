@@ -186,3 +186,9 @@ body,
     background-size: 12px 12px;
   }
 }
+
+/* 原生滚动区总是预留滚动条槽位：内容长到出现滚动条时，
+   容器内宽不变化，卡片不会横向跳一下。ScrollArea 用浮层滚动条，不需要这个。 */
+@utility scroll-stable {
+  scrollbar-gutter: stable;
+}

@@ -119,7 +119,7 @@ export function ConsolePanelContent({
       <CardContent
         ref={ref}
         onScroll={onScroll}
-        className={cn("min-h-0 flex-1 overflow-auto", className)}
+        className={cn("scroll-stable min-h-0 flex-1 overflow-auto", className)}
         data-slot="console-panel-content"
         {...props}
       >

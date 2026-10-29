@@ -1,10 +1,10 @@
 "use client";
 
-import { Trash2Icon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/button";
+import { InlineConfirmButton } from "@/components/materials/inline-confirm-button";
+import { IndexDot } from "@/components/materials/qa-bits";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -13,8 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { QA_TYPES, type QaItem, type QaPatch, type QaType } from "@/lib/qa";
 import { cn } from "@/lib/utils";
@@ -28,8 +28,6 @@ interface Draft {
   tags: string;
   category: string;
   type: QaType;
-  proficiency: number;
-  enabled: boolean;
 }
 
 function toDraft(item: QaItem): Draft {
@@ -40,8 +38,6 @@ function toDraft(item: QaItem): Draft {
     tags: item.tags.join(SEPARATOR),
     category: item.category,
     type: item.type,
-    proficiency: item.proficiency,
-    enabled: item.enabled,
   };
 }
 
@@ -85,14 +81,6 @@ function diff(draft: Draft, item: QaItem): QaPatch | null {
     patch.type = draft.type;
     changed = true;
   }
-  if (draft.proficiency !== item.proficiency) {
-    patch.proficiency = draft.proficiency;
-    changed = true;
-  }
-  if (draft.enabled !== item.enabled) {
-    patch.enabled = draft.enabled;
-    changed = true;
-  }
   return changed ? patch : null;
 }
 
@@ -101,21 +89,19 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
+/** 字段规范见 web/client/FORM_SPEC.md：标签 12px muted、控件 h-8、提示写进 placeholder。 */
 function Field({
   label,
-  hint,
+  className,
   children,
 }: {
   label: string;
-  hint?: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-1.5">
-      <span className="text-muted-foreground flex items-baseline gap-2 text-xs">
-        <span className="text-foreground font-medium">{label}</span>
-        {hint && <span className="truncate">{hint}</span>}
-      </span>
+    <label className={cn("grid gap-1.5", className)}>
+      <span className="text-muted-foreground text-xs">{label}</span>
       {children}
     </label>
   );
@@ -172,37 +158,45 @@ export function QaEditor({
         : t("qa.editor.indexing");
 
   return (
-    <div className="border-border/60 grid gap-3 border-t px-4 pb-4 pt-3">
-      <Field label={t("qa.field.question")}>
-        <Input
-          value={draft.question}
-          onChange={(event) => set("question", event.target.value)}
-          placeholder={t("qa.field.questionHint")}
-        />
-      </Field>
+    <div className="border-t px-4 pb-4 pt-4">
+      <div className="grid gap-3">
+        <Field label={t("qa.field.question")}>
+          <Input
+            value={draft.question}
+            onChange={(event) => set("question", event.target.value)}
+            placeholder={t("qa.field.questionHint")}
+            className="h-8"
+          />
+        </Field>
 
-      <Field label={t("qa.field.answer")}>
-        <Textarea
-          value={draft.answer}
-          onChange={(event) => set("answer", event.target.value)}
-          placeholder={t("qa.field.answerHint")}
-          className="min-h-32 resize-y"
-        />
-      </Field>
+        <Field label={t("qa.field.answer")}>
+          <Textarea
+            value={draft.answer}
+            rows={7}
+            onChange={(event) => set("answer", event.target.value)}
+            placeholder={t("qa.field.answerHint")}
+            className="field-sizing-fixed resize-none leading-relaxed"
+          />
+        </Field>
+      </div>
+
+      <Separator className="my-4" />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={t("qa.field.aliases")} hint={t("qa.field.listHint")}>
+        <Field label={t("qa.field.aliases")}>
           <Input
             value={draft.aliases}
             onChange={(event) => set("aliases", event.target.value)}
             placeholder={t("qa.field.aliasesHint")}
+            className="h-8"
           />
         </Field>
-        <Field label={t("qa.field.tags")} hint={t("qa.field.listHint")}>
+        <Field label={t("qa.field.tags")}>
           <Input
             value={draft.tags}
             onChange={(event) => set("tags", event.target.value)}
             placeholder={t("qa.field.tagsHint")}
+            className="h-8"
           />
         </Field>
         <Field label={t("qa.field.category")}>
@@ -210,6 +204,7 @@ export function QaEditor({
             value={draft.category}
             onChange={(event) => set("category", event.target.value)}
             placeholder={t("qa.field.categoryHint")}
+            className="h-8"
           />
         </Field>
         <Field label={t("qa.field.type")}>
@@ -235,66 +230,41 @@ export function QaEditor({
         </Field>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground text-xs">{t("qa.field.proficiency")}</span>
-          <div className="flex items-center gap-0.5">
-            {[1, 2, 3, 4, 5].map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-label={t("qa.field.proficiencyValue", { value })}
-                onClick={() => set("proficiency", value)}
-                className={cn(
-                  "size-6 rounded-md text-xs transition-colors",
-                  value <= draft.proficiency
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/70",
-                )}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="mt-4 flex items-center gap-2 border-t pt-3 text-[11px] text-muted-foreground">
+        {saving ? (
+          <span className="flex items-center gap-1.5">
+            <Spinner className="size-3" />
+            {t("qa.editor.saving")}
+          </span>
+        ) : saveFailed ? (
+          <span className="text-destructive max-w-72 truncate" title={saveFailed}>
+            {saveFailed}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            <IndexDot status={item.indexStatus} />
+            {statusLabel}
+            {updatedAt && (
+              <>
+                <span className="text-border">·</span>
+                <span>{t("qa.editor.updatedAt", { time: updatedAt })}</span>
+              </>
+            )}
+          </span>
+        )}
 
-        <label className="flex items-center gap-2">
-          <Switch
-            checked={draft.enabled}
-            onCheckedChange={(next) => set("enabled", Boolean(next))}
-          />
-          <span className="text-muted-foreground text-xs">{t("qa.field.enabled")}</span>
-        </label>
-
-        <div className="text-muted-foreground ml-auto flex items-center gap-2 text-xs">
-          {saving && <Spinner className="size-3" />}
-          {saveFailed ? (
-            <span className="text-destructive">{saveFailed}</span>
-          ) : (
-            <>
-              <span
-                className={cn(
-                  "inline-block size-1.5 rounded-full",
-                  item.indexStatus === "ready"
-                    ? "bg-emerald-500"
-                    : item.indexStatus === "failed"
-                      ? "bg-destructive"
-                      : "bg-amber-500",
-                )}
-              />
-              <span>{statusLabel}</span>
-              {updatedAt && <span>· {t("qa.editor.updatedAt", { time: updatedAt })}</span>}
-            </>
-          )}
-          <Button size="xs" variant="destructive" onClick={onDelete}>
-            <Trash2Icon />
-            {t("qa.delete")}
-          </Button>
-        </div>
+        <InlineConfirmButton
+          size="xs"
+          variant="ghost"
+          className="text-muted-foreground hover:text-destructive ml-auto"
+          label={t("qa.delete")}
+          confirmLabel={t("qa.deleteConfirm")}
+          onConfirm={onDelete}
+        />
       </div>
 
       {item.indexStatus === "failed" && item.indexError && (
-        <p className="text-destructive text-xs">{item.indexError}</p>
+        <p className="text-destructive mt-2 text-xs">{item.indexError}</p>
       )}
     </div>
   );

@@ -5,12 +5,13 @@ import {
   ChevronRightIcon,
   MoreHorizontalIcon,
   PlusIcon,
+  UploadIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ProfileFlow } from "@/components/materials/profile-flow";
-import { QaLibrary } from "@/components/materials/qa-library";
+import { QaLibrary, type QaLibraryHandle } from "@/components/materials/qa-library";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -84,6 +85,9 @@ export function MaterialsPage({
   const [busy, setBusy] = useState(false);
   const [focusNameToken, setFocusNameToken] = useState(0);
   const [pendingDelete, setPendingDelete] = useState(false);
+  // 问答库的「导入 / 新建」放在标签栏右侧，和面试档案的「新建档案」同一位置。
+  const qaRef = useRef<QaLibraryHandle | null>(null);
+  const [qaView, setQaView] = useState<"list" | "import">("list");
 
   const detailIdRef = useRef<string | null>(null);
   detailIdRef.current = detailId;
@@ -117,6 +121,7 @@ export function MaterialsPage({
     if (busy) return;
     const value = next as Segment;
     setSegment(value);
+    setQaView("list");
     localStorage.setItem(SEGMENT_KEY, value);
   };
 
@@ -218,6 +223,36 @@ export function MaterialsPage({
               )}
             </div>
           )}
+
+          {segment === "questions" && (
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              {qaView === "import" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => qaRef.current?.backToList()}
+                >
+                  <ArrowLeftIcon />
+                  {t("qa.import.back")}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => qaRef.current?.openImport()}
+                  >
+                    <UploadIcon />
+                    {t("qa.import.open")}
+                  </Button>
+                  <Button size="sm" onClick={() => qaRef.current?.create()}>
+                    <PlusIcon />
+                    {t("qa.new")}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -296,7 +331,11 @@ export function MaterialsPage({
 
       <div className="flex min-h-0 flex-1 flex-col">
         {segment === "questions" ? (
-          <QaLibrary dataVersion={dataVersion} />
+          <QaLibrary
+            ref={qaRef}
+            dataVersion={dataVersion}
+            onViewChange={setQaView}
+          />
         ) : segment === "terms" ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <p className="text-sm font-medium">

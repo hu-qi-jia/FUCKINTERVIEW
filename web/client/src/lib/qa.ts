@@ -16,8 +16,6 @@ export interface QaItem {
   tags: string[];
   category: string;
   type: QaType;
-  proficiency: number;
-  enabled: boolean;
   source: string;
   importId: number | null;
   sourceRef: string | null;
@@ -38,8 +36,6 @@ export interface QaPatch {
   tags?: string[];
   category?: string;
   type?: QaType;
-  proficiency?: number;
-  enabled?: boolean;
 }
 
 export interface QaListResult {
@@ -144,8 +140,6 @@ function toItem(raw: Record<string, unknown>): QaItem {
     tags: (raw.tags as string[]) ?? [],
     category: String(raw.category ?? ""),
     type: (raw.type as QaType) ?? "general",
-    proficiency: Number(raw.proficiency ?? 3),
-    enabled: Boolean(raw.enabled),
     source: String(raw.source ?? "manual"),
     importId: raw.import_id == null ? null : Number(raw.import_id),
     sourceRef: raw.source_ref == null ? null : String(raw.source_ref),

@@ -2,18 +2,26 @@
 
 import {
   CheckIcon,
-  PlusIcon,
-  RefreshCwIcon,
+  ChevronDownIcon,
   SearchIcon,
-  UploadIcon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { QaEditor } from "@/components/materials/qa-editor";
 import { QaImport } from "@/components/materials/qa-import";
+import { BADGE, TagChip, TypeBadge } from "@/components/materials/qa-bits";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -65,8 +73,9 @@ function FilterSelect({
       value={value || ALL}
       onValueChange={(next) => onChange(String(next) === ALL ? "" : String(next))}
     >
-      <SelectTrigger className="h-8 w-auto min-w-24" aria-label={label}>
-        <SelectValue />
+      {/* 固定宽度：选中项的字数不同时宽度不变，右侧的按钮不会跟着横向跳。 */}
+      <SelectTrigger className="h-8 w-32" aria-label={label}>
+        <SelectValue className="min-w-0 truncate" />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
         {items.map((item) => (
@@ -79,26 +88,27 @@ function FilterSelect({
   );
 }
 
-function StatusDot({ status }: { status: QaItem["indexStatus"] }) {
-  return (
-    <span
-      className={cn(
-        "inline-block size-1.5 shrink-0 rounded-full",
-        status === "ready"
-          ? "bg-emerald-500"
-          : status === "failed"
-            ? "bg-destructive"
-            : "bg-amber-500",
-      )}
-    />
-  );
+export interface QaLibraryHandle {
+  openImport: () => void;
+  backToList: () => void;
+  create: () => void;
 }
 
 /**
  * 问答库：搜索（语义 + 关键词）、筛选、批量删除、行内编辑与导入。
  * 搜索框为空时走列表分页，有内容时走检索接口并按相关度排序。
+ * 「导入 / 新建问答 / 返回问答库」由外层标签栏承载（和面试档案同一位置），
+ * 通过 ref 调到这里的方法。
  */
-export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
+export function QaLibrary({
+  ref,
+  dataVersion = 0,
+  onViewChange,
+}: {
+  ref?: Ref<QaLibraryHandle>;
+  dataVersion?: number;
+  onViewChange?: (view: "list" | "import") => void;
+}) {
   const { t } = useTranslation();
 
   const [view, setView] = useState<"list" | "import">("list");
@@ -299,7 +309,6 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
         question: t("qa.newQuestion"),
         answer: t("qa.newAnswer"),
         type: "general",
-        proficiency: 3,
       });
       setItems((current) => [created, ...current]);
       setTotal((value) => value + 1);
@@ -314,6 +323,20 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
     }
   }, [refreshMeta, t]);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      openImport: () => setView("import"),
+      backToList: () => setView("list"),
+      create: () => void create(),
+    }),
+    [create],
+  );
+
+  useEffect(() => {
+    onViewChange?.(view);
+  }, [view, onViewChange]);
+
   const toggleSelected = (id: number) =>
     setSelected((current) => {
       const next = new Set(current);
@@ -322,18 +345,20 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
       return next;
     });
 
+  const filterActive = Boolean(query || type || category || tag);
+
   const filterSummary = useMemo(() => {
     if (!stats) return "";
-    return t("qa.summary", {
-      total: stats.total,
-      indexed: stats.ready,
-    });
-  }, [stats, t]);
+    // 有筛选时先说清「当前显示多少 / 库里总共多少」，避免和列表条数对不上。
+    if (filterActive) {
+      return t("qa.summaryFiltered", { shown: total, total: stats.total });
+    }
+    return t("qa.summary", { total: stats.total, indexed: stats.ready });
+  }, [stats, t, filterActive, total]);
 
   if (view === "import") {
     return (
       <QaImport
-        onBack={() => setView("list")}
         onDone={() => {
           void reload(0);
           void refreshMeta();
@@ -345,7 +370,7 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 pt-3">
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 gap-y-2 px-4">
           <div className="relative min-w-40 flex-1">
             <SearchIcon className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
             <Input
@@ -366,110 +391,36 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
             )}
           </div>
 
-          <FilterSelect
-            value={type}
-            onChange={setType}
-            allLabel={t("qa.filters.allTypes")}
-            label={t("qa.field.type")}
-            options={QA_TYPES.map((value) => ({ value, label: t(`qa.type.${value}`) }))}
-          />
-          {facets.categories.length > 0 && (
+          {/* 三个筛选器打包成一组：放不下时整组换行，而不是各掉一行。 */}
+          <div className="flex items-center gap-2">
             <FilterSelect
-              value={category}
-              onChange={setCategory}
-              allLabel={t("qa.filters.allCategories")}
-              label={t("qa.field.category")}
-              options={facets.categories.map((value) => ({ value, label: value }))}
+              value={type}
+              onChange={setType}
+              allLabel={t("qa.filters.allTypes")}
+              label={t("qa.field.type")}
+              options={QA_TYPES.map((value) => ({ value, label: t(`qa.type.${value}`) }))}
             />
-          )}
-          {facets.tags.length > 0 && (
-            <FilterSelect
-              value={tag}
-              onChange={setTag}
-              allLabel={t("qa.filters.allTags")}
-              label={t("qa.field.tags")}
-              options={facets.tags.map((value) => ({ value, label: value }))}
-            />
-          )}
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button size="sm" variant="ghost" onClick={() => setView("import")} disabled={busy}>
-              <UploadIcon />
-              {t("qa.import.open")}
-            </Button>
-            <Button size="sm" onClick={() => void create()} disabled={busy}>
-              <PlusIcon />
-              {t("qa.new")}
-            </Button>
+            {facets.categories.length > 0 && (
+              <FilterSelect
+                value={category}
+                onChange={setCategory}
+                allLabel={t("qa.filters.allCategories")}
+                label={t("qa.field.category")}
+                options={facets.categories.map((value) => ({ value, label: value }))}
+              />
+            )}
+            {facets.tags.length > 0 && (
+              <FilterSelect
+                value={tag}
+                onChange={setTag}
+                allLabel={t("qa.filters.allTags")}
+                label={t("qa.field.tags")}
+                options={facets.tags.map((value) => ({ value, label: value }))}
+              />
+            )}
           </div>
         </div>
-
-        <div className="text-muted-foreground mx-auto mt-2 flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 text-xs">
-          <span>{filterSummary}</span>
-          {indexing > 0 && (
-            <span className="flex items-center gap-1">
-              <Spinner className="size-3" />
-              {t("qa.indexing", { count: indexing })}
-            </span>
-          )}
-          {(stats?.failed ?? 0) > 0 && (
-            <button
-              type="button"
-              className="text-destructive hover:underline"
-              onClick={() => {
-                void reindexQa("failed");
-                void refreshMeta();
-              }}
-            >
-              {t("qa.failedRetry", { count: stats?.failed ?? 0 })}
-            </button>
-          )}
-          {(stats?.failed ?? 0) === 0 && indexing > 0 && (
-            <button
-              type="button"
-              className="hover:underline"
-              aria-label={t("qa.refresh")}
-              onClick={() => void refreshMeta()}
-            >
-              <RefreshCwIcon className="inline size-3" />
-            </button>
-          )}
-          <button
-            type="button"
-            className="ml-auto hover:underline"
-            onClick={() => {
-              setSelecting((current) => !current);
-              setSelected(new Set());
-            }}
-          >
-            {selecting ? t("qa.select.cancel") : t("qa.select.start")}
-          </button>
-        </div>
       </div>
-
-      {selecting && (
-        <div className="bg-muted/40 mt-2 flex shrink-0 items-center gap-2 border-y px-4 py-1.5 text-xs">
-          <span className="flex-1">
-            {t("qa.select.count", { count: selectedCount })}
-          </span>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={items.length === 0}
-            onClick={() => setSelected(new Set(items.map((item) => item.id)))}
-          >
-            {t("qa.select.all")}
-          </Button>
-          <Button
-            size="xs"
-            variant="destructive"
-            disabled={selectedCount === 0 || busy}
-            onClick={() => void removeSelected()}
-          >
-            {t("qa.select.delete")}
-          </Button>
-        </div>
-      )}
 
       {error && (
         <div className="text-destructive shrink-0 border-b px-4 py-1.5 text-xs">{error}</div>
@@ -478,7 +429,7 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
         <div className="text-destructive shrink-0 border-b px-4 py-1.5 text-xs">{saveError}</div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="scroll-stable min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 py-3">
           {loading && items.length === 0 ? (
             <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
@@ -495,109 +446,120 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
               )}
             </div>
           ) : (
-            <ul className="grid gap-2">
+            <ul className="grid gap-2.5">
               {items.map((item) => {
                 const expanded = expandedId === item.id;
                 return (
-                  <li
-                    key={item.id}
-                    className={cn(
-                      "bg-card ring-foreground/10 overflow-hidden rounded-xl ring-1 transition-colors",
-                      expanded && "ring-primary/30",
-                    )}
-                  >
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        if (selecting) {
-                          toggleSelected(item.id);
-                        } else {
-                          setExpandedId(expanded ? null : item.id);
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          if (selecting) toggleSelected(item.id);
-                          else setExpandedId(expanded ? null : item.id);
-                        }
-                      }}
-                      className="hover:bg-muted/40 flex cursor-pointer items-start gap-2.5 p-3"
-                    >
-                      {selecting && (
-                        <span
-                          className={cn(
-                            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border",
-                            selected.has(item.id)
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "border-border",
-                          )}
-                        >
-                          {selected.has(item.id) && <CheckIcon className="size-3" />}
-                        </span>
+                  <li key={item.id}>
+                    <Card
+                      size="sm"
+                      className={cn(
+                        "gap-0 py-0 transition-shadow",
+                        expanded && "ring-primary/30",
                       )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <StatusDot status={item.indexStatus} />
-                          <span className="truncate text-sm font-medium">{item.question}</span>
-                          {item.score !== undefined && (
-                            <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                              {Math.round((item.score ?? 0) * 100)}%
+                    >
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          if (selecting) {
+                            toggleSelected(item.id);
+                          } else {
+                            setExpandedId(expanded ? null : item.id);
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            if (selecting) toggleSelected(item.id);
+                            else setExpandedId(expanded ? null : item.id);
+                          }
+                        }}
+                        className="hover:bg-muted/40 flex cursor-pointer items-start gap-3 p-4"
+                      >
+                        {selecting && (
+                          <span
+                            className={cn(
+                              "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                              selected.has(item.id)
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "border-border",
+                            )}
+                          >
+                            {selected.has(item.id) && <CheckIcon className="size-3" />}
+                          </span>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium leading-snug">
+                              {item.question}
                             </span>
-                          )}
-                          {!item.enabled && (
-                            <span className="text-muted-foreground shrink-0 text-[10px]">
-                              {t("qa.disabled")}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
-                          {item.answer}
-                        </p>
-                        {(item.aliases.length > 0 ||
-                          item.tags.length > 0 ||
-                          item.category ||
-                          item.type !== "general") && (
-                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                            <span className="bg-muted/60 rounded px-1.5 py-0.5 text-[10px]">
-                              {t(`qa.type.${item.type}`)}
-                            </span>
+                            {item.score !== undefined && (
+                              <span className="bg-primary/10 text-primary shrink-0 rounded-full px-1.5 py-0.5 text-[11px] leading-none tabular-nums">
+                                {Math.round((item.score ?? 0) * 100)}%
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-relaxed">
+                            {item.answer}
+                          </p>
+
+                          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                            <TypeBadge type={item.type} />
                             {item.category && (
-                              <span className="bg-muted/60 rounded px-1.5 py-0.5 text-[10px]">
+                              <span className="text-muted-foreground text-[11px] leading-none">
                                 {item.category}
                               </span>
                             )}
                             {item.tags.map((name) => (
-                              <span
-                                key={name}
-                                className="text-muted-foreground rounded px-1 py-0.5 text-[10px] ring-1 ring-current/15"
-                              >
-                                {name}
-                              </span>
+                              <TagChip key={name}>{name}</TagChip>
                             ))}
                             {item.aliases.length > 0 && (
-                              <span className="text-muted-foreground/70 text-[10px]">
+                              <span className="text-muted-foreground/70 text-[11px] leading-none">
                                 {t("qa.aliasCount", { count: item.aliases.length })}
                               </span>
                             )}
+                            {item.indexStatus === "failed" && (
+                              <span className={cn(BADGE, "bg-destructive/10 text-destructive")}>
+                                {t("qa.editor.indexFailed")}
+                              </span>
+                            )}
+                            {(item.indexStatus === "pending" ||
+                              item.indexStatus === "indexing") && (
+                              <span
+                                className={cn(
+                                  BADGE,
+                                  "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                                )}
+                              >
+                                {t("qa.editor.indexing")}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
-                        {"★".repeat(item.proficiency)}
-                      </span>
-                    </div>
+                        </div>
 
-                    {expanded && (
-                      <QaEditor
-                        item={item}
-                        saving={savingId === item.id}
-                        saveFailed={savingId === item.id ? null : saveError}
-                        onSave={(patch) => save(item.id, patch)}
-                        onDelete={() => void remove(item.id)}
-                      />
-                    )}
+                        <div className="flex shrink-0 items-center pt-0.5">
+                          <ChevronDownIcon
+                            className={cn(
+                              "text-muted-foreground size-4 transition-transform",
+                              expanded && "rotate-180",
+                            )}
+                          />
+                        </div>
+                      </div>
+
+                      {expanded && (
+                        <QaEditor
+                          item={item}
+                          saving={savingId === item.id}
+                          saveFailed={savingId === item.id ? null : saveError}
+                          onSave={(patch) => save(item.id, patch)}
+                          onDelete={() => void remove(item.id)}
+                        />
+                      )}
+                    </Card>
                   </li>
                 );
               })}
@@ -616,6 +578,74 @@ export function QaLibrary({ dataVersion = 0 }: { dataVersion?: number }) {
                 {t("qa.loadMore", { remaining: total - items.length })}
               </Button>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* 底部固定条：统计与批量操作都放这里，列表滚动时不动。 */}
+      <div className="shrink-0 border-t">
+        <div className="text-muted-foreground mx-auto flex h-10 w-full max-w-3xl items-center gap-3 px-4 text-xs">
+          {selecting ? (
+            <>
+              <span className="text-foreground font-medium">
+                {t("qa.select.count", { count: selectedCount })}
+              </span>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={items.length === 0}
+                onClick={() => setSelected(new Set(items.map((item) => item.id)))}
+              >
+                {t("qa.select.all")}
+              </Button>
+              <Button
+                size="xs"
+                variant="destructive"
+                disabled={selectedCount === 0 || busy}
+                onClick={() => void removeSelected()}
+              >
+                {t("qa.select.delete")}
+              </Button>
+              <button
+                type="button"
+                className="ml-auto hover:underline"
+                onClick={() => {
+                  setSelecting(false);
+                  setSelected(new Set());
+                }}
+              >
+                {t("qa.select.cancel")}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="truncate">{filterSummary}</span>
+              {indexing > 0 && (
+                <span className="flex shrink-0 items-center gap-1">
+                  <Spinner className="size-3" />
+                  {t("qa.indexing", { count: indexing })}
+                </span>
+              )}
+              {(stats?.failed ?? 0) > 0 && (
+                <button
+                  type="button"
+                  className="text-destructive shrink-0 hover:underline"
+                  onClick={() => {
+                    void reindexQa("failed");
+                    void refreshMeta();
+                  }}
+                >
+                  {t("qa.failedRetry", { count: stats?.failed ?? 0 })}
+                </button>
+              )}
+              <button
+                type="button"
+                className="ml-auto shrink-0 hover:underline"
+                onClick={() => setSelecting(true)}
+              >
+                {t("qa.select.start")}
+              </button>
+            </>
           )}
         </div>
       </div>

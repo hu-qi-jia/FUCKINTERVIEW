@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowLeftIcon,
   CheckCircle2Icon,
   DownloadIcon,
   FileSpreadsheetIcon,
@@ -87,8 +86,9 @@ function CountChip({
 /**
  * 导入流程：选文件 → 预览（新增 / 更新 / 跳过 / 疑似重复）→ 确认入库。
  * 确认后只写库，向量交给后台线程补算，所以界面立刻返回。
+ * 「返回问答库」在顶部的标签栏里，和面试档案的交互位置一致。
  */
-export function QaImport({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+export function QaImport({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -153,14 +153,7 @@ export function QaImport({ onBack, onDone }: { onBack: () => void; onDone: () =>
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 pt-2">
-        <Button size="sm" variant="ghost" onClick={onBack}>
-          <ArrowLeftIcon />
-          {t("qa.import.back")}
-        </Button>
-      </div>
-
-      <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 pb-6 pt-3">
+      <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 pb-6 pt-3 scroll-stable">
         <div className="grid gap-3">
           <div className="bg-card ring-foreground/10 rounded-xl p-4 ring-1">
             <div className="flex items-start gap-3">
