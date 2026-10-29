@@ -23,6 +23,7 @@ import { BADGE, TagChip, TypeBadge } from "@/components/materials/qa-bits";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -429,7 +430,8 @@ export function QaLibrary({
         <div className="text-destructive shrink-0 border-b px-4 py-1.5 text-xs">{saveError}</div>
       )}
 
-      <div className="scroll-stable min-h-0 flex-1 overflow-y-auto">
+      {/* 用统一的 ScrollArea：浮层滚动条不占宽度，内容左边缘和上面的滑块对齐 */}
+      <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto w-full max-w-3xl px-4 py-3">
           {loading && items.length === 0 ? (
             <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
@@ -581,7 +583,7 @@ export function QaLibrary({
             </div>
           )}
         </div>
-      </div>
+      </ScrollArea>
 
       {/* 底部固定条：统计与批量操作都放这里，列表滚动时不动。 */}
       <div className="shrink-0 border-t">
