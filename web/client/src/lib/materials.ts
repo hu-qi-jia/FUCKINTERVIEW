@@ -52,41 +52,35 @@ export interface InterviewProfile {
   resume: MaterialSection;
   jobDescription: MaterialSection;
   cards: ExperienceCard[];
-  /** 和 AI 完善档案的对话记录（老档案可能没有这个字段）。 */
-  coachChat?: CoachMessage[];
-  /** 教练估的补齐进度。 */
-  coachProgress?: CoachProgress;
-  /** 每张卡已确认的维度：{ [cardSlug]: ["scale", "actions", …] }。 */
-  coachCoverage?: Record<string, string[]>;
+  /** 完善经历卡的补全清单：{ [cardSlug]: { [dimension]: { q, a, applied } } }。 */
+  coachSlots?: CoachSlots;
   materialsRevision: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CoachMessage {
-  role: "user" | "assistant";
-  content: string;
+/** 补全清单的固定维度，顺序就是界面上的顺序。 */
+export const COACH_DIMENSIONS = [
+  "scale",
+  "actions",
+  "team",
+  "mechanism",
+  "verification",
+  "reflection",
+] as const;
+
+export type CoachDimension = (typeof COACH_DIMENSIONS)[number];
+
+export interface CoachSlot {
+  /** AI 针对这张卡出的问题，生成一次后一直复用。 */
+  q: string;
+  /** 候选人的回答；空字符串表示还没答。 */
+  a: string;
+  /** 这条回答是否已经合并进经历卡。 */
+  applied: boolean;
 }
 
-export interface CoachProgress {
-  percent: number;
-  remaining: string[];
-}
-
-export interface CoachReply {
-  reply: string;
-  coverage: Record<string, string[]>;
-  percent: number;
-  remaining: string[];
-}
-
-/** 教练对话整理出的卡片更新；确认后由前端写回。 */
-export interface CardProposal {
-  slug: string;
-  name: string;
-  description: string;
-  body: Record<CardBodyKey, string>;
-}
+export type CoachSlots = Record<string, Record<string, CoachSlot>>;
 
 export interface ProfileSummary {
   id: string;
@@ -115,9 +109,7 @@ export interface ProfilePatch {
   resume?: Partial<MaterialSection>;
   jobDescription?: Partial<MaterialSection>;
   cards?: ExperienceCard[];
-  coachChat?: CoachMessage[];
-  coachProgress?: CoachProgress;
-  coachCoverage?: Record<string, string[]>;
+  coachSlots?: CoachSlots;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -207,28 +199,41 @@ export async function generateSkill(
   );
 }
 
-export type CoachIntent = "continue" | "skip" | "resume";
-
-export async function coachReply(
+/** 取一张卡的补全清单；第一次调用会让 AI 出 6 个问题并落盘。 */
+export async function coachQuestions(
   id: string,
-  messages: CoachMessage[],
-  intent?: CoachIntent,
-): Promise<CoachReply> {
-  return request<CoachReply>(
-    `/api/profiles/${id}/coach`,
-    json("POST", intent ? { messages, intent } : { messages }),
+  slug: string,
+): Promise<CoachSlots[string]> {
+  const data = await request<{ slots: CoachSlots[string] }>(
+    `/api/profiles/${id}/coach/questions`,
+    json("POST", { slug }),
   );
+  return data.slots;
 }
 
-export async function coachApply(
+/** 保存一格回答（纯本地写盘，不经过模型）。 */
+export async function coachAnswer(
   id: string,
-  messages: CoachMessage[],
-): Promise<CardProposal[]> {
-  const data = await request<{ cards: CardProposal[] }>(
-    `/api/profiles/${id}/coach/apply`,
-    json("POST", { messages }),
+  slug: string,
+  dimension: CoachDimension,
+  answer: string,
+): Promise<CoachSlots[string]> {
+  const data = await request<{ slots: CoachSlots[string] }>(
+    `/api/profiles/${id}/coach/answer`,
+    json("POST", { slug, dimension, answer }),
   );
-  return data.cards;
+  return data.slots;
+}
+
+/** 把还没写回的回答合并进经历卡，返回整份档案。 */
+export async function coachWriteBack(
+  id: string,
+  slug: string,
+): Promise<InterviewProfile> {
+  return request<InterviewProfile>(
+    `/api/profiles/${id}/coach/apply`,
+    json("POST", { slug }),
+  );
 }
 
 export async function fetchStorage(): Promise<StorageInfo> {

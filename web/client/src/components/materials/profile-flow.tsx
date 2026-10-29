@@ -192,7 +192,13 @@ export function ProfileFlow({
         ))}
       </ol>
 
-      <CoachPanel profile={profile} busy={busy} onPatch={onPatch} />
+      <CoachPanel
+        profile={profile}
+        busy={busy}
+        onPatch={onPatch}
+        onReplace={onReplace}
+        onFlush={onFlush}
+      />
     </>
   );
 }

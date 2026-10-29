@@ -53,11 +53,9 @@ from app.materials import (
 )
 from app.materials_ai import (
     COACH_DIMENSION_KEYS,
-    COACH_DIMENSION_LABELS,
     build_live_system_prompt,
-    coach_apply,
-    coach_extract_coverage,
-    coach_reply,
+    coach_merge,
+    coach_questions,
     consolidate,
     generate_card,
     plan_units,
@@ -208,87 +206,135 @@ async def api_generate_skill(profile_id: str, slug: str):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
 
-def _coach_progress(profile: dict, coverage: dict) -> dict:
-    """按「已覆盖维度 / 全部维度」算进度。覆盖表只增不减，进度条不会回退。"""
-    ready = [card for card in profile.get("cards") or [] if card.get("status") == "ready"]
-    total = len(ready) * len(COACH_DIMENSION_KEYS)
-    covered = 0
-    remaining: list[str] = []
-    for card in ready:
-        known = set(coverage.get(str(card.get("slug")) or "", []))
-        covered += len(known & set(COACH_DIMENSION_KEYS))
-        for key in COACH_DIMENSION_KEYS:
-            if key not in known and len(remaining) < 3:
-                remaining.append(
-                    f"{card.get('name') or '经历卡'} · {COACH_DIMENSION_LABELS[key]}"
-                )
-    percent = round(covered / total * 100) if total else 0
-    return {"percent": percent, "remaining": remaining[:3]}
+# --------------------------------------------------------------------------
+# 完善经历卡：按固定维度出题、逐格保存回答、再一次性写回卡片
+#
+# 教练不用对话历史：状态就是档案里的 coachSlots（问题 + 回答），
+# 所以中断后重新打开只是「接着看清单」，不依赖模型理解聊天记录。
+# --------------------------------------------------------------------------
+def _slots_of(profile: dict, slug: str) -> dict:
+    return dict((profile.get("coachSlots") or {}).get(slug) or {})
 
 
-@app.post("/api/profiles/{profile_id}/coach")
-async def api_coach(profile_id: str, request: Request):
-    """教练对话：返回 AI 的下一句（问题或确认）。前端自己保存对话历史。"""
-    profile = _profile_or_404(profile_id)
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    messages = payload.get("messages") if isinstance(payload, dict) else None
-    intent = payload.get("intent") if isinstance(payload, dict) else None
-    if intent not in ("continue", "skip", "resume"):
-        intent = None
+def _ordered_slots(slots: dict) -> dict:
+    return {key: slots[key] for key in COACH_DIMENSION_KEYS if key in slots}
 
-    # 老档案没有覆盖表：先用历史对话补一次，进度才不会从 0 开始重算。
-    history = messages if isinstance(messages, list) else []
-    if not (profile.get("coachCoverage") or {}) and len(history) >= 2:
-        try:
-            inferred = await coach_extract_coverage(load_settings(), profile, history)
-        except LLMError:
-            inferred = {}
-        if inferred:
-            profile = {**profile, "coachCoverage": inferred}
-            try:
-                update_profile(profile_id, {"coachCoverage": inferred})
-            except (KeyError, ValueError):
-                pass
 
-    try:
-        result = await coach_reply(load_settings(), profile, messages, intent)
-    except LLMError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-    coverage = result["coverage"]
-    progress = _coach_progress(profile, coverage)
-    # 覆盖表和「这一轮问的是哪个维度」都由服务端落盘，不依赖前端回写。
+def _save_slots(profile_id: str, profile: dict, slug: str, slots: dict) -> None:
     try:
         update_profile(
             profile_id,
             {
-                "coachCoverage": coverage,
-                "coachPending": result["pending"],
-                "coachProgress": progress,
+                "coachSlots": {
+                    **(profile.get("coachSlots") or {}),
+                    slug: _ordered_slots(slots),
+                }
             },
         )
     except (KeyError, ValueError):
         pass
-    return {"reply": result["reply"], "coverage": coverage, **progress}
 
 
-@app.post("/api/profiles/{profile_id}/coach/apply")
-async def api_coach_apply(profile_id: str, request: Request):
-    """把对话里新确认的事实整理成卡片更新（由前端确认后写盘）。"""
+@app.post("/api/profiles/{profile_id}/coach/questions")
+async def api_coach_questions(profile_id: str, request: Request):
+    """取这张卡的补全清单；第一次打开时让 AI 一次性出 6 个问题并落盘。"""
     profile = _profile_or_404(profile_id)
     try:
         payload = await request.json()
     except Exception:
         payload = {}
-    messages = payload.get("messages") if isinstance(payload, dict) else []
+    slug = str(payload.get("slug") or "").strip()
     try:
-        cards = await coach_apply(load_settings(), profile, messages)
+        card = find_card(profile_id, slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    slots = _slots_of(profile, slug)
+    missing = [key for key in COACH_DIMENSION_KEYS if not (slots.get(key) or {}).get("q")]
+    if missing:
+        try:
+            generated = await coach_questions(load_settings(), profile, card)
+        except LLMError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        for key in missing:
+            text = generated.get(key)
+            if text:
+                slots[key] = {**(slots.get(key) or {}), "q": text}
+        _save_slots(profile_id, profile, slug, slots)
+
+    return {"slots": _ordered_slots(slots)}
+
+
+@app.post("/api/profiles/{profile_id}/coach/answer")
+async def api_coach_answer(profile_id: str, request: Request):
+    """保存一格回答。纯本地写盘，不调模型，失败了也不会丢已经答的内容。"""
+    profile = _profile_or_404(profile_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    slug = str(payload.get("slug") or "").strip()
+    dimension = str(payload.get("dimension") or "").strip()
+    answer = str(payload.get("answer") or "").strip()
+    if dimension not in COACH_DIMENSION_KEYS:
+        raise HTTPException(status_code=400, detail="未知的维度")
+    if not answer:
+        raise HTTPException(status_code=400, detail="回答不能为空")
+    try:
+        find_card(profile_id, slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    slots = _slots_of(profile, slug)
+    slot = slots.get(dimension) or {}
+    slots[dimension] = {**slot, "a": answer[:4000], "applied": False}
+    _save_slots(profile_id, profile, slug, slots)
+    return {"slots": _ordered_slots(slots)}
+
+
+@app.post("/api/profiles/{profile_id}/coach/apply")
+async def api_coach_apply(profile_id: str, request: Request):
+    """把还没写回的回答合并进这张卡，返回整份档案。"""
+    profile = _profile_or_404(profile_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    slug = str(payload.get("slug") or "").strip()
+    try:
+        card = find_card(profile_id, slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    slots = _slots_of(profile, slug)
+    pending = [
+        {
+            "dimension": key,
+            "question": str((slots.get(key) or {}).get("q") or ""),
+            "answer": str((slots.get(key) or {}).get("a") or ""),
+        }
+        for key in COACH_DIMENSION_KEYS
+        if (slots.get(key) or {}).get("a") and not (slots.get(key) or {}).get("applied")
+    ]
+    if not pending:
+        raise HTTPException(status_code=400, detail="没有新的回答可以写入")
+
+    try:
+        fields = await coach_merge(load_settings(), profile, card, pending)
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    return {"cards": cards}
+
+    fields["sourceRevision"] = int(profile.get("materialsRevision") or 0)
+    try:
+        update_card(profile_id, slug, fields)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    for item in pending:
+        key = item["dimension"]
+        slots[key] = {**(slots.get(key) or {}), "applied": True}
+    _save_slots(profile_id, profile, slug, slots)
+    return get_profile(profile_id)
 
 
 @app.get("/api/storage")

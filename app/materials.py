@@ -94,74 +94,33 @@ def _new_material() -> dict[str, Any]:
     return {"original": "", "content": "", "updatedAt": None}
 
 
-def _sanitize_chat(raw: Any) -> list[dict[str, str]]:
-    """教练对话：只保留 user/assistant 两句角色，裁掉空消息和历史尾巴。"""
-    if not isinstance(raw, list):
-        return []
-    messages: list[dict[str, str]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        content = str(item.get("content") or "").strip()
-        if not content:
-            continue
-        role = "user" if item.get("role") == "user" else "assistant"
-        messages.append({"role": role, "content": content[:8000]})
-    return messages[-80:]
+def _sanitize_coach_slots(raw: Any) -> dict[str, dict[str, dict[str, Any]]]:
+    """教练补全清单：{卡 slug: {维度: {q: 问题, a: 回答, applied: 是否已写入卡片}}}。
 
-
-def _sanitize_coverage(raw: Any) -> dict[str, list[str]]:
-    """教练进度：每张卡已确认的维度 key。只做形状清洗，语义由服务端计算。"""
+    这份数据就是教练的全部状态：问题和回答都落在这里，不依赖任何对话历史。
+    """
     if not isinstance(raw, dict):
         return {}
-    result: dict[str, list[str]] = {}
-    for slug, keys in raw.items():
-        name = str(slug or "").strip()[:64]
-        if not name or not isinstance(keys, list):
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    for slug, dims in raw.items():
+        card_slug = str(slug or "").strip()[:64]
+        if not card_slug or not isinstance(dims, dict):
             continue
-        cleaned: list[str] = []
-        for key in keys:
-            text = str(key or "").strip()[:20]
-            if text and text not in cleaned:
-                cleaned.append(text)
-            if len(cleaned) >= 6:
+        slots: dict[str, dict[str, Any]] = {}
+        for key, slot in dims.items():
+            dimension = str(key or "").strip()[:20]
+            if not dimension or not isinstance(slot, dict):
+                continue
+            slots[dimension] = {
+                "q": str(slot.get("q") or "").strip()[:400],
+                "a": str(slot.get("a") or "").strip()[:4000],
+                "applied": bool(slot.get("applied")),
+            }
+            if len(slots) >= 8:
                 break
-        if cleaned:
-            result[name] = cleaned
+        if slots:
+            result[card_slug] = slots
     return result
-
-
-def _sanitize_progress(raw: Any) -> dict[str, Any]:
-    """教练进度：0–100 的百分比 + 最多 3 条还缺的信息。"""
-    if not isinstance(raw, dict):
-        return {"percent": 0, "remaining": []}
-    try:
-        percent = int(raw.get("percent") or 0)
-    except (TypeError, ValueError):
-        percent = 0
-    percent = max(0, min(100, percent))
-
-    remaining: list[str] = []
-    items = raw.get("remaining")
-    if isinstance(items, list):
-        for item in items:
-            text = str(item or "").strip()
-            if text:
-                remaining.append(text[:40])
-            if len(remaining) >= 3:
-                break
-    return {"percent": percent, "remaining": remaining}
-
-
-def _sanitize_pending(raw: Any) -> dict[str, str] | None:
-    """上一次提问指向的卡和维度；回答下一句时用来标记已覆盖。"""
-    if not isinstance(raw, dict):
-        return None
-    slug = str(raw.get("slug") or "").strip()[:64]
-    dimension = str(raw.get("dimension") or "").strip()[:20]
-    if not slug or not dimension:
-        return None
-    return {"slug": slug, "dimension": dimension}
 
 
 def _new_profile(name: str) -> dict[str, Any]:
@@ -173,10 +132,7 @@ def _new_profile(name: str) -> dict[str, Any]:
         "resume": _new_material(),
         "jobDescription": _new_material(),
         "cards": [],
-        "coachChat": [],
-        "coachProgress": {"percent": 0, "remaining": []},
-        "coachCoverage": {},
-        "coachPending": None,
+        "coachSlots": {},
         "materialsRevision": 0,
         "createdAt": now,
         "updatedAt": now,
@@ -325,14 +281,15 @@ def update_profile(profile_id: str, patch: Any) -> dict[str, Any]:
             bumped = bumped or changed
         if "cards" in patch:
             profile["cards"] = _sanitize_cards(patch["cards"])
-        if "coachChat" in patch:
-            profile["coachChat"] = _sanitize_chat(patch["coachChat"])
-        if "coachProgress" in patch:
-            profile["coachProgress"] = _sanitize_progress(patch["coachProgress"])
-        if "coachCoverage" in patch:
-            profile["coachCoverage"] = _sanitize_coverage(patch["coachCoverage"])
-        if "coachPending" in patch:
-            profile["coachPending"] = _sanitize_pending(patch["coachPending"])
+            # 卡被删掉后，它的补全清单也一起清掉，别在文件里留孤儿数据。
+            live = {str(card.get("slug")) for card in profile["cards"]}
+            profile["coachSlots"] = {
+                slug: slots
+                for slug, slots in (profile.get("coachSlots") or {}).items()
+                if slug in live
+            }
+        if "coachSlots" in patch:
+            profile["coachSlots"] = _sanitize_coach_slots(patch["coachSlots"])
 
         if bumped:
             profile["materialsRevision"] = int(profile.get("materialsRevision") or 0) + 1

@@ -1,9 +1,9 @@
 "use client";
 
+import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { TextInputView } from "@/components/pipecat/text-input";
 import {
   ConsolePanel,
   ConsolePanelActions,
@@ -11,255 +11,209 @@ import {
   ConsolePanelTitle,
 } from "@/components/pipecat/console/panel";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Spinner } from "@/components/ui/spinner";
 import {
-  coachApply,
-  coachReply,
-  type CardProposal,
-  type CoachIntent,
-  type CoachMessage,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  COACH_DIMENSIONS,
+  coachAnswer,
+  coachQuestions,
+  coachWriteBack,
+  sortCards,
+  type CoachDimension,
+  type CoachSlot,
+  type CoachSlots,
   type InterviewProfile,
   type ProfilePatch,
 } from "@/lib/materials";
 import { cn } from "@/lib/utils";
 
-type QueueEntry = { message: CoachMessage; intent?: CoachIntent; index: number };
+function slotOf(slots: CoachSlots, slug: string, dimension: CoachDimension) {
+  return (slots[slug] ?? {})[dimension] as CoachSlot | undefined;
+}
 
-const sameMessage = (
-  candidate: CoachMessage | undefined,
-  message: CoachMessage,
-) =>
-  Boolean(candidate) &&
-  candidate?.role === message.role &&
-  candidate?.content === message.content;
+function filledCount(slots: CoachSlots, slug: string) {
+  return COACH_DIMENSIONS.filter((dimension) => slotOf(slots, slug, dimension)?.a)
+    .length;
+}
 
 /**
- * 「和 AI 完善面试档案」：AI 像 grilling 一样一次问一个细节，
- * 聊完把新确认的事实整理成卡片更新，确认后写回经历卡。
- * 布局跟实时面试的对话栏一致：标题行 + 消息流 + 底部输入条。
+ * 「和 AI 完善面试档案」：补全清单，不是聊天。
+ *
+ * 每张经历卡固定 6 个维度，AI 针对这张卡把问题一次性出好并存在档案里，
+ * 回答也逐格落盘。界面上没有「会话」这个概念：重新打开、关掉页面、
+ * 换台机器，看到的都是同一张清单，从还没答的那一格继续就行。
  */
 export function CoachPanel({
   profile,
   busy,
   onPatch,
+  onReplace,
+  onFlush,
 }: {
   profile: InterviewProfile;
   busy: boolean;
   onPatch: (patch: ProfilePatch) => void;
+  onReplace: (profile: InterviewProfile) => void;
+  onFlush: () => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const messages = profile.coachChat ?? [];
-  const progress = profile.coachProgress ?? { percent: 0, remaining: [] };
-  const readyCards = profile.cards.filter((card) => card.status === "ready");
+  const cards = sortCards(profile.cards.filter((card) => card.status === "ready"));
+  const slots = profile.coachSlots ?? {};
 
-  const [open, setOpen] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [proposal, setProposal] = useState<CardProposal[] | null>(null);
+  const [slug, setSlug] = useState("");
+  const [active, setActive] = useState<CoachDimension | null>(null);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState<CoachDimension | null>(null);
+  const [writing, setWriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
+  // 已经为哪些卡请求过问题：避免每次渲染都重新请求。
+  const requested = useRef(new Set<string>());
+  // 已保存回答的那个维度：下一次自动展开从它后面接着找。
+  const advanceFrom = useRef<CoachDimension | null>(null);
+  // 回答保存后要跳到下一格，用这个标记区分「刚保存完」和「用户主动点开」。
+  const advanceRef = useRef(false);
 
-  // 发送是排队处理的：AI 还在回复时再发一条不会被丢掉，回复到了再按顺序处理。
-  const sendingRef = useRef(false);
-  const queueRef = useRef<QueueEntry[]>([]);
-  // 续聊请求还在飞的时候用户就发了消息：丢弃续聊的回复，避免出现两条连续提问。
-  const resumeAliveRef = useRef(false);
-  const aliveRef = useRef(true);
-  useEffect(
-    () => () => {
-      aliveRef.current = false;
-    },
-    [],
-  );
+  // 默认选第一张还没补完的卡。
+  useEffect(() => {
+    if (cards.some((card) => card.slug === slug)) return;
+    const next =
+      cards.find((card) => filledCount(slots, card.slug) < COACH_DIMENSIONS.length) ??
+      cards[0];
+    setSlug(next?.slug ?? "");
+  }, [cards, slug, slots]);
 
-  const pump = async () => {
-    if (sendingRef.current) return;
-    const entry = queueRef.current.shift();
-    if (!entry) return;
-    const { message, intent, index } = entry;
-    sendingRef.current = true;
-    setSending(true);
+  const cardSlots = slug ? (slots[slug] ?? {}) : {};
+  const questionsReady =
+    Boolean(slug) &&
+    COACH_DIMENSIONS.every((dimension) => Boolean(cardSlots[dimension]?.q));
+
+  // 第一次打开这张卡：让 AI 出题，落盘后本地跟着更新。
+  useEffect(() => {
+    if (!slug || questionsReady || requested.current.has(slug)) return;
+    requested.current.add(slug);
+    setLoading(true);
     setError(null);
-
-    const current = messagesRef.current;
-    // 用入队时记下的位置定位这条消息：同样的文字可能在更早的对话里出现过，
-    // 不能按内容找第一条，否则回复会被插到旧消息后面、看起来像没回。
-    const startAt = sameMessage(current[index], message) ? index : -1;
-    const history =
-      startAt >= 0 ? current.slice(0, startAt + 1) : [...current, message];
-
-    try {
-      const result = await coachReply(profile.id, history, intent);
-      if (!aliveRef.current) return;
-      const after = messagesRef.current;
-      const pos = sameMessage(after[index], message) ? index : -1;
-      const reply: CoachMessage = { role: "assistant", content: result.reply };
-      const next = [...after];
-      if (pos >= 0) {
-        next.splice(pos + 1, 0, reply);
-        // 插在中间后，后面排队消息的位置都要往后挪一位。
-        for (const queued of queueRef.current) {
-          if (queued.index > pos) queued.index += 1;
-        }
-      } else {
-        next.push(reply);
-      }
-      onPatch({
-        coachChat: next,
-        coachCoverage: result.coverage,
-        coachProgress: {
-          percent: result.percent,
-          remaining: result.remaining,
-        },
-      });
-    } catch (cause) {
-      if (aliveRef.current) {
+    void (async () => {
+      try {
+        const next = await coachQuestions(profile.id, slug);
+        onPatch({ coachSlots: { ...(profile.coachSlots ?? {}), [slug]: next } });
+      } catch (cause) {
+        requested.current.delete(slug);
         setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      sendingRef.current = false;
-      if (aliveRef.current) {
-        setSending(false);
-        void pump();
-      }
-    }
-  };
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, questionsReady, profile.id]);
 
-  const openSession = async (intent?: CoachIntent) => {
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
+  // 切卡时清空编辑状态。
+  useEffect(() => {
+    setActive(null);
+    setDraft("");
     setError(null);
-    if (intent === "resume") resumeAliveRef.current = true;
-    try {
-      const history = intent === "resume" ? messagesRef.current : [];
-      const result = await coachReply(profile.id, history, intent);
-      if (!aliveRef.current) return;
-      if (intent === "resume" && !resumeAliveRef.current) return;
-      onPatch({
-        coachChat: [
-          ...messagesRef.current,
-          { role: "assistant", content: result.reply },
-        ],
-        coachCoverage: result.coverage,
-        coachProgress: {
-          percent: result.percent,
-          remaining: result.remaining,
-        },
-      });
-    } catch (cause) {
-      if (aliveRef.current) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-    } finally {
-      sendingRef.current = false;
-      if (aliveRef.current) {
-        setSending(false);
-        void pump();
-      }
+  }, [slug]);
+
+  // 问题到手 / 刚保存完一格：自动展开下一个还没答的维度。
+  const answeredCount = COACH_DIMENSIONS.filter(
+    (dimension) => cardSlots[dimension]?.a,
+  ).length;
+  useEffect(() => {
+    if (!questionsReady) return;
+    if (!advanceRef.current && active !== null) return;
+    advanceRef.current = false;
+
+    // 从刚保存的那一项往后找第一个没答的，找不到再从头绕一圈。
+    const from = advanceFrom.current;
+    advanceFrom.current = null;
+    const start = from ? COACH_DIMENSIONS.indexOf(from) + 1 : 0;
+    const order = [
+      ...COACH_DIMENSIONS.slice(start),
+      ...COACH_DIMENSIONS.slice(0, start),
+    ];
+    setActive(order.find((dimension) => !cardSlots[dimension]?.a) ?? null);
+    setDraft("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionsReady, answeredCount]);
+
+  const toggle = (dimension: CoachDimension) => {
+    if (active === dimension) {
+      setActive(null);
+      setDraft("");
+      return;
     }
+    setActive(dimension);
+    setDraft(cardSlots[dimension]?.a ?? "");
   };
 
-  const start = () => {
-    setOpen(true);
-    setProposal(null);
-    // 有历史时让 AI 先回看对话，再接着问下一个问题；没有历史就从头开始。
-    void openSession(messagesRef.current.length > 0 ? "resume" : undefined);
-  };
-
-  const enqueue = (text: string, intent?: CoachIntent) => {
-    const message: CoachMessage = { role: "user", content: text };
-    const index = messagesRef.current.length;
-    resumeAliveRef.current = false;
-    queueRef.current.push({ message, intent, index });
-    onPatch({ coachChat: [...messagesRef.current, message] });
-    void pump();
-  };
-
-  const handleSend = async (text: string) => {
-    enqueue(text);
-  };
-
-  const prepareApply = async () => {
-    if (applying) return;
-    setApplying(true);
+  const save = async (dimension: CoachDimension) => {
+    const text = draft.trim();
+    if (!text || saving) return;
+    setSaving(dimension);
     setError(null);
     try {
-      const cards = await coachApply(profile.id, messagesRef.current);
-      if (cards.length === 0) {
-        setError(t("materials.coach.noChanges"));
-        return;
-      }
-      setProposal(cards);
+      const next = await coachAnswer(profile.id, slug, dimension, text);
+      advanceFrom.current = dimension;
+      advanceRef.current = true;
+      onPatch({ coachSlots: { ...(profile.coachSlots ?? {}), [slug]: next } });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setApplying(false);
+      setSaving(null);
     }
   };
 
-  const confirmApply = () => {
-    if (!proposal) return;
-    const nextCards = profile.cards.map((card) => {
-      const update = proposal.find((item) => item.slug === card.slug);
-      return update
-        ? {
-            ...card,
-            ...update,
-            status: "ready" as const,
-            error: null,
-            sourceRevision: profile.materialsRevision,
-          }
-        : card;
-    });
-    onPatch({
-      cards: nextCards,
-      coachChat: [
-        ...messages,
-        {
-          role: "assistant",
-          content: t("materials.coach.applied", { count: proposal.length }),
-        },
-      ],
-    });
-    setProposal(null);
+  const writeBack = async () => {
+    if (writing || !slug) return;
+    setWriting(true);
+    setError(null);
+    try {
+      await onFlush();
+      const next = await coachWriteBack(profile.id, slug);
+      onReplace(next);
+      // 写回后直接停到下一个还没答的维度上，不用再点一次。
+      const after = next.coachSlots?.[slug] ?? {};
+      setActive(
+        COACH_DIMENSIONS.find((dimension) => !after[dimension]?.a) ?? null,
+      );
+      setDraft("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setWriting(false);
+    }
   };
 
-  useEffect(() => {
-    const element = viewportRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [messages.length, sending, open]);
-
-  if (!open) {
+  if (cards.length === 0) {
     return (
       <ConsolePanel className="mt-6 h-auto">
         <ConsolePanelHeader>
           <ConsolePanelTitle>{t("materials.coach.title")}</ConsolePanelTitle>
-          <ConsolePanelActions>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || readyCards.length === 0}
-              onClick={start}
-            >
-              {messages.length > 0
-                ? t("materials.coach.resume")
-                : t("materials.coach.start")}
-            </Button>
-          </ConsolePanelActions>
         </ConsolePanelHeader>
-        <p className="text-muted-foreground px-(--card-spacing) text-xs">
-          {readyCards.length > 0
-            ? t("materials.coach.hint")
-            : t("materials.coach.needCards")}
+        <p className="text-muted-foreground px-(--card-spacing) pb-(--card-spacing) text-xs">
+          {t("materials.coach.needCards")}
         </p>
       </ConsolePanel>
     );
   }
+
+  const filled = slug ? filledCount(slots, slug) : 0;
+  const total = COACH_DIMENSIONS.length;
+  const pending = slug
+    ? COACH_DIMENSIONS.filter(
+        (dimension) => cardSlots[dimension]?.a && !cardSlots[dimension]?.applied,
+      ).length
+    : 0;
+  const percent = Math.round((filled / total) * 100);
 
   return (
     <ConsolePanel className="mt-6 h-auto">
@@ -269,100 +223,236 @@ export function CoachPanel({
           <Button
             size="sm"
             variant="outline"
-            disabled={sending || applying || messages.length === 0}
-            onClick={() => void prepareApply()}
+            disabled={busy || writing || pending === 0}
+            onClick={() => void writeBack()}
           >
-            {applying && <Spinner className="size-3.5" />}
-            {t("materials.coach.update")}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
-            {t("materials.coach.close")}
+            {writing && <Spinner className="size-3.5" />}
+            {writing ? t("materials.coach.writing") : t("materials.coach.write")}
           </Button>
         </ConsolePanelActions>
       </ConsolePanelHeader>
 
-      <div className="grid gap-1 px-(--card-spacing)">
-        <div className="text-muted-foreground flex items-center gap-2 text-xs">
-          <span className="shrink-0">
-            {t("materials.coach.progress", { percent: progress.percent })}
+      <div className="grid gap-2 px-(--card-spacing) pb-(--card-spacing)">
+        <div className="flex items-center gap-2">
+          <Select
+            items={cards.map((card) => ({
+              value: card.slug,
+              label: `${card.name || t("materials.coach.untitled")} · ${filledCount(slots, card.slug)}/${total}`,
+            }))}
+            value={slug}
+            onValueChange={(value) => setSlug(String(value))}
+          >
+            <SelectTrigger className="h-8 min-w-0 flex-1" disabled={busy || writing}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              {cards.map((card) => (
+                <SelectItem key={card.slug} value={card.slug}>
+                  <span className="flex w-full items-center justify-between gap-4">
+                    <span className="truncate">
+                      {card.name || t("materials.coach.untitled")}
+                    </span>
+                    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                      {filledCount(slots, card.slug)}/{total}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+            {t("materials.coach.progress", { filled, total })}
           </span>
-          <div className="bg-muted h-1 min-w-0 flex-1 overflow-hidden rounded-full">
-            <div
-              className="bg-primary h-full rounded-full transition-[width] duration-300"
-              style={{ width: `${progress.percent}%` }}
-            />
-          </div>
         </div>
-        {progress.remaining.length > 0 && (
-          <p className="text-muted-foreground truncate text-xs">
-            {t("materials.coach.remaining", {
-              items: progress.remaining.join("、"),
-            })}
-          </p>
-        )}
-      </div>
 
-      <div className="px-(--card-spacing)">
-        <ScrollArea className="max-h-80" viewportRef={viewportRef}>
-          <div className="flex flex-col gap-2 pb-1">
-            {messages.map((message, index) => (
+        <div className="bg-muted h-1 overflow-hidden rounded-full">
+          <div
+            className="bg-primary h-full rounded-full transition-[width] duration-300"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+
+        {loading ? (
+          <div className="grid gap-2 pt-1">
+            <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <Spinner className="size-3" />
+              {t("materials.coach.preparing")}
+            </p>
+            {COACH_DIMENSIONS.map((dimension, index) => (
               <div
-                key={`${index}-${message.role}`}
-                className={cn(
-                  "flex",
-                  message.role === "user" ? "justify-end" : "justify-start",
-                )}
+                key={dimension}
+                className="grid grid-cols-[1.125rem_minmax(0,1fr)] gap-x-3"
               >
-                <div
-                  className={cn(
-                    "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap",
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-tr-sm"
-                      : "bg-muted rounded-tl-sm",
-                  )}
-                >
-                  {message.content}
+                <span className="bg-muted/60 mt-0.5 size-4.5 shrink-0 rounded-full" />
+                <div className="grid animate-pulse gap-1.5 pb-2">
+                  <span className="bg-muted h-2.5 w-24 rounded-full" />
+                  <span
+                    className="bg-muted/60 h-2.5 rounded-full"
+                    style={{ width: `${70 - index * 4}%` }}
+                  />
                 </div>
               </div>
             ))}
-            {sending && (
-              <p className="text-muted-foreground text-xs">
-                {t("materials.coach.thinking")}
-              </p>
-            )}
           </div>
-        </ScrollArea>
+        ) : (
+          <ol className="grid pt-1">
+            {COACH_DIMENSIONS.map((dimension, index) => {
+              const slot = cardSlots[dimension];
+              const filledSlot = Boolean(slot?.a);
+              const open = active === dimension;
+              return (
+                <li
+                  key={dimension}
+                  className="grid grid-cols-[1.125rem_minmax(0,1fr)] gap-x-3"
+                >
+                  <div className="relative flex justify-center">
+                    {index < COACH_DIMENSIONS.length - 1 && (
+                      <span
+                        aria-hidden
+                        className="bg-border absolute top-5 bottom-0 w-px"
+                      />
+                    )}
+                    <span
+                      className={cn(
+                        "relative z-10 mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full border text-[0.625rem] font-medium transition-colors",
+                        filledSlot
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : open
+                            ? "border-primary bg-background text-primary"
+                            : "border-border bg-background text-muted-foreground/70",
+                      )}
+                    >
+                      {filledSlot ? (
+                        <CheckIcon className="size-3" />
+                      ) : (
+                        index + 1
+                      )}
+                    </span>
+                  </div>
+
+                  <div
+                    className={cn(
+                      "min-w-0",
+                      index < COACH_DIMENSIONS.length - 1 && "pb-3",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggle(dimension)}
+                      className="flex w-full items-start gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 text-sm leading-[1.125rem] font-medium",
+                          open || !filledSlot
+                            ? "text-foreground"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {t(`materials.coach.dimensions.${dimension}`)}
+                      </span>
+                      {filledSlot && (
+                        <span
+                          className={cn(
+                            "mt-px shrink-0 text-[0.6875rem] leading-4",
+                            slot.applied
+                              ? "text-muted-foreground/70"
+                              : "text-primary",
+                          )}
+                        >
+                          {slot.applied
+                            ? t("materials.coach.written")
+                            : t("materials.coach.pendingWrite")}
+                        </span>
+                      )}
+                    </button>
+
+                    {open ? (
+                      <div className="animate-in fade-in-0 grid gap-2 pt-2 duration-150">
+                        <p className="text-muted-foreground text-xs leading-relaxed">
+                          {slot?.q}
+                        </p>
+                        <Textarea
+                          autoFocus
+                          value={draft}
+                          disabled={busy || saving !== null}
+                          placeholder={t("materials.coach.placeholder")}
+                          className="field-sizing-fixed h-20 resize-y text-sm"
+                          onChange={(event) => setDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (
+                              (event.metaKey || event.ctrlKey) &&
+                              event.key === "Enter"
+                            ) {
+                              event.preventDefault();
+                              void save(dimension);
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          {filledSlot && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={saving !== null}
+                              onClick={() => {
+                                setActive(null);
+                                setDraft("");
+                              }}
+                            >
+                              {t("materials.coach.cancel")}
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            disabled={
+                              busy ||
+                              saving !== null ||
+                              !draft.trim() ||
+                              draft.trim() === (slot?.a ?? "")
+                            }
+                            onClick={() => void save(dimension)}
+                          >
+                            {saving === dimension && (
+                              <Spinner className="size-3" />
+                            )}
+                            {t("materials.coach.save")}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p
+                        className={cn(
+                          "mt-1 line-clamp-2 text-xs leading-relaxed whitespace-pre-wrap",
+                          filledSlot
+                            ? "text-muted-foreground/80"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {filledSlot ? slot.a : slot?.q}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {filled === total && (
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <CheckIcon className="text-primary size-3.5" />
+            {pending > 0
+              ? t("materials.coach.allFilled")
+              : t("materials.coach.allWritten")}
+          </p>
+        )}
+
+        {error && (
+          <p className="text-destructive text-xs leading-relaxed">{error}</p>
+        )}
       </div>
-
-      {proposal && (
-        <div className="px-(--card-spacing)">
-          <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-xs">
-            <span className="min-w-0 flex-1">
-              {t("materials.coach.confirm", { count: proposal.length })}
-            </span>
-            <Button size="xs" onClick={confirmApply}>
-              {t("materials.coach.confirmApply")}
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => setProposal(null)}>
-              {t("materials.coach.cancel")}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <div className="border-t p-(--card-spacing)">
-        <TextInputView
-          multiline
-          placeholder={t("materials.coach.placeholder")}
-          aria-label={t("materials.coach.placeholder")}
-          disabled={Boolean(proposal)}
-          onSend={handleSend}
-        />
-      </div>
-
-      {error && (
-        <p className="text-destructive px-(--card-spacing) text-xs">{error}</p>
-      )}
     </ConsolePanel>
   );
 }
