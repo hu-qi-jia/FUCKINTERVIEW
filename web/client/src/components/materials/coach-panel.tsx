@@ -75,6 +75,8 @@ export function CoachPanel({
   const [error, setError] = useState<string | null>(null);
   // 出题失败后的重试：清掉「已请求过」标记再跑一次同一个 effect。
   const [retryToken, setRetryToken] = useState(0);
+  // 这张卡的问题要不要生成：默认不动手，等用户点「开始补全」再调模型。
+  const [started, setStarted] = useState(false);
 
   // 已经为哪些卡请求过问题：避免每次渲染都重新请求。
   const requested = useRef(new Set<string>());
@@ -94,6 +96,7 @@ export function CoachPanel({
     setActive(null);
     setDraft("");
     setError(null);
+    setStarted(false);
   }, [profile.id]);
 
   // 默认选第一张还没补完的卡。
@@ -113,6 +116,7 @@ export function CoachPanel({
 
   // 第一次打开这张卡：让 AI 出题，落盘后本地跟着更新。
   useEffect(() => {
+    if (!started) return;
     if (!slug || !slugValid || questionsReady || requested.current.has(slug)) {
       return;
     }
@@ -137,13 +141,14 @@ export function CoachPanel({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, slugValid, questionsReady, profile.id, retryToken]);
+  }, [slug, slugValid, questionsReady, started, profile.id, retryToken]);
 
-  // 切卡时清空编辑状态。
+  // 切卡时清空编辑状态，也回到「还没开始出题」。
   useEffect(() => {
     setActive(null);
     setDraft("");
     setError(null);
+    setStarted(false);
   }, [slug]);
 
   // 问题到手 / 刚保存完一格：自动展开下一个还没答的维度。
@@ -304,7 +309,7 @@ export function CoachPanel({
           />
         </div>
 
-        {!questionsReady && !error ? (
+        {started && !questionsReady && !error ? (
           <div className="grid gap-2 pt-1">
             <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <Spinner className="size-3" />
@@ -470,7 +475,7 @@ export function CoachPanel({
               );
             })}
           </ol>
-        ) : (
+        ) : error ? (
           <div className="grid justify-start gap-2 pt-1">
             <p className="text-destructive text-xs leading-relaxed">{error}</p>
             <Button
@@ -479,10 +484,20 @@ export function CoachPanel({
               onClick={() => {
                 requested.current.delete(slug);
                 setError(null);
+                setStarted(true);
                 setRetryToken((token) => token + 1);
               }}
             >
               {t("materials.retry")}
+            </Button>
+          </div>
+        ) : (
+          <div className="grid justify-start gap-2 pt-1">
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {t("materials.coach.startHint")}
+            </p>
+            <Button size="sm" disabled={busy} onClick={() => setStarted(true)}>
+              {t("materials.coach.start")}
             </Button>
           </div>
         )}

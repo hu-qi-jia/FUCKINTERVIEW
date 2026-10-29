@@ -12,6 +12,10 @@ from app.ai import LLMError, complete, complete_json
 
 LANGUAGE_LABEL = {"zh": "简体中文", "en": "English"}
 
+# 材料相关调用统一给足输出预算。带思考的模型（deepseek-flash 等）会先花掉一部分
+# token 在推理上，给太小会出现「正文还没开始就被截断」。
+MAX_OUTPUT_TOKENS = 8192
+
 CONSOLIDATE_SYSTEM = """你是一名简历整理助手：把用户粘贴的简历改写成更简洁、更结构化的版本。
 你只做整理，不新增事实，不推测，不美化。
 
@@ -92,7 +96,7 @@ async def consolidate(
         {"role": "system", "content": CONSOLIDATE_SYSTEM.format(language=label)},
         {"role": "user", "content": _wrap("material", text)},
     ]
-    result = await complete(_section(settings), messages)
+    result = await complete(_section(settings), messages, max_tokens=MAX_OUTPUT_TOKENS)
 
     if not _is_usable_consolidation(text, result):
         messages.append({"role": "assistant", "content": result})
@@ -103,7 +107,7 @@ async def consolidate(
                 f"请重新整理，用{label}输出，保留全部事实并压缩到原文 70% 以内，只输出正文。",
             }
         )
-        result = await complete(_section(settings), messages)
+        result = await complete(_section(settings), messages, max_tokens=MAX_OUTPUT_TOKENS)
         if not _is_usable_consolidation(text, result):
             raise LLMError("整合结果不可用，请重试")
     return result.strip()
@@ -141,7 +145,9 @@ async def plan_units(
             ),
         },
     ]
-    data = await complete_json(_section(settings), messages)
+    data = await complete_json(
+        _section(settings), messages, max_tokens=MAX_OUTPUT_TOKENS
+    )
     raw_units = data.get("units")
     if not isinstance(raw_units, list):
         raise LLMError("规划结果缺少 units 字段")
@@ -367,7 +373,7 @@ async def coach_questions(
     data = await complete_json(
         _section(settings),
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        max_tokens=1500,
+        max_tokens=MAX_OUTPUT_TOKENS,
     )
 
     fallback = COACH_FALLBACK_QUESTIONS["en" if language == "en" else "zh"]
@@ -412,7 +418,7 @@ async def coach_merge(
     data = await complete_json(
         _section(settings),
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        max_tokens=6144,
+        max_tokens=MAX_OUTPUT_TOKENS,
     )
 
     body = card.get("body") or {}
@@ -466,7 +472,9 @@ async def generate_card(
             ),
         },
     ]
-    data = await complete_json(_section(settings), messages, max_tokens=6144)
+    data = await complete_json(
+        _section(settings), messages, max_tokens=MAX_OUTPUT_TOKENS
+    )
 
     body = {
         key: str(data.get(key) or "").strip()
