@@ -49,10 +49,6 @@ _HEADER_ALIASES = {
     "别名": "aliases",
     "同义问法": "aliases",
     "aliases": "aliases",
-    "标签": "tags",
-    "tags": "tags",
-    "分类": "category",
-    "category": "category",
     "类型": "type",
     "type": "type",
     "熟练度": "proficiency",
@@ -79,19 +75,9 @@ def _split(value: Any) -> list[str]:
     return [item.strip() for item in re.split(r"[|;,、\n]", str(value)) if item.strip()]
 
 
-def _clean_type(raw: Any, category: str) -> str:
+def _clean_type(raw: Any) -> str:
     text = unicodedata.normalize("NFKC", str(raw or "")).strip().lower()
-    if text in _TYPE_ALIASES:
-        return _TYPE_ALIASES[text]
-    # md 里没写「类型」时，按分类名猜一个。
-    joined = unicodedata.normalize("NFKC", str(category or ""))
-    if "行为" in joined:
-        return "behavioral"
-    if "项目" in joined:
-        return "project"
-    if "知识" in joined or "原理" in joined:
-        return "knowledge"
-    return "general"
+    return _TYPE_ALIASES.get(text, "general")
 
 
 def _proficiency(raw: Any) -> int:
@@ -101,14 +87,12 @@ def _proficiency(raw: Any) -> int:
         return 3
 
 
-def _row(question: Any, answer: Any, aliases: Any, tags: Any, category: Any, type_: Any, proficiency: Any) -> dict[str, Any]:
+def _row(question: Any, answer: Any, aliases: Any, type_: Any, proficiency: Any) -> dict[str, Any]:
     return {
         "question": str(question or "").strip(),
         "answer": str(answer or "").strip(),
         "aliases": _split(aliases),
-        "tags": _split(tags),
-        "category": str(category or "").strip(),
-        "type": _clean_type(type_, str(category or "")),
+        "type": _clean_type(type_),
         "proficiency": _proficiency(proficiency),
     }
 
@@ -161,8 +145,6 @@ def parse_csv(raw: bytes) -> list[dict[str, Any]]:
                     question,
                     answer,
                     cell("aliases"),
-                    cell("tags"),
-                    cell("category"),
                     cell("type"),
                     cell("proficiency"),
                 ),
@@ -217,8 +199,6 @@ def parse_xlsx(raw: bytes) -> list[dict[str, Any]]:
                         question,
                         answer,
                         cell("aliases"),
-                        cell("tags"),
-                        cell("category"),
                         cell("type"),
                         cell("proficiency"),
                     ),
@@ -236,8 +216,6 @@ _META_KEYS = {
     "别名": "aliases",
     "同义问法": "aliases",
     "aliases": "aliases",
-    "标签": "tags",
-    "tags": "tags",
     "熟练度": "proficiency",
     "proficiency": "proficiency",
     "类型": "type",
@@ -246,11 +224,15 @@ _META_KEYS = {
 
 
 def parse_markdown(raw: bytes) -> list[dict[str, Any]]:
-    """``#`` 分类、``##`` 主问题、紧跟标题的 ``> 键: 值`` 是元数据，其余是答案。"""
+    """``##`` 主问题、紧跟标题的 ``> 键: 值`` 是元数据，其余是答案。
+
+    ``#`` 一级标题如果写的是类型名（通用 / 行为面 / 知识 / 项目技术），
+    它下面的问题都归到这一类型；写别的一律忽略。
+    """
     text = _decode(raw).replace("\r\n", "\n").replace("\r", "\n")
     lines = text.split("\n")
 
-    category = ""
+    group_type = ""
     current: dict[str, Any] | None = None
     body: list[str] = []
     meta_done = True
@@ -267,9 +249,7 @@ def parse_markdown(raw: bytes) -> list[dict[str, Any]]:
                     current["question"],
                     answer_text,
                     current.get("aliases"),
-                    current.get("tags"),
-                    category,
-                    current.get("type"),
+                    current.get("type") or group_type,
                     current.get("proficiency"),
                 ),
                 "line": current["line"],
@@ -289,7 +269,7 @@ def parse_markdown(raw: bytes) -> list[dict[str, Any]]:
             continue
         if stripped.startswith("# "):
             flush()
-            category = stripped[2:].strip()
+            group_type = _TYPE_ALIASES.get(_norm_header(stripped[2:]), "")
             continue
 
         if current is None:
@@ -412,8 +392,6 @@ def _public_row(row: dict[str, Any]) -> dict[str, Any]:
         "question": row["question"],
         "answerPreview": row["answer"][:120],
         "aliases": row["aliases"],
-        "tags": row["tags"],
-        "category": row["category"],
         "type": row["type"],
         "proficiency": row["proficiency"],
         "decision": row["decision"],
@@ -475,8 +453,6 @@ def commit(token: str, mode: str = "merge") -> dict[str, Any]:
             "question": row["question"],
             "answer": row["answer"],
             "aliases": row["aliases"],
-            "tags": row["tags"],
-            "category": row["category"],
             "type": row["type"],
             "proficiency": row["proficiency"],
             "source": "import",

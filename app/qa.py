@@ -21,7 +21,7 @@ from typing import Any, Iterable
 from app.materials import data_dir
 
 QA_FILENAME = "qa.db"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 TYPE_VALUES = ("general", "behavioral", "knowledge", "project")
 INDEX_STATES = ("pending", "indexing", "ready", "failed")
@@ -33,7 +33,6 @@ CONTENT_FIELDS = ("question", "answer", "aliases")
 MAX_QUESTION = 500
 MAX_ANSWER = 20000
 MAX_ALIASES = 20
-MAX_TAGS = 30
 
 _lock = threading.RLock()
 _initialised: set[str] = set()
@@ -74,7 +73,6 @@ CREATE TABLE IF NOT EXISTS qa (
   question     TEXT NOT NULL,
   question_key TEXT NOT NULL,
   answer       TEXT NOT NULL,
-  category     TEXT NOT NULL DEFAULT '',
   type         TEXT NOT NULL DEFAULT 'general'
                CHECK (type IN ('general','behavioral','knowledge','project')),
   proficiency  INTEGER NOT NULL DEFAULT 3 CHECK (proficiency BETWEEN 1 AND 5),
@@ -92,7 +90,6 @@ CREATE TABLE IF NOT EXISTS qa (
 
 CREATE INDEX IF NOT EXISTS qa_question_key ON qa(question_key);
 CREATE INDEX IF NOT EXISTS qa_type         ON qa(type, enabled);
-CREATE INDEX IF NOT EXISTS qa_category     ON qa(category);
 CREATE INDEX IF NOT EXISTS qa_profile      ON qa(profile_id);
 CREATE INDEX IF NOT EXISTS qa_index_status ON qa(index_status);
 CREATE INDEX IF NOT EXISTS qa_import       ON qa(import_id);
@@ -104,13 +101,6 @@ CREATE TABLE IF NOT EXISTS qa_aliases (
   position INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS qa_aliases_qa ON qa_aliases(qa_id);
-
-CREATE TABLE IF NOT EXISTS qa_tags (
-  qa_id INTEGER NOT NULL REFERENCES qa(id) ON DELETE CASCADE,
-  tag   TEXT NOT NULL,
-  PRIMARY KEY (qa_id, tag)
-);
-CREATE INDEX IF NOT EXISTS qa_tags_tag ON qa_tags(tag);
 
 CREATE TABLE IF NOT EXISTS qa_vectors (
   id          INTEGER PRIMARY KEY,
@@ -129,7 +119,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS qa_vectors_key
 CREATE INDEX IF NOT EXISTS qa_vectors_model ON qa_vectors(model);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS qa_fts USING fts5(
-  question, answer, aliases, tags, tokenize = 'trigram'
+  question, answer, aliases, tokenize = 'trigram'
 );
 """
 
@@ -163,11 +153,42 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     if key in _initialised:
         return
     conn.executescript(_SCHEMA)
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    version = int(row[0]) if row and str(row[0]).isdigit() else 0
+    if version < 2:
+        _migrate_to_v2(conn)
     conn.execute(
-        "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
+        "INSERT INTO meta(key, value) VALUES ('schema_version', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (str(SCHEMA_VERSION),),
     )
     _initialised.add(key)
+
+
+def _migrate_to_v2(conn: sqlite3.Connection) -> None:
+    """v2：只留「类型」一条分类轴，去掉「分类」和「标签」。
+
+    - 删 ``qa.category`` 列（先删依赖它的索引）和 ``qa_tags`` 表
+    - 全文索引重建为三列，并补一次全文，避免旧库里残留标签词
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(qa)")}
+    if "category" in columns:
+        conn.execute("DROP INDEX IF EXISTS qa_category")
+        conn.execute("ALTER TABLE qa DROP COLUMN category")
+    conn.execute("DROP TABLE IF EXISTS qa_tags")
+    conn.execute("DROP TABLE IF EXISTS qa_fts")
+    conn.execute(
+        "CREATE VIRTUAL TABLE qa_fts USING fts5("
+        "question, answer, aliases, tokenize = 'trigram')"
+    )
+    for row in conn.execute(
+        "SELECT q.id, q.question, q.answer, "
+        "(SELECT group_concat(text, ' ') FROM qa_aliases WHERE qa_id = q.id) FROM qa q"
+    ):
+        conn.execute(
+            "INSERT INTO qa_fts(rowid, question, answer, aliases) VALUES (?,?,?,?)",
+            (row[0], row[1], row[2], row[3] or ""),
+        )
 
 
 def reset_cache() -> None:
@@ -247,12 +268,11 @@ def _fts_refresh(
     question: str,
     answer: str,
     aliases: Iterable[str],
-    tags: Iterable[str],
 ) -> None:
     conn.execute("DELETE FROM qa_fts WHERE rowid = ?", (qa_id,))
     conn.execute(
-        "INSERT INTO qa_fts(rowid, question, answer, aliases, tags) VALUES (?,?,?,?,?)",
-        (qa_id, question, answer, " ".join(aliases), " ".join(tags)),
+        "INSERT INTO qa_fts(rowid, question, answer, aliases) VALUES (?,?,?,?)",
+        (qa_id, question, answer, " ".join(aliases)),
     )
 
 
@@ -308,18 +328,11 @@ def _hydrate(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict[str
         ids,
     ):
         aliases.setdefault(row["qa_id"], []).append(row["text"])
-    tags: dict[int, list[str]] = {}
-    for row in conn.execute(
-        f"SELECT qa_id, tag FROM qa_tags WHERE qa_id IN ({marks}) ORDER BY qa_id, tag",
-        ids,
-    ):
-        tags.setdefault(row["qa_id"], []).append(row["tag"])
 
     result = []
     for row in rows:
         item = dict(row)
         item["aliases"] = aliases.get(item["id"], [])
-        item["tags"] = tags.get(item["id"], [])
         item["enabled"] = bool(item["enabled"])
         result.append(item)
     return result
@@ -349,9 +362,7 @@ def find_by_key(question_key: str) -> list[dict[str, Any]]:
 
 def _where(
     q: str = "",
-    category: str = "",
     type_: str = "",
-    tag: str = "",
     status: str = "",
     profile_id: str | None = None,
 ) -> tuple[str, list[Any]]:
@@ -361,18 +372,12 @@ def _where(
         clauses.append("(question LIKE ? OR answer LIKE ?)")
         like = f"%{q.strip()}%"
         params += [like, like]
-    if category.strip():
-        clauses.append("category = ?")
-        params.append(category.strip())
     if type_.strip():
         clauses.append("type = ?")
         params.append(type_.strip())
     if status.strip():
         clauses.append("index_status = ?")
         params.append(status.strip())
-    if tag.strip():
-        clauses.append("EXISTS (SELECT 1 FROM qa_tags t WHERE t.qa_id = qa.id AND t.tag = ?)")
-        params.append(tag.strip())
     if profile_id is not None:
         clauses.append("(profile_id IS NULL OR profile_id = ?)")
         params.append(profile_id)
@@ -381,15 +386,13 @@ def _where(
 
 def list_qa(
     q: str = "",
-    category: str = "",
     type_: str = "",
-    tag: str = "",
     status: str = "",
     profile_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    where, params = _where(q, category, type_, tag, status, profile_id)
+    where, params = _where(q, type_, status, profile_id)
     limit = max(1, min(200, int(limit or 50)))
     offset = max(0, int(offset or 0))
     with _lock:
@@ -401,28 +404,6 @@ def list_qa(
                 [*params, limit, offset],
             ).fetchall()
             return {"items": _hydrate(conn, rows), "total": total}
-        finally:
-            conn.close()
-
-
-def facets() -> dict[str, Any]:
-    """筛选器要用的分类 / 标签清单。"""
-    with _lock:
-        conn = connect()
-        try:
-            categories = [
-                row[0]
-                for row in conn.execute(
-                    "SELECT DISTINCT category FROM qa WHERE category <> '' ORDER BY category"
-                )
-            ]
-            tags = [
-                row[0]
-                for row in conn.execute(
-                    "SELECT tag FROM qa_tags GROUP BY tag ORDER BY COUNT(*) DESC, tag LIMIT 200"
-                )
-            ]
-            return {"categories": categories, "tags": tags}
         finally:
             conn.close()
 
@@ -465,12 +446,6 @@ def _write_aliases(conn: sqlite3.Connection, qa_id: int, aliases: list[str]) -> 
         )
 
 
-def _write_tags(conn: sqlite3.Connection, qa_id: int, tags: list[str]) -> None:
-    conn.execute("DELETE FROM qa_tags WHERE qa_id = ?", (qa_id,))
-    for tag in tags:
-        conn.execute("INSERT OR IGNORE INTO qa_tags(qa_id, tag) VALUES (?,?)", (qa_id, tag))
-
-
 def create_qa(fields: dict[str, Any]) -> dict[str, Any]:
     question = str(fields.get("question") or "").strip()[:MAX_QUESTION]
     answer = str(fields.get("answer") or "").strip()[:MAX_ANSWER]
@@ -480,7 +455,6 @@ def create_qa(fields: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("答案不能为空")
 
     aliases = _clean_list(fields.get("aliases"), MAX_ALIASES, MAX_QUESTION)
-    tags = _clean_list(fields.get("tags"), MAX_TAGS, 40)
     now = _now()
     _touch()
 
@@ -489,16 +463,15 @@ def create_qa(fields: dict[str, Any]) -> dict[str, Any]:
         try:
             conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
-                """INSERT INTO qa(profile_id, question, question_key, answer, category, type,
+                """INSERT INTO qa(profile_id, question, question_key, answer, type,
                                   proficiency, enabled, source, import_id, source_ref,
                                   content_rev, index_status, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,0,'pending',?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,0,'pending',?,?)""",
                 (
                     fields.get("profile_id"),
                     question,
                     normalize_question(question),
                     answer,
-                    str(fields.get("category") or "").strip()[:60],
                     _clean_type(fields.get("type")),
                     _clean_proficiency(fields.get("proficiency")),
                     1 if fields.get("enabled", True) else 0,
@@ -511,8 +484,7 @@ def create_qa(fields: dict[str, Any]) -> dict[str, Any]:
             )
             qa_id = int(cursor.lastrowid)
             _write_aliases(conn, qa_id, aliases)
-            _write_tags(conn, qa_id, tags)
-            _fts_refresh(conn, qa_id, question, answer, aliases, tags)
+            _fts_refresh(conn, qa_id, question, answer, aliases)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -549,14 +521,6 @@ def update_qa(qa_id: int, patch: dict[str, Any]) -> dict[str, Any]:
                 if "aliases" in patch
                 else [r["text"] for r in alias_rows]
             )
-            tag_rows = conn.execute(
-                "SELECT tag FROM qa_tags WHERE qa_id = ? ORDER BY tag", (qa_id,)
-            ).fetchall()
-            tags = (
-                _clean_list(patch.get("tags"), MAX_TAGS, 40)
-                if "tags" in patch
-                else [r["tag"] for r in tag_rows]
-            )
 
             content_changed = (
                 question != current["question"]
@@ -566,14 +530,13 @@ def update_qa(qa_id: int, patch: dict[str, Any]) -> dict[str, Any]:
 
             conn.execute("BEGIN IMMEDIATE")
             conn.execute(
-                """UPDATE qa SET question=?, question_key=?, answer=?, category=?, type=?,
+                """UPDATE qa SET question=?, question_key=?, answer=?, type=?,
                                  proficiency=?, enabled=?, content_rev=?, index_status=?, updated_at=?
                    WHERE id=?""",
                 (
                     question,
                     normalize_question(question),
                     answer,
-                    str(patch.get("category", current["category"]) or "").strip()[:60],
                     _clean_type(patch.get("type", current["type"])),
                     _clean_proficiency(patch.get("proficiency", current["proficiency"])),
                     1 if patch.get("enabled", bool(current["enabled"])) else 0,
@@ -584,8 +547,7 @@ def update_qa(qa_id: int, patch: dict[str, Any]) -> dict[str, Any]:
                 ),
             )
             _write_aliases(conn, qa_id, aliases)
-            _write_tags(conn, qa_id, tags)
-            _fts_refresh(conn, qa_id, question, answer, aliases, tags)
+            _fts_refresh(conn, qa_id, question, answer, aliases)
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")

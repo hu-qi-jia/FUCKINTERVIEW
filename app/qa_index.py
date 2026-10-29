@@ -339,8 +339,6 @@ def search(
     query: str,
     limit: int = 20,
     types: list[str] | None = None,
-    categories: list[str] | None = None,
-    tags: list[str] | None = None,
     profile_id: str | None = None,
 ) -> dict[str, Any]:
     text = (query or "").strip()
@@ -357,8 +355,6 @@ def search(
 
     rows = store.load_qa_many(list(merged.keys()))
     types = {t for t in (types or []) if t}
-    categories = {c for c in (categories or []) if c}
-    tags = {t for t in (tags or []) if t}
 
     results = []
     for qa_id, entry in merged.items():
@@ -366,10 +362,6 @@ def search(
         if not item or not item["enabled"]:
             continue
         if types and item["type"] not in types:
-            continue
-        if categories and item["category"] not in categories:
-            continue
-        if tags and not (tags & set(item["tags"])):
             continue
         if profile_id and item["profile_id"] not in (None, profile_id):
             continue

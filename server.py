@@ -403,11 +403,6 @@ async def api_open_storage():
 # 写入只落库，向量由后台线程异步补算，所以界面不会被索引卡住。
 # 静态路径必须声明在 /api/qa/{qa_id} 之前，否则会被当成 id 解析。
 # --------------------------------------------------------------------------
-@app.get("/api/qa/facets")
-async def api_qa_facets():
-    return qa_store.facets()
-
-
 @app.get("/api/qa/stats")
 async def api_qa_stats():
     return qa_index.status()
@@ -438,8 +433,6 @@ async def api_qa_search(request: Request):
             str(payload.get("q") or ""),
             limit=int(payload.get("limit") or 20),
             types=[str(v) for v in payload.get("types") or []],
-            categories=[str(v) for v in payload.get("categories") or []],
-            tags=[str(v) for v in payload.get("tags") or []],
             profile_id=str(payload.get("profileId") or "") or None,
         )
     except RuntimeError as e:
@@ -449,9 +442,7 @@ async def api_qa_search(request: Request):
 @app.get("/api/qa")
 async def api_qa_list(
     q: str = "",
-    category: str = "",
     type_: str = Query("", alias="type"),
-    tag: str = "",
     status: str = "",
     profileId: str = "",
     limit: int = 50,
@@ -459,9 +450,7 @@ async def api_qa_list(
 ):
     return qa_store.list_qa(
         q=q,
-        category=category,
         type_=type_,
-        tag=tag,
         status=status,
         profile_id=profileId or None,
         limit=limit,

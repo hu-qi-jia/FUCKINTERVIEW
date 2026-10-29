@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 
 import { QaEditor } from "@/components/materials/qa-editor";
 import { QaImport } from "@/components/materials/qa-import";
-import { BADGE, TagChip, TypeBadge } from "@/components/materials/qa-bits";
+import { BADGE, TypeBadge } from "@/components/materials/qa-bits";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,11 +40,9 @@ import {
   getQa,
   listQa,
   patchQa,
-  qaFacets,
   qaStats,
   reindexQa,
   searchQa,
-  type QaFacets,
   type QaItem,
   type QaPatch,
   type QaStats,
@@ -121,10 +119,7 @@ export function QaLibrary({
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
-  const [category, setCategory] = useState("");
-  const [tag, setTag] = useState("");
 
-  const [facets, setFacets] = useState<QaFacets>({ categories: [], tags: [] });
   const [stats, setStats] = useState<QaStats | null>(null);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -152,17 +147,13 @@ export function QaLibrary({
           const results = await searchQa(query, {
             limit: PAGE_SIZE,
             types: type ? [type] : undefined,
-            categories: category ? [category] : undefined,
-            tags: tag ? [tag] : undefined,
           });
           if (ticket !== requestId.current) return;
           setItems(results);
           setTotal(results.length);
         } else {
           const data = await listQa({
-            category,
             type,
-            tag,
             limit: PAGE_SIZE,
             offset,
           });
@@ -177,14 +168,12 @@ export function QaLibrary({
         if (ticket === requestId.current) setLoading(false);
       }
     },
-    [query, type, category, tag],
+    [query, type],
   );
 
   const refreshMeta = useCallback(async () => {
     try {
-      const [nextFacets, nextStats] = await Promise.all([qaFacets(), qaStats()]);
-      setFacets(nextFacets);
-      setStats(nextStats);
+      setStats(await qaStats());
     } catch {
       // 元信息失败不影响列表本身。
     }
@@ -346,7 +335,7 @@ export function QaLibrary({
       return next;
     });
 
-  const filterActive = Boolean(query || type || category || tag);
+  const filterActive = Boolean(query || type);
 
   const filterSummary = useMemo(() => {
     if (!stats) return "";
@@ -392,7 +381,7 @@ export function QaLibrary({
             )}
           </div>
 
-          {/* 三个筛选器打包成一组：放不下时整组换行，而不是各掉一行。 */}
+          {/* 筛选器放在一个组里：放不下时整组换行，而不是各掉一行。 */}
           <div className="flex items-center gap-2">
             <FilterSelect
               value={type}
@@ -401,24 +390,6 @@ export function QaLibrary({
               label={t("qa.field.type")}
               options={QA_TYPES.map((value) => ({ value, label: t(`qa.type.${value}`) }))}
             />
-            {facets.categories.length > 0 && (
-              <FilterSelect
-                value={category}
-                onChange={setCategory}
-                allLabel={t("qa.filters.allCategories")}
-                label={t("qa.field.category")}
-                options={facets.categories.map((value) => ({ value, label: value }))}
-              />
-            )}
-            {facets.tags.length > 0 && (
-              <FilterSelect
-                value={tag}
-                onChange={setTag}
-                allLabel={t("qa.filters.allTags")}
-                label={t("qa.field.tags")}
-                options={facets.tags.map((value) => ({ value, label: value }))}
-              />
-            )}
           </div>
         </div>
       </div>
@@ -441,9 +412,9 @@ export function QaLibrary({
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
               <p className="text-sm font-medium">
-                {query || type || category || tag ? t("qa.emptyFiltered") : t("qa.empty.title")}
+                {filterActive ? t("qa.emptyFiltered") : t("qa.empty.title")}
               </p>
-              {!(query || type || category || tag) && (
+              {!filterActive && (
                 <p className="text-muted-foreground max-w-sm text-xs">{t("qa.empty.hint")}</p>
               )}
             </div>
@@ -511,14 +482,6 @@ export function QaLibrary({
                           {/* 负 margin 抵掉第一个 chip 的内边距，让标签文字和上面的标题对齐 */}
                           <div className="-ml-1.5 mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
                             <TypeBadge type={item.type} />
-                            {item.category && (
-                              <span className="text-muted-foreground text-[11px] leading-none">
-                                {item.category}
-                              </span>
-                            )}
-                            {item.tags.map((name) => (
-                              <TagChip key={name}>{name}</TagChip>
-                            ))}
                             {item.aliases.length > 0 && (
                               <span className="text-muted-foreground/70 text-[11px] leading-none">
                                 {t("qa.aliasCount", { count: item.aliases.length })}

@@ -25,8 +25,6 @@ interface Draft {
   question: string;
   answer: string;
   aliases: string;
-  tags: string;
-  category: string;
   type: QaType;
 }
 
@@ -35,8 +33,6 @@ function toDraft(item: QaItem): Draft {
     question: item.question,
     answer: item.answer,
     aliases: item.aliases.join(SEPARATOR),
-    tags: item.tags.join(SEPARATOR),
-    category: item.category,
     type: item.type,
   };
 }
@@ -66,15 +62,6 @@ function diff(draft: Draft, item: QaItem): QaPatch | null {
   const aliases = splitList(draft.aliases);
   if (!sameList(aliases, item.aliases)) {
     patch.aliases = aliases;
-    changed = true;
-  }
-  const tags = splitList(draft.tags);
-  if (!sameList(tags, item.tags)) {
-    patch.tags = tags;
-    changed = true;
-  }
-  if (draft.category !== item.category) {
-    patch.category = draft.category;
     changed = true;
   }
   if (draft.type !== item.type) {
@@ -188,22 +175,6 @@ export function QaEditor({
             value={draft.aliases}
             onChange={(event) => set("aliases", event.target.value)}
             placeholder={t("qa.field.aliasesHint")}
-            className="h-8"
-          />
-        </Field>
-        <Field label={t("qa.field.tags")}>
-          <Input
-            value={draft.tags}
-            onChange={(event) => set("tags", event.target.value)}
-            placeholder={t("qa.field.tagsHint")}
-            className="h-8"
-          />
-        </Field>
-        <Field label={t("qa.field.category")}>
-          <Input
-            value={draft.category}
-            onChange={(event) => set("category", event.target.value)}
-            placeholder={t("qa.field.categoryHint")}
             className="h-8"
           />
         </Field>

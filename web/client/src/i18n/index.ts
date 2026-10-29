@@ -421,10 +421,6 @@ const zh = {
       answerHint: "写你现场要说的版本",
       aliases: "别名问法",
       aliasesHint: "同义问法，多个用 | 分隔",
-      tags: "标签",
-      tagsHint: "多个用 | 分隔，例如：通用 | 开场",
-      category: "分类",
-      categoryHint: "自由填写，比如「行为面试」",
       type: "类型",
     },
     type: {
@@ -435,8 +431,6 @@ const zh = {
     },
     filters: {
       allTypes: "全部类型",
-      allCategories: "全部分类",
-      allTags: "全部标签",
     },
     editor: {
       indexed: "已索引",
@@ -921,10 +915,6 @@ const en = {
       answerHint: "What you would actually say out loud",
       aliases: "Aliases",
       aliasesHint: "Alternative phrasings, separated by |",
-      tags: "Tags",
-      tagsHint: "Separate with |, e.g. general | intro",
-      category: "Category",
-      categoryHint: "Free text, e.g. Behavioral",
       type: "Type",
     },
     type: {
@@ -935,8 +925,6 @@ const en = {
     },
     filters: {
       allTypes: "All types",
-      allCategories: "All categories",
-      allTags: "All tags",
     },
     editor: {
       indexed: "Indexed",

@@ -21,15 +21,6 @@ export function TypeBadge({ type }: { type: QaType }) {
   return <span className={cn(BADGE, TYPE_TONES[type])}>{t(`qa.type.${type}`)}</span>;
 }
 
-/** 标签：比分类更「可点」，所以给一圈描边；分类只是纯文字。 */
-export function TagChip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-muted-foreground border-border/70 rounded-md border px-1.5 py-0.5 text-[11px] leading-none">
-      {children}
-    </span>
-  );
-}
-
 export function IndexDot({ status }: { status: QaIndexStatus }) {
   return (
     <span

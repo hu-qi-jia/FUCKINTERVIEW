@@ -5,7 +5,7 @@
 
 ## 1. 目标与边界
 
-**它是什么**：一份本地问答库。你可以导入（xlsx / csv / md）或手动新增问答对，页面里能按语义、关键词、分类标签三种方式检索，编辑自动保存。
+**它是什么**：一份本地问答库。你可以导入（xlsx / csv / md）或手动新增问答对，页面里能按语义、关键词、类型三种方式检索，编辑自动保存。
 
 **它给谁用**：最终服务于实时面试——面试官问一句，命中库里的问题就把你写好的答案原样贴出来（不经 LLM 改写）。本期只把检索能力做出来，不接语音链路。
 
@@ -69,7 +69,6 @@ CREATE TABLE qa (
   question     TEXT NOT NULL,         -- 主问题，原文
   question_key TEXT NOT NULL,         -- 归一化后（去空白/全半角/标点/大小写），用于去重
   answer       TEXT NOT NULL,
-  category     TEXT NOT NULL DEFAULT '',      -- 自由文本分类，'' = 未分类
   type         TEXT NOT NULL DEFAULT 'general'
                CHECK (type IN ('general','behavioral','knowledge','project')),
   proficiency  INTEGER NOT NULL DEFAULT 3 CHECK (proficiency BETWEEN 1 AND 5), -- 界面已不使用
@@ -87,7 +86,6 @@ CREATE TABLE qa (
 
 CREATE INDEX qa_question_key ON qa(question_key);
 CREATE INDEX qa_type         ON qa(type, enabled);
-CREATE INDEX qa_category     ON qa(category);
 CREATE INDEX qa_profile      ON qa(profile_id);
 CREATE INDEX qa_index_status ON qa(index_status);
 CREATE INDEX qa_import       ON qa(import_id);
@@ -100,14 +98,6 @@ CREATE TABLE qa_aliases (
   position INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX qa_aliases_qa ON qa_aliases(qa_id);
-
--- 标签：多选，用于浏览筛选
-CREATE TABLE qa_tags (
-  qa_id INTEGER NOT NULL REFERENCES qa(id) ON DELETE CASCADE,
-  tag   TEXT NOT NULL,
-  PRIMARY KEY (qa_id, tag)
-);
-CREATE INDEX qa_tags_tag ON qa_tags(tag);
 
 -- 向量：一条 QA 最多三类（主问题 / 每个别名 / 答案）
 CREATE TABLE qa_vectors (
@@ -127,10 +117,20 @@ CREATE INDEX qa_vectors_model ON qa_vectors(model);
 
 -- 关键词检索：trigram 分词器，中文按字符三元组切，无需 jieba
 CREATE VIRTUAL TABLE qa_fts USING fts5(
-  question, answer, aliases, tags,
+  question, answer, aliases,
   tokenize = 'trigram'
 );  -- rowid = qa.id，同一事务内手工维护
 ```
+
+### 关于分类轴（schema v2）
+
+最初设计给了三条分类轴：自由文本的 `category`、多选的 `tags`、以及枚举 `type`。
+实现后这三条轴语义高度重叠——「行为面试」既可以当分类、也可以当标签、还可以是类型，
+导入时该怎么填全凭手感，页面上还要并排放三个筛选器。**v2 只保留 `type`**。
+
+迁移（`SCHEMA_VERSION = 2`，首次连接时自动执行）：删 `qa.category` 列（先删 `qa_category`
+索引）、删 `qa_tags` 表、重建三列的 `qa_fts` 并从 `qa` 补一次全文，避免旧库里残留标签词。
+问题、答案、别名、类型都不受影响。
 
 ### 两个保留但不再使用的列
 
@@ -217,23 +217,20 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 | 问题 | 是 | 主问题 |
 | 答案 | 是 | 答案正文，可多行 |
 | 别名 | 否 | 多个用 `\|` 或 `;` 分隔 |
-| 标签 | 否 | 多个用 `,` 或 `;` 分隔 |
-| 分类 | 否 | 自由文本，空 = 未分类 |
 | 类型 | 否 | `通用` / `行为面` / `知识` / `项目技术`，也接受 `general` 等英文枚举，空 = 通用 |
 
 读 xlsx 用 `openpyxl`（纯 Python，约 1MB，不需要 pandas）。
 
-> 早期设计的「熟练度」列已从模板和界面移除：它没有任何功能在读（不参与排序、筛选和检索），
-> 留着只是让每条记录多一个装饰字段。老文件里带这一列仍能正常导入，值被忽略。
+> 早期的「熟练度」「分类」「标签」列已从模板和界面移除：熟练度没有任何功能在读；
+> 分类和标签和「类型」语义重叠。老文件里带这几列仍能正常导入，值被忽略。
 
 ### 6.2 Markdown
 
 ```markdown
-# 行为面试                       ← 一级标题 = 分类（可省略，默认「未分类」）
+# 行为面                         ← 一级标题是类型名时，下面都归这一类型
 
 ## 请做一下自我介绍                ← 二级标题 = 主问题
 > 别名: 简单介绍一下你自己; 介绍一下自己
-> 标签: 通用, 开场
 
 答案正文，可以多行、可以有空行。
 
@@ -244,9 +241,10 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 解析规则：
 
 - `##` 之后到下一个 `##` / `#` 之前是答案正文
-- 紧跟标题的 `> 别名:` / `> 标签:` / `> 类型:` 算元数据；不在白名单里的 `>` 行一律按正文处理
+- 紧跟标题的 `> 别名:` / `> 类型:` 算元数据；不在白名单里的 `>` 行一律按正文处理
   （`> 熟练度:` 仍被识别，但值被忽略）
-- `类型` 从「分类」映射（分类名含「行为」→ `behavioral`，含「项目」→ `project`，含「知识/原理」→ `knowledge`，否则 `general`）；md 里也可写 `> 类型: 项目技术` 覆盖
+- `#` 一级标题匹配类型名（通用 / 行为面 / 知识 / 项目技术）时，作为下面各题的默认类型；
+  写别的标题会被忽略。单条也可以用 `> 类型: 项目技术` 覆盖
 
 ### 6.3 模板下载
 
@@ -284,14 +282,13 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/qa/facets` | 分类 / 标签清单，给筛选器用 |
-| GET | `/api/qa` | 列表，支持 `q / category / type / tag / status / limit / offset` |
+| GET | `/api/qa` | 列表，支持 `q / type / status / limit / offset` |
 | POST | `/api/qa` | 新增，返回后进索引队列 |
 | GET | `/api/qa/{id}` | 单条 |
 | PATCH | `/api/qa/{id}` | 部分更新，`content_rev` +1 |
 | DELETE | `/api/qa/{id}` | 删除 |
 | POST | `/api/qa/bulk-delete` | 批量删除 |
-| POST | `/api/qa/search` | `{q, limit, types[], categories[], tags[], profileId?}` |
+| POST | `/api/qa/search` | `{q, limit, types[], profileId?}` |
 | POST | `/api/qa/import/preview` | multipart 上传，返回预览 + 一次性 token |
 | POST | `/api/qa/import/commit` | `{token, mode: "merge" | "append"}` |
 | DELETE | `/api/qa/imports/{id}` | 撤销整批 |
@@ -310,8 +307,6 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
       "question": "请做一下自我介绍",
       "answer": "……",
       "aliases": ["简单介绍一下你自己"],
-      "tags": ["通用", "开场"],
-      "category": "行为面试",
       "type": "behavioral",
       "proficiency": 4,
       "score": 0.86,
@@ -333,9 +328,9 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 
 ## 10. 页面交互
 
-1. 列表 = 搜索框 + 分类/类型/标签筛选 + 索引状态标识，每页 50 滚动加载；
-   三个筛选器固定宽度（`w-32`），选中项字数不同也不会让右侧按钮横跳
-2. 编辑 = 点开一行展开或右侧抽屉，问题/答案/别名/标签/分类/类型都可改，**800ms 防抖自动保存**
+1. 列表 = 搜索框 + 类型筛选 + 索引状态标识，每页 50 滚动加载；
+   筛选器固定宽度（`w-32`），选中项字数不同也不会让右侧控件横跳
+2. 编辑 = 点开一行展开或右侧抽屉，问题/答案/别名/类型都可改，**800ms 防抖自动保存**
 3. 导入 = 选文件 → 预览（新增/更新/跳过/疑似重复）→ 确认 → 进度（写库 + 后台索引）；
    确认后可「撤销新增」，删掉这一批新加的条目（已存在、只是被更新的条目保留更新后的内容）
 4. 底部固定一条状态栏：左「共 N 条 / 已索引 M 条」（有筛选时改成「筛选出 X / N 条」），

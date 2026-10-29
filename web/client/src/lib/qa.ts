@@ -13,8 +13,6 @@ export interface QaItem {
   question: string;
   answer: string;
   aliases: string[];
-  tags: string[];
-  category: string;
   type: QaType;
   source: string;
   importId: number | null;
@@ -33,8 +31,6 @@ export interface QaPatch {
   question?: string;
   answer?: string;
   aliases?: string[];
-  tags?: string[];
-  category?: string;
   type?: QaType;
 }
 
@@ -56,18 +52,11 @@ export interface QaStats {
   lastError: string | null;
 }
 
-export interface QaFacets {
-  categories: string[];
-  tags: string[];
-}
-
 export interface QaPreviewRow {
   line: number | null;
   question: string;
   answerPreview: string;
   aliases: string[];
-  tags: string[];
-  category: string;
   type: QaType;
   proficiency: number;
   decision: QaDecision;
@@ -137,8 +126,6 @@ function toItem(raw: Record<string, unknown>): QaItem {
     question: String(raw.question ?? ""),
     answer: String(raw.answer ?? ""),
     aliases: (raw.aliases as string[]) ?? [],
-    tags: (raw.tags as string[]) ?? [],
-    category: String(raw.category ?? ""),
     type: (raw.type as QaType) ?? "general",
     source: String(raw.source ?? "manual"),
     importId: raw.import_id == null ? null : Number(raw.import_id),
@@ -155,9 +142,7 @@ function toItem(raw: Record<string, unknown>): QaItem {
 
 export interface QaListParams {
   q?: string;
-  category?: string;
   type?: string;
-  tag?: string;
   status?: string;
   limit?: number;
   offset?: number;
@@ -210,8 +195,6 @@ export async function searchQa(
   options: {
     limit?: number;
     types?: string[];
-    categories?: string[];
-    tags?: string[];
   } = {},
 ): Promise<QaItem[]> {
   const data = await request<{ results: Record<string, unknown>[] }>(
@@ -223,10 +206,6 @@ export async function searchQa(
 
 export async function qaStats(): Promise<QaStats> {
   return request<QaStats>("/api/qa/stats");
-}
-
-export async function qaFacets(): Promise<QaFacets> {
-  return request<QaFacets>("/api/qa/facets");
 }
 
 export async function reindexQa(scope: "all" | "failed" | "stale"): Promise<number> {
