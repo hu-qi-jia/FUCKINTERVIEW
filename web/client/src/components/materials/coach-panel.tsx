@@ -70,10 +70,11 @@ export function CoachPanel({
   const [slug, setSlug] = useState("");
   const [active, setActive] = useState<CoachDimension | null>(null);
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<CoachDimension | null>(null);
   const [writing, setWriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 出题失败后的重试：清掉「已请求过」标记再跑一次同一个 effect。
+  const [retryToken, setRetryToken] = useState(0);
 
   // 已经为哪些卡请求过问题：避免每次渲染都重新请求。
   const requested = useRef(new Set<string>());
@@ -100,7 +101,6 @@ export function CoachPanel({
   useEffect(() => {
     if (!slug || questionsReady || requested.current.has(slug)) return;
     requested.current.add(slug);
-    setLoading(true);
     setError(null);
     void (async () => {
       try {
@@ -109,12 +109,10 @@ export function CoachPanel({
       } catch (cause) {
         requested.current.delete(slug);
         setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        setLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, questionsReady, profile.id]);
+  }, [slug, questionsReady, profile.id, retryToken]);
 
   // 切卡时清空编辑状态。
   useEffect(() => {
@@ -272,7 +270,7 @@ export function CoachPanel({
           />
         </div>
 
-        {loading ? (
+        {!questionsReady && !error ? (
           <div className="grid gap-2 pt-1">
             <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <Spinner className="size-3" />
@@ -294,7 +292,7 @@ export function CoachPanel({
               </div>
             ))}
           </div>
-        ) : (
+        ) : questionsReady ? (
           <ol className="grid pt-1">
             {COACH_DIMENSIONS.map((dimension, index) => {
               const slot = cardSlots[dimension];
@@ -438,6 +436,21 @@ export function CoachPanel({
               );
             })}
           </ol>
+        ) : (
+          <div className="grid justify-start gap-2 pt-1">
+            <p className="text-destructive text-xs leading-relaxed">{error}</p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                requested.current.delete(slug);
+                setError(null);
+                setRetryToken((token) => token + 1);
+              }}
+            >
+              {t("materials.retry")}
+            </Button>
+          </div>
         )}
 
         {filled === total && (
@@ -449,7 +462,7 @@ export function CoachPanel({
           </p>
         )}
 
-        {error && (
+        {error && questionsReady && (
           <p className="text-destructive text-xs leading-relaxed">{error}</p>
         )}
       </div>
