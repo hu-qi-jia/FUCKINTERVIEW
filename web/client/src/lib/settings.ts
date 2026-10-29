@@ -15,6 +15,8 @@ export interface LlmSettings {
   api_key: string;
   base_url: string;
   model: string;
+  /** 关掉推理模型的思考，换取首字延迟；不认这个参数的供应商要关掉。 */
+  disable_thinking?: boolean;
 }
 
 export interface TtsSettings {

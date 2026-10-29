@@ -32,6 +32,9 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "api_key": "",
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
+        # 关掉推理模型的思考：面试回答不需要链式推理。DeepSeek 实测能削掉
+        # 0.7s 以上的首字延迟。换到不认这个参数的供应商时，这里改成 false。
+        "disable_thinking": True,
     },
     "tts": {
         "provider": "minimax",

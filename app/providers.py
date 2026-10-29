@@ -119,6 +119,14 @@ def build_llm(section: dict[str, Any]):
             ),
         )
 
+    # 关掉推理模型的思考（Reasoning / Thinking）。面试回答是「把确认过的事实
+    # 说出来」，不需要链式推理；实测 DeepSeek 上思考占了首字延迟的 84%。
+    # 走 OpenAI 兼容的 reasoning_effort=none，DeepSeek / Qwen / OpenAI 的新模型
+    # 都认；换到不认这个字段的供应商时，在设置里关掉这一项即可。
+    extra = (
+        {"reasoning_effort": "none"} if section.get("disable_thinking", True) else {}
+    )
+
     # 任意 OpenAI 兼容服务：OpenAI、DeepSeek、SiliconFlow、Ollama、vLLM 等
     return CompatibleOpenAILLMService(
         api_key=_require_key(section, "LLM (OpenAI 兼容)", "OPENAI_API_KEY"),
@@ -126,6 +134,7 @@ def build_llm(section: dict[str, Any]):
         settings=OpenAILLMService.Settings(
             model=model or "gpt-4o-mini",
             system_instruction=system_prompt,
+            extra=extra,
         ),
     )
 

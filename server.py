@@ -5,6 +5,7 @@
 - 用本项目构建的前端替换官方预置 UI（挂载在 /client）
 """
 
+import asyncio
 from pathlib import Path
 
 import aiohttp
@@ -14,8 +15,11 @@ from loguru import logger
 from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
 
+from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
+    LLMContextFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMRunFrame,
@@ -35,6 +39,10 @@ from pipecat.runner.run import app, main
 from pipecat.runner.types import RunnerArguments
 from pipecat.runner.utils import create_transport
 from pipecat.transports.base_transport import BaseTransport, TransportParams
+from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+    TurnAnalyzerUserTurnStopStrategy,
+)
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_model_dir, save_settings
@@ -580,6 +588,27 @@ transport_params = {
 }
 
 
+# 回合结束的兜底等待。smart-turn 模型通常 0.2–0.4 秒就判完「说完了」，
+# pipecat 默认的 3 秒只是模型犹豫时的兜底——日志里真出现过一次，等于凭空
+# 多等 1.5 秒。1.2 秒对正常提问足够长，也不会把句中的停顿当成说完了。
+TURN_STOP_SECS = 1.2
+
+
+def _user_turn_params() -> LLMUserAggregatorParams:
+    return LLMUserAggregatorParams(
+        vad_analyzer=SileroVADAnalyzer(),
+        user_turn_strategies=UserTurnStrategies(
+            stop=[
+                TurnAnalyzerUserTurnStopStrategy(
+                    turn_analyzer=LocalSmartTurnAnalyzerV3(
+                        params=SmartTurnParams(stop_secs=TURN_STOP_SECS)
+                    )
+                )
+            ]
+        ),
+    )
+
+
 class TextOnlyOutput(FrameProcessor):
     """把 LLM 的输出标记为「不朗读」。
 
@@ -607,6 +636,87 @@ def _live_profile(body: dict) -> dict | None:
         except KeyError:
             logger.warning(f"实时面试找不到档案 {profile_id}，改用最近编辑的一份")
     return latest_profile()
+
+
+# 命中问答库后可以直接贴原文的类型。项目技术类必须走 LLM + 档案：
+# 库里的标准答案会盖掉你项目卡里更具体的细节。
+DIRECT_QA_TYPES = ("general", "behavioral", "knowledge")
+
+
+def _last_user_text(context: LLMContext) -> str:
+    """上下文里最后一条用户消息——也就是面试官刚问的那句。"""
+    for message in reversed(getattr(context, "messages", None) or []):
+        if message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            return " ".join(
+                part.get("text") or "" for part in content if isinstance(part, dict)
+            ).strip()
+    return ""
+
+
+class QaAnswer(FrameProcessor):
+    """实时面试：面试官的问题先过一遍问答库。
+
+    放在用户聚合器和 LLM 之间，拦住那个触发推理的 LLMContextFrame：
+    命中（相似度 >= 阈值，且类型不在「项目技术」）就把库里的答案原样推出去，
+    这一轮**不跑 LLM**；没命中才放行，让 LLM 用面试档案回答。
+
+    模型没下载、检索报错一律当作没命中——面试不能因为问答库挂掉而中断。
+    """
+
+    def __init__(self, settings: dict):
+        super().__init__()
+        embedding = settings.get("embedding") or {}
+        try:
+            self._threshold = float(embedding.get("relevance_threshold") or 0.75)
+        except (TypeError, ValueError):
+            self._threshold = 0.75
+
+    async def process_frame(self, frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMContextFrame) and direction == FrameDirection.DOWNSTREAM:
+            answer = await self._lookup(_last_user_text(frame.context))
+            if answer:
+                await self.push_frame(LLMFullResponseStartFrame())
+                await self.push_frame(LLMTextFrame(text=answer))
+                await self.push_frame(LLMFullResponseEndFrame())
+                return
+        await self.push_frame(frame, direction)
+
+    async def _lookup(self, text: str) -> str | None:
+        if not text:
+            return None
+        try:
+            result = await run_in_threadpool(
+                qa_index.search, text, 3, list(DIRECT_QA_TYPES), None
+            )
+        except Exception as error:
+            logger.warning(f"问答库检索失败，这一轮交给 LLM：{error}")
+            return None
+
+        for item in result.get("results") or []:
+            score = float(item.get("score") or 0)
+            if score < self._threshold:
+                break
+            answer = str(item.get("answer") or "").strip()
+            if answer:
+                logger.info(
+                    f"问答库命中「{item.get('question')}」score={score:.2f}，直接贴原文"
+                )
+                return answer
+        return None
+
+
+async def _warm_qa_model() -> None:
+    """提前把向量模型加载进来，别让开场第一个问题多等一次冷启动。"""
+    try:
+        await run_in_threadpool(qa_index.get_model)
+    except Exception as error:
+        logger.warning(f"问答库向量模型预热失败，实时面试将全部交给 LLM：{error}")
 
 
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
@@ -640,6 +750,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 f"Live interview profile={(profile or {}).get('name') or '(none)'}"
             )
             llm = build_llm(llm_settings)
+            # 问答库检索要用向量模型，提前在后台加载。
+            warm_task = asyncio.create_task(_warm_qa_model())
         else:
             # 模拟面试：内置的面试官提示词，不读设置里的任何文案。
             llm_settings = {
@@ -655,9 +767,13 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         if mode != "listen":
             user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
                 context,
-                user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+                user_params=_user_turn_params(),
             )
-            processors += [user_aggregator, llm]
+            processors.append(user_aggregator)
+            if mode == "live":
+                # 面试官的问题先查问答库：命中就直接贴原文，这一轮不跑 LLM。
+                processors.append(QaAnswer(settings))
+            processors.append(llm)
             # 原来的 TTS 槽位：mock 合成语音，live 只把文本转成
             # AggregatedTextFrame，由 RTVIObserver 作为 BotOutput 发给前端。
             if mode == "mock":
@@ -671,7 +787,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             # 第二路也必须带上它，否则一段转写都不会产生。
             user_aggregator, _assistant_aggregator = LLMContextAggregatorPair(
                 context,
-                user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+                user_params=_user_turn_params(),
             )
             processors += [user_aggregator, transport.output()]
 

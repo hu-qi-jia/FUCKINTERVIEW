@@ -722,6 +722,27 @@ export function SettingsDialog({
                       />
                     </Field>
 
+                    <Field label={t("settings.fields.disableThinking")}>
+                      <div className="flex h-8 items-center">
+                        <Switch
+                          checked={settings.llm.disable_thinking !== false}
+                          onCheckedChange={(next) =>
+                            setSettings((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    llm: {
+                                      ...current.llm,
+                                      disable_thinking: Boolean(next),
+                                    },
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </div>
+                    </Field>
+
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {t("settings.builtinPrompts")}
                     </p>

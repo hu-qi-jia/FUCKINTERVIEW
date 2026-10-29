@@ -198,13 +198,19 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 
 用 RRF 而不是加权分数，是因为余弦和 BM25 的量纲不同，归一化容易出玄学问题；RRF 只用排名，稳定且无需调参。
 
-### 命中之后怎么用（下一期）
+### 命中之后怎么用（已实现）
 
 - `type in ('general','behavioral','knowledge')` 且余弦 ≥ 0.75 → **原文直出**，不经过 LLM
 - `type = 'project'` → **永远走 LLM + 档案**，库里的条目只当参考，不直接贴
 - 未命中 → LLM + 档案（档案本来就是全量塞进 system prompt 的，不存在「档案检索不到」这一步）
 
-阈值为配置项，页面展示相似度方便校准。
+实现上是用户聚合器和 LLM 之间的一个 `QaAnswer` 处理器：它拦住触发推理的
+`LLMContextFrame`，命中就自己推 `LLMFullResponseStart / LLMText / LLMFullResponseEnd`
+三个帧（下游的 `TextOnlyOutput` 照常标记 skip_tts，助手聚合器照常把这条写回上下文），
+**这一轮 LLM 根本不启动**；没命中才把那个帧放行。所以「问答库优先」不额外花一次
+模型往返，命中时比 LLM 还快。模型加载失败或检索报错一律当作没命中。
+
+阈值为配置项（`embedding.relevance_threshold`，默认 0.75），页面展示相似度方便校准。
 
 ## 6. 导入格式
 
