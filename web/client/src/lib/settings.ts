@@ -15,7 +15,6 @@ export interface LlmSettings {
   api_key: string;
   base_url: string;
   model: string;
-  system_prompt: string;
 }
 
 export interface TtsSettings {

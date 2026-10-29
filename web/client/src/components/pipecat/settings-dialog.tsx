@@ -101,23 +101,6 @@ function ProviderSelect({
   );
 }
 
-function ModelTextarea({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <textarea
-      value={value}
-      rows={7}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-    />
-  );
-}
-
 export function SettingsDialog({
   open,
   onClose,
@@ -605,14 +588,9 @@ export function SettingsDialog({
                       />
                     </Field>
 
-                    <Field label={t("settings.fields.systemPrompt")}>
-                      <ModelTextarea
-                        value={settings.llm.system_prompt}
-                        onChange={(value) =>
-                          patch("llm", "system_prompt", value)
-                        }
-                      />
-                    </Field>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      {t("settings.builtinPrompts")}
+                    </p>
                   </section>
 
                   <Separator />

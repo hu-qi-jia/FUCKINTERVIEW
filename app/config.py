@@ -16,6 +16,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "候选人的回答来自语音转写，可能有错别字或标点缺失，请合理理解。"
     "你的回答会被朗读出来，请使用口语化表达，不要使用 Markdown、列表、代码块或表情符号。"
 )
+# 提示词按场景内置（模拟面试 / 实时面试 / 面试材料各用各的），不再写进配置文件，
+# 设置页也就不再暴露 system_prompt 这一项。
 
 DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
     "asr": {
@@ -30,7 +32,6 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "api_key": "",
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
-        "system_prompt": DEFAULT_SYSTEM_PROMPT,
     },
     "tts": {
         "provider": "minimax",
@@ -62,14 +63,20 @@ def _merge(defaults: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]
 
 def load_settings() -> dict[str, Any]:
     """读取配置；文件不存在时返回默认值。"""
-    if not CONFIG_PATH.exists():
-        return json.loads(json.dumps(DEFAULT_SETTINGS))
-    try:
-        with CONFIG_PATH.open("r", encoding="utf-8") as f:
-            stored = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return json.loads(json.dumps(DEFAULT_SETTINGS))
-    return _merge(json.loads(json.dumps(DEFAULT_SETTINGS)), stored)
+    settings = json.loads(json.dumps(DEFAULT_SETTINGS))
+    if CONFIG_PATH.exists():
+        try:
+            with CONFIG_PATH.open("r", encoding="utf-8") as f:
+                stored = json.load(f)
+            settings = _merge(settings, stored)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    # 老配置文件里可能还留着 system_prompt；提示词改成内置后一律忽略。
+    llm = settings.get("llm")
+    if isinstance(llm, dict):
+        llm.pop("system_prompt", None)
+    return settings
 
 
 def _write_settings(settings: dict[str, Any]) -> None:
@@ -95,6 +102,9 @@ def save_settings(incoming: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise ValueError(f"{section} 必须是对象")
         clean[section] = {str(k): v for k, v in value.items() if isinstance(k, str)}
+
+    # 提示词由各场景内置，前端即使还带着这个键也不落盘。
+    clean.get("llm", {}).pop("system_prompt", None)
 
     merged = _merge(load_settings(), clean)
     _write_settings(merged)

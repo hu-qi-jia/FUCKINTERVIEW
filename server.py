@@ -36,7 +36,7 @@ from pipecat.runner.utils import create_transport
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.workers.runner import WorkerRunner
 
-from app.config import load_settings, save_settings
+from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_settings
 from app.materials import (
     apply_coach_result,
     apply_plan,
@@ -460,7 +460,12 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             )
             llm = build_llm(llm_settings)
         else:
-            llm = build_llm(settings["llm"])
+            # 模拟面试：内置的面试官提示词，不读设置里的任何文案。
+            llm_settings = {
+                **settings["llm"],
+                "system_prompt": DEFAULT_SYSTEM_PROMPT,
+            }
+            llm = build_llm(llm_settings)
         tts = build_tts(settings["tts"], session) if mode == "mock" else None
 
         context = LLMContext()

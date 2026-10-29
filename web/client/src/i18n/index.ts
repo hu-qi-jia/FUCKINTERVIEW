@@ -359,10 +359,11 @@ const zh = {
       dataDir: "数据目录",
       baseUrl: "Base URL",
       apiKey: "API Key",
-      systemPrompt: "系统提示词",
       voice: "音色 / Voice ID",
       groupId: "Group ID",
     },
+    builtinPrompts:
+      "提示词按场景内置：模拟面试、实时面试、面试材料各不相同，不需要在这里配置。",
     theme: {
       light: "浅色",
       dark: "深色",
@@ -749,10 +750,11 @@ const en = {
       dataDir: "Data folder",
       baseUrl: "Base URL",
       apiKey: "API key",
-      systemPrompt: "System prompt",
       voice: "Voice ID",
       groupId: "Group ID",
     },
+    builtinPrompts:
+      "Prompts are built in per mode — mock interview, live interview and interview materials each use their own. Nothing to configure here.",
     theme: {
       light: "Light",
       dark: "Dark",
