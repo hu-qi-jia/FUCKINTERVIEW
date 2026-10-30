@@ -201,10 +201,22 @@ def _clip(value: Any, limit: int) -> str:
     return text if len(text) <= limit else text[:limit].rstrip() + "…"
 
 
-def build_live_system_prompt(profile: dict[str, Any] | None) -> str:
-    """实时面试用的系统提示词：候选人视角，且只依据档案事实。"""
+def _with_glossary(prompt: str, glossary: str) -> str:
+    block = (glossary or "").strip()
+    return f"{prompt}\n\n{block}" if block else prompt
+
+
+def build_live_system_prompt(profile: dict[str, Any] | None, glossary: str = "") -> str:
+    """实时面试用的系统提示词：候选人视角，且只依据档案事实。
+
+    ``glossary`` 是术语库按当前对话筛出来的释义段，放在最后：它比档案变得勤，
+    放在末尾才不会让前面的内容整段掉出供应商的前缀缓存。
+    """
     if not profile:
-        return LIVE_SYSTEM_TEMPLATE.format(language=LANGUAGE_LABEL["zh"]) + "\n\n" + LIVE_EMPTY_PROFILE
+        return _with_glossary(
+            LIVE_SYSTEM_TEMPLATE.format(language=LANGUAGE_LABEL["zh"]) + "\n\n" + LIVE_EMPTY_PROFILE,
+            glossary,
+        )
 
     language = str(profile.get("language") or "zh")
     prompt = LIVE_SYSTEM_TEMPLATE.format(
@@ -250,7 +262,7 @@ def build_live_system_prompt(profile: dict[str, Any] | None) -> str:
         parts.append("（这份档案还没有填简历、岗位描述或经历卡。）")
     parts.append("</profile>")
 
-    return prompt + "\n\n" + "\n\n".join(parts)
+    return _with_glossary(prompt + "\n\n" + "\n\n".join(parts), glossary)
 
 
 # --------------------------------------------------------------------------

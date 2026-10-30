@@ -26,14 +26,21 @@ import { SystemAudioMediaManager } from "@/lib/system-audio-media-manager";
  */
 export function useLiveInterview({
   profileId,
+  onServerMessage,
 }: {
   /** 实时面试绑定的面试档案；随 /start 下发给后端。 */
   profileId?: string | null;
+  /** 后端推来的自定义消息（目前只有术语纠错）。 */
+  onServerMessage?: (data: unknown) => void;
 } = {}) {
   const { t } = useTranslation();
   const managerRef = useRef<SystemAudioMediaManager | null>(null);
   if (!managerRef.current) managerRef.current = new SystemAudioMediaManager();
   const manager = managerRef.current;
+
+  // 回调每次渲染都会换引用，用 ref 保证连接时注册的是最新那个。
+  const serverMessageRef = useRef(onServerMessage);
+  serverMessageRef.current = onServerMessage;
 
   const displayRef = useRef<MediaStream | null>(null);
   const [extraMessages, setExtraMessages] = useState<LiveMessage[]>([]);
@@ -78,6 +85,9 @@ export function useLiveInterview({
             },
           ];
         });
+      });
+      client.on(RTVIEvent.ServerMessage, (data) => {
+        serverMessageRef.current?.(data);
       });
     },
   });

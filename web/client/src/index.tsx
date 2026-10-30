@@ -3,7 +3,7 @@ import { RTVIEvent } from "@pipecat-ai/client-js";
 import { PipecatClientProvider } from "@pipecat-ai/client-react";
 import { createStore } from "jotai/vanilla";
 import { SettingsIcon } from "lucide-react";
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 
@@ -38,6 +38,7 @@ import {
   saveDeviceId,
 } from "@/lib/preferences";
 import { startBotParams } from "@/lib/session-request";
+import type { TermCorrection } from "@/lib/terms";
 import {
   readTheme,
   resolveDark,
@@ -137,7 +138,22 @@ function Home() {
   const [liveProfileId, setLiveProfileId] = useState<string | null>(
     readLiveProfileId,
   );
-  const live = useLiveInterview({ profileId: liveProfileId });
+
+  // 术语纠错提示：面试官那一路（Console 的 client）和候选人那一路（麦克风
+  // session）各自推一条 server message，这里合并成一条列表。
+  const [liveTerms, setLiveTerms] = useState<TermCorrection[]>([]);
+  const handleServerMessage = useCallback((data: unknown) => {
+    const payload = data as { kind?: string; corrections?: TermCorrection[] } | null;
+    if (payload?.kind !== "glossary.corrected" || !Array.isArray(payload.corrections)) {
+      return;
+    }
+    setLiveTerms((previous) => [...previous, ...payload.corrections!]);
+  }, []);
+
+  const live = useLiveInterview({
+    profileId: liveProfileId,
+    onServerMessage: handleServerMessage,
+  });
 
   const handleLiveProfileChange = (id: string | null) => {
     setLiveProfileId(id);
@@ -160,6 +176,11 @@ function Home() {
   useEffect(() => {
     if (page !== "interview") live.stopSession();
   }, [page, live.stopSession]);
+
+  // 换页面就不再显示上一场的术语纠错。
+  useEffect(() => {
+    setLiveTerms([]);
+  }, [page]);
 
   // Each page gets its own Pipecat store: transcript, metrics and events
   // belong to that page's session and never leak into the other one.
@@ -355,6 +376,31 @@ function Home() {
                   </button>
                 </div>
               )}
+              {liveTerms.length > 0 && (
+                <div className="bg-muted/40 flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+                  <span className="text-muted-foreground shrink-0">
+                    {t("terms.live.title")}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                    {liveTerms.map((item, index) => (
+                      <span
+                        key={`${item.from}-${item.to}-${index}`}
+                        className="bg-background rounded-full px-1.5 py-0.5 text-[11px]"
+                      >
+                        {item.from} → {item.to}
+                      </span>
+                    ))}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={t("terms.live.dismiss")}
+                    onClick={() => setLiveTerms([])}
+                    className="shrink-0 opacity-70 hover:opacity-100"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               <div className="min-h-0 flex-1">
                 <Console
                   key="interview"
@@ -377,7 +423,10 @@ function Home() {
                   titleText=""
                   noDTMF
                   headerSlot={liveHeaderSlot}
-                  onClient={onClient}
+                  onClient={(client) => {
+                    onClient(client);
+                    client.on(RTVIEvent.ServerMessage, handleServerMessage);
+                  }}
                 />
               </div>
             </>

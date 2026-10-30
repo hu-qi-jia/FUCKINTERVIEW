@@ -39,5 +39,9 @@ web/.gitignore
 config/qa.db
 config/qa.db-wal
 config/qa.db-shm
+# 术语库（含个人补充的术语与别名）
+config/terms.db
+config/terms.db-wal
+config/terms.db-shm
 config/models/
 config/imports/

@@ -24,6 +24,8 @@ from pipecat.frames.frames import (
     LLMFullResponseStartFrame,
     LLMRunFrame,
     LLMTextFrame,
+    OutputTransportMessageFrame,
+    TranscriptionFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker, ProcessorUnusablePolicy
@@ -48,6 +50,7 @@ from pipecat.workers.runner import WorkerRunner
 from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_model_dir, save_settings
 from app import qa as qa_store
 from app import qa_import, qa_index
+from app import terms as terms_store
 from app.materials import (
     apply_coach_result,
     apply_plan,
@@ -367,6 +370,7 @@ async def api_set_storage(request: Request):
     data_dir_value = str(payload.get("dataDir") or "").strip()
     if data_dir_value:
         old_db = qa_store.db_path()
+        old_terms = terms_store.db_path()
         new_dir = set_data_dir(data_dir_value, migrate=bool(payload.get("migrate", True)))
         try:
             qa_store.migrate_db(old_db, Path(new_dir["dataDir"]) / qa_store.QA_FILENAME)
@@ -375,6 +379,14 @@ async def api_set_storage(request: Request):
         except OSError as e:
             raise HTTPException(status_code=400, detail=f"迁移问答库失败：{e}")
         qa_index.invalidate()
+        try:
+            terms_store.migrate_db(
+                old_terms, Path(new_dir["dataDir"]) / terms_store.TERMS_FILENAME
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise HTTPException(status_code=400, detail=f"迁移术语库失败：{e}")
 
     return _storage_payload()
 
@@ -551,6 +563,108 @@ async def api_qa_undo_import(import_id: int):
 
 
 # --------------------------------------------------------------------------
+# 术语库
+#
+# 静态路径必须声明在 /api/terms/{term_id} 之前，否则会被当成 id 解析。
+# --------------------------------------------------------------------------
+@app.get("/api/terms/stats")
+async def api_terms_stats():
+    return terms_store.stats()
+
+
+@app.get("/api/terms/templates")
+async def api_terms_templates():
+    enabled = terms_store.templates_enabled()
+    return {
+        "enabled": enabled,
+        "items": [
+            {**item, "enabled": enabled.get(item["id"], True)}
+            for item in terms_store.template_catalog()
+        ],
+    }
+
+
+@app.post("/api/terms/templates/{name}")
+async def api_terms_template_toggle(name: str, request: Request):
+    payload = await request.json()
+    enabled = bool((payload or {}).get("enabled")) if isinstance(payload, dict) else False
+    try:
+        return terms_store.set_template_enabled(name, enabled)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/terms/templates/{name}/reset")
+async def api_terms_template_reset(name: str):
+    try:
+        return {"restored": terms_store.reset_template(name)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/terms/parse")
+async def api_terms_parse(request: Request):
+    payload = await request.json()
+    text = str((payload or {}).get("text") or "") if isinstance(payload, dict) else ""
+    return terms_store.parse_bulk(text)
+
+
+@app.post("/api/terms/bulk")
+async def api_terms_bulk(request: Request):
+    payload = await request.json()
+    text = str((payload or {}).get("text") or "") if isinstance(payload, dict) else ""
+    return terms_store.bulk_create(text)
+
+
+@app.get("/api/terms/recent")
+async def api_terms_recent():
+    """上一场实时面试里纠正过的词，以及疑似被听错的词。"""
+    return terms_store.recent()
+
+
+@app.post("/api/terms/recent/clear")
+async def api_terms_recent_clear():
+    terms_store.clear_recent()
+    return {"ok": True}
+
+
+@app.get("/api/terms")
+async def api_terms_list(q: str = "", template: str = ""):
+    return terms_store.list_terms(q=q, template=template)
+
+
+@app.post("/api/terms")
+async def api_terms_create(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        return terms_store.create_term(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/terms/{term_id}")
+async def api_terms_patch(term_id: int, request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        return terms_store.update_term(term_id, payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="术语不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/terms/{term_id}")
+async def api_terms_delete(term_id: int):
+    if not terms_store.delete_term(term_id):
+        raise HTTPException(status_code=404, detail="术语不存在")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
 # 前端：用本项目构建的界面替换官方预置 UI
 #
 # Runner 在 main() 里调用 _setup_frontend_routes(app) 挂载官方 UI，
@@ -625,6 +739,97 @@ class TextOnlyOutput(FrameProcessor):
         ):
             frame.skip_tts = True
         await self.push_frame(frame, direction)
+
+
+class TermCorrector(FrameProcessor):
+    """把转写里被 ASR 听错的术语改回规范写法。
+
+    放在 STT 和用户聚合器之间：聚合器、问答库检索和模型拿到的都是改好的文本，
+    而且改写在发出之前完成，前端看到的转写也是规范写法。原文不再保留——
+    改了什么通过下面那条 server message 告诉界面。
+    """
+
+    def __init__(self):
+        super().__init__()
+        # 本场说过的所有话：术语释义按（改写后的）它来筛选，
+        # 离线找疑似别名时用原始转写——改写过就找不到近似词了。
+        self.transcript: list[str] = []
+        self.raw: list[str] = []
+        self.hits: list[dict[str, str]] = []
+
+    async def process_frame(self, frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
+            text, hits = terms_store.correct(frame.text)
+            self.raw.append(frame.text)
+            self.hits += hits
+            if hits:
+                frame.text = text
+            self.transcript.append(text)
+            if hits:
+                await self.push_frame(
+                    OutputTransportMessageFrame(
+                        message={
+                            "type": "server-message",
+                            "data": {"kind": "glossary.corrected", "corrections": hits},
+                        }
+                    )
+                )
+        await self.push_frame(frame, direction)
+
+
+# 每回合保留的对话消息条数：一问一答算两条。
+HISTORY_MESSAGES = 20
+
+
+def _apply_system_prompt(llm, prompt: str) -> None:
+    """把新的系统提示词装回已经建好的 LLM 服务。
+
+    Pipecat 没有运行期改提示词的公开接口；``_compose_system_instruction()``
+    会把基座提示词和回合补全、异步工具这些附加指令重新拼一遍，所以不能只写
+    ``_settings.system_instruction``，否则附加指令会被冲掉。
+    """
+    compose = getattr(llm, "_compose_system_instruction", None)
+    if compose is None or not hasattr(llm, "_base_system_instruction"):
+        llm._settings.system_instruction = prompt
+        return
+    llm._base_system_instruction = prompt
+    compose()
+
+
+class GlossaryPrompt(FrameProcessor):
+    """每回合刷新系统提示词里的术语段，并把对话历史裁到最近若干条。
+
+    术语段只放「本场提到过、而且带释义」的词条，所以通常只有几百字符；
+    内容没变就不碰系统提示词，免得白白让供应商的前缀缓存失效。
+    """
+
+    def __init__(self, llm, build_prompt, transcript: list[str]):
+        super().__init__()
+        self._llm = llm
+        self._build_prompt = build_prompt
+        self._transcript = transcript
+        self._glossary: str | None = None
+
+    async def process_frame(self, frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMContextFrame) and direction == FrameDirection.DOWNSTREAM:
+            self._trim(frame.context)
+            glossary = terms_store.render_glossary("\n".join(self._transcript))
+            if glossary != self._glossary:
+                self._glossary = glossary
+                _apply_system_prompt(self._llm, self._build_prompt(glossary))
+        await self.push_frame(frame, direction)
+
+    def _trim(self, context: LLMContext) -> None:
+        messages = getattr(context, "messages", None)
+        if not isinstance(messages, list) or len(messages) <= HISTORY_MESSAGES:
+            return
+        kept = messages[-HISTORY_MESSAGES:]
+        if hasattr(context, "set_messages"):
+            context.set_messages(kept)
+        else:
+            messages[:] = kept
 
 
 def _live_profile(body: dict) -> dict | None:
@@ -742,6 +947,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         # mock 仍然用设置页里那份面试官提示词。
         if mode == "listen":
             llm = None
+            prompt_builder = None
         elif mode == "live":
             profile = _live_profile(body)
             llm_settings = dict(settings["llm"])
@@ -750,6 +956,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 f"Live interview profile={(profile or {}).get('name') or '(none)'}"
             )
             llm = build_llm(llm_settings)
+            prompt_builder = lambda glossary: build_live_system_prompt(profile, glossary)
             # 问答库检索要用向量模型，提前在后台加载。
             warm_task = asyncio.create_task(_warm_qa_model())
         else:
@@ -759,10 +966,16 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 "system_prompt": DEFAULT_SYSTEM_PROMPT,
             }
             llm = build_llm(llm_settings)
+            prompt_builder = lambda glossary: (
+                f"{DEFAULT_SYSTEM_PROMPT}\n\n{glossary}"
+                if glossary
+                else DEFAULT_SYSTEM_PROMPT
+            )
         tts = build_tts(settings["tts"], session) if mode == "mock" else None
 
         context = LLMContext()
-        processors = [transport.input(), stt]
+        corrector = TermCorrector()
+        processors = [transport.input(), stt, corrector]
 
         if mode != "listen":
             user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
@@ -773,6 +986,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             if mode == "live":
                 # 面试官的问题先查问答库：命中就直接贴原文，这一轮不跑 LLM。
                 processors.append(QaAnswer(settings))
+            if prompt_builder is not None:
+                processors.append(
+                    GlossaryPrompt(llm, prompt_builder, corrector.transcript)
+                )
             processors.append(llm)
             # 原来的 TTS 槽位：mock 合成语音，live 只把文本转成
             # AggregatedTextFrame，由 RTVIObserver 作为 BotOutput 发给前端。
@@ -818,6 +1035,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             logger.info("Client disconnected")
+            if mode == "live" and corrector.raw:
+                terms_store.record_session("\n".join(corrector.raw), corrector.hits)
             await runner.cancel()
 
         await runner.run()

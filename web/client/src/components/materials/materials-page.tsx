@@ -12,6 +12,10 @@ import { useTranslation } from "react-i18next";
 
 import { ProfileFlow } from "@/components/materials/profile-flow";
 import { QaLibrary, type QaLibraryHandle } from "@/components/materials/qa-library";
+import {
+  TermsLibrary,
+  type TermsLibraryHandle,
+} from "@/components/materials/terms-library";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -88,6 +92,7 @@ export function MaterialsPage({
   // 问答库的「导入 / 新建」放在标签栏右侧，和面试档案的「新建档案」同一位置。
   const qaRef = useRef<QaLibraryHandle | null>(null);
   const [qaView, setQaView] = useState<"list" | "import">("list");
+  const termsRef = useRef<TermsLibraryHandle | null>(null);
 
   const detailIdRef = useRef<string | null>(null);
   detailIdRef.current = detailId;
@@ -254,6 +259,23 @@ export function MaterialsPage({
               )}
             </div>
           )}
+
+          {segment === "terms" && (
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => termsRef.current?.openBulk()}
+              >
+                <UploadIcon />
+                {t("terms.bulk.open")}
+              </Button>
+              <Button size="sm" onClick={() => termsRef.current?.create()}>
+                <PlusIcon />
+                {t("terms.new")}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -338,14 +360,7 @@ export function MaterialsPage({
             onViewChange={setQaView}
           />
         ) : segment === "terms" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <p className="text-sm font-medium">
-              {t("materials.comingSoon.title")}
-            </p>
-            <p className="text-muted-foreground max-w-sm text-xs">
-              {t("materials.comingSoon.termsHint")}
-            </p>
-          </div>
+          <TermsLibrary ref={termsRef} dataVersion={dataVersion} />
         ) : inDetail ? (
           !profile ? (
             loadError ? (
