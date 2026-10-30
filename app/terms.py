@@ -249,10 +249,10 @@ def _seed_templates(conn: sqlite3.Connection) -> None:
 
 def list_templates() -> list[dict[str, Any]]:
     """模板清单。内置模板的 name 留空，由界面按语言取文案；自建的直接用名字。"""
-    enabled = templates_enabled()
     with _lock:
         conn = connect()
         try:
+            enabled = _templates_state(conn)
             rows = conn.execute(
                 "SELECT * FROM templates ORDER BY sort_order, created_at"
             ).fetchall()
@@ -370,22 +370,53 @@ def db_path() -> Path:
 # --------------------------------------------------------------------------
 # 连接
 # --------------------------------------------------------------------------
+# 开连接贵的不在 ``sqlite3.connect()`` 本身，而在新连接上的**第一条语句**
+# （读库头、载入 WAL 索引，Windows 上约 4ms）。所以进程内复用一条连接：
+# 所有调用都在 ``_lock`` 里串行使用，复用的前提就是这一条。
+_shared: sqlite3.Connection | None = None
+_shared_path: str | None = None
+
+
+class _Borrowed:
+    """借出的连接：``close()`` 只表示用完了，不真关，留给下次复用。"""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def close(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
 def connect() -> sqlite3.Connection:
-    """每次操作开一条连接；SQLite 打开成本可以忽略，省掉跨线程共享的麻烦。"""
-    path = db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    _ensure_schema(conn)
-    return conn
+    """取当前数据目录的连接。同一个库复用同一条，用 ``_lock`` 串行保护。"""
+    global _shared, _shared_path
+    path = str(db_path())
+    if _shared is None or _shared_path != path:
+        if _shared is not None:
+            _shared.close()
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(
+            target, timeout=10, isolation_level=None, check_same_thread=False
+        )
+        conn.row_factory = sqlite3.Row
+        # synchronous 是连接级设置，得每次设；journal_mode 记在库文件里，见 _ensure_schema。
+        conn.execute("PRAGMA synchronous=NORMAL")
+        _ensure_schema(conn)
+        _shared, _shared_path = conn, path
+    return _Borrowed(_shared)
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     key = str(db_path())
     if key in _initialised:
         return
+    # WAL 写进库文件的头部，设一次就持久生效。每次连接都设要多花约 4ms，
+    # 这在本项目里是每个接口调用都要付的钱，所以只在建库那次设。
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
     conn.execute(
         "INSERT INTO meta(key, value) VALUES ('schema_version', ?) "
@@ -418,9 +449,14 @@ def upgrade_templates(conn: sqlite3.Connection) -> int:
 
 
 def reset_cache() -> None:
-    """数据目录切换后调用：下次连接重新建表。"""
+    """数据目录切换后调用：关掉旧连接，下次连接重新建表。"""
+    global _shared, _shared_path
+    if _shared is not None:
+        _shared.close()
+    _shared, _shared_path = None, None
     _initialised.clear()
     _cache.clear()
+    _templates_cache.clear()
     _touch()
 
 
@@ -482,16 +518,15 @@ def _row_aliases(raw: Any) -> list[str]:
 # --------------------------------------------------------------------------
 # 模板开关
 # --------------------------------------------------------------------------
-def templates_enabled() -> dict[str, bool]:
-    with _lock:
-        conn = connect()
-        try:
-            ids = [row[0] for row in conn.execute("SELECT id FROM templates")]
-            row = conn.execute(
-                "SELECT value FROM meta WHERE key = 'templates'"
-            ).fetchone()
-        finally:
-            conn.close()
+_templates_cache: dict[str, tuple[int, dict[str, bool]]] = {}
+
+
+def _templates_state(conn: sqlite3.Connection) -> dict[str, bool]:
+    """在已经打开的连接上读模板开关。"""
+    ids = [row[0] for row in conn.execute("SELECT id FROM templates")]
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = 'templates'"
+    ).fetchone()
     stored: dict[str, Any] = {}
     if row:
         try:
@@ -499,6 +534,27 @@ def templates_enabled() -> dict[str, bool]:
         except (TypeError, ValueError):
             stored = {}
     return {name: bool(stored.get(name, True)) for name in ids}
+
+
+def templates_enabled() -> dict[str, bool]:
+    """模板开关，按 ``_stamp`` 缓存；任何写操作都会让缓存失效。
+
+    返回的是副本——``set_template_enabled`` 会就地改这个 dict。
+    """
+    key = str(db_path())
+    cached = _templates_cache.get(key)
+    if cached is not None and cached[0] == _stamp:
+        return dict(cached[1])
+    with _lock:
+        conn = connect()
+        try:
+            state = _templates_state(conn)
+            # 在锁内取 stamp：写操作都要拿这把锁，这样缓存的版本号不会和内容错位。
+            stamp = _stamp
+        finally:
+            conn.close()
+    _templates_cache[key] = (stamp, state)
+    return dict(state)
 
 
 def _require_template(conn: sqlite3.Connection, template_id: str) -> None:
@@ -594,10 +650,10 @@ def _sort_key(order: dict[str, int]):
 
 def active_terms() -> list[dict[str, Any]]:
     """当前生效的词条：「自定义」优先，其次按模板顺序；停用、屏蔽、模板关掉的不算。"""
-    enabled_templates = templates_enabled()
     with _lock:
         conn = connect()
         try:
+            enabled_templates = _templates_state(conn)
             rows = conn.execute(
                 "SELECT * FROM terms WHERE enabled = 1 AND hidden = 0"
             ).fetchall()
@@ -648,10 +704,10 @@ def list_terms(q: str = "", template: str = "") -> dict[str, Any]:
 
 def stats() -> dict[str, Any]:
     """只统计当前生效的词条：停用的、屏蔽的、整套关掉的模板都不算。"""
-    enabled_templates = templates_enabled()
     with _lock:
         conn = connect()
         try:
+            enabled_templates = _templates_state(conn)
             rows = conn.execute(
                 "SELECT template, COUNT(*) FROM terms WHERE hidden = 0 "
                 "AND enabled = 1 GROUP BY template"

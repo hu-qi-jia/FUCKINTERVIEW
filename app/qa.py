@@ -135,23 +135,54 @@ def db_path() -> Path:
 # --------------------------------------------------------------------------
 # 连接
 # --------------------------------------------------------------------------
+# 开连接贵的不在 ``sqlite3.connect()`` 本身，而在新连接上的**第一条语句**
+# （读库头、载入 WAL 索引，Windows 上约 4ms）。检索每回合都要读库，所以
+# 进程内复用一条连接——所有调用都在 ``_lock`` 里串行使用。
+_shared: sqlite3.Connection | None = None
+_shared_path: str | None = None
+
+
+class _Borrowed:
+    """借出的连接：``close()`` 只表示用完了，不真关，留给下次复用。"""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def close(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
 def connect() -> sqlite3.Connection:
-    """每次操作开一条连接；SQLite 打开成本可以忽略，省掉跨线程共享的麻烦。"""
-    path = db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    _ensure_schema(conn)
-    return conn
+    """取当前数据目录的连接。同一个库复用同一条，用 ``_lock`` 串行保护。"""
+    global _shared, _shared_path
+    path = str(db_path())
+    if _shared is None or _shared_path != path:
+        if _shared is not None:
+            _shared.close()
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(
+            target, timeout=10, isolation_level=None, check_same_thread=False
+        )
+        conn.row_factory = sqlite3.Row
+        # foreign_keys / synchronous 是连接级设置，每次都得设；
+        # journal_mode 记在库文件里，设一次就持久生效，见 _ensure_schema。
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        _ensure_schema(conn)
+        _shared, _shared_path = conn, path
+    return _Borrowed(_shared)
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     key = str(db_path())
     if key in _initialised:
         return
+    # 每次连接都设 WAL 要多花约 4ms，而每个检索、每个接口都要开连接。
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
     row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     version = int(row[0]) if row and str(row[0]).isdigit() else 0
@@ -192,7 +223,11 @@ def _migrate_to_v2(conn: sqlite3.Connection) -> None:
 
 
 def reset_cache() -> None:
-    """数据目录切换后调用：下次连接重新建表。"""
+    """数据目录切换后调用：关掉旧连接，下次连接重新建表。"""
+    global _shared, _shared_path
+    if _shared is not None:
+        _shared.close()
+    _shared, _shared_path = None, None
     _initialised.clear()
 
 
