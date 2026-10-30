@@ -6,9 +6,22 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { MAX_ALIAS, MAX_TERM, type TermItem, type TermPatch } from "@/lib/terms";
+import {
+  MAX_ALIAS,
+  MAX_TERM,
+  type TemplateItem,
+  type TermItem,
+  type TermPatch,
+} from "@/lib/terms";
 
 const SEPARATOR = ", ";
 
@@ -26,11 +39,13 @@ function splitList(value: string): string[] {
 export function TermsFormDialog({
   open,
   item,
+  templates,
   onClose,
   onSubmit,
 }: {
   open: boolean;
   item: TermItem | null;
+  templates: TemplateItem[];
   onClose: () => void;
   onSubmit: (fields: TermPatch) => Promise<void>;
 }) {
@@ -38,6 +53,7 @@ export function TermsFormDialog({
   const [term, setTerm] = useState("");
   const [aliases, setAliases] = useState("");
   const [definition, setDefinition] = useState("");
+  const [template, setTemplate] = useState("custom");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -46,6 +62,7 @@ export function TermsFormDialog({
     setTerm(item?.term ?? "");
     setAliases(item ? item.aliases.join(SEPARATOR) : "");
     setDefinition(item?.definition ?? "");
+    setTemplate(item?.template ?? "custom");
     setError(null);
     setBusy(false);
   }, [open, item]);
@@ -61,7 +78,8 @@ export function TermsFormDialog({
 
   if (!open) return null;
 
-  const readOnlyTerm = Boolean(item) && item?.template !== "custom";
+  const owner = templates.find((entry) => entry.id === (item?.template ?? ""));
+  const readOnlyTerm = Boolean(item) && Boolean(owner?.builtin);
 
   const submit = async () => {
     const value = term.trim();
@@ -79,6 +97,7 @@ export function TermsFormDialog({
     setError(null);
     try {
       await onSubmit({
+        ...(item ? {} : { template }),
         ...(readOnlyTerm ? {} : { term: value }),
         aliases: list,
         definition: definition.trim(),
@@ -117,6 +136,33 @@ export function TermsFormDialog({
         </div>
 
         <div className="grid gap-3 p-4">
+          {!item && (
+            <label className="grid gap-1.5">
+              <span className="text-muted-foreground text-xs">
+                {t("terms.field.template")}
+              </span>
+              <Select
+                items={templates.map((entry) => ({
+                  value: entry.id,
+                  label: entry.builtin ? t(`terms.template.${entry.id}`) : entry.name,
+                }))}
+                value={template}
+                onValueChange={(next) => setTemplate(String(next))}
+              >
+                <SelectTrigger className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {templates.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.builtin ? t(`terms.template.${entry.id}`) : entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          )}
+
           <label className="grid gap-1.5">
             <span className="text-muted-foreground text-xs">{t("terms.field.term")}</span>
             <Input

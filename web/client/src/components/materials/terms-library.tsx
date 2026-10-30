@@ -29,9 +29,10 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
-  TERM_TEMPLATES,
   clearRecent,
+  createTemplate,
   createTerm,
+  deleteTemplate,
   deleteTerm,
   listTemplates,
   listTerms,
@@ -40,7 +41,7 @@ import {
   termStats,
   toggleTemplate,
   updateTerm,
-  type TemplateCatalogItem,
+  type TemplateItem,
   type TermItem,
   type TermPatch,
   type TermRecent,
@@ -111,7 +112,7 @@ export function TermsLibrary({
   const { t } = useTranslation();
 
   const [items, setItems] = useState<TermItem[]>([]);
-  const [templates, setTemplates] = useState<TemplateCatalogItem[]>([]);
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [stats, setStats] = useState<TermStats | null>(null);
   const [recent, setRecent] = useState<TermRecent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,6 +126,7 @@ export function TermsLibrary({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [newTemplate, setNewTemplate] = useState("");
 
   const requestId = useRef(0);
 
@@ -235,6 +237,46 @@ export function TermsLibrary({
     [reload],
   );
 
+  const templateLabel = useCallback(
+    (entry: TemplateItem) =>
+      entry.builtin ? t(`terms.template.${entry.id}`) : entry.name,
+    [t],
+  );
+
+  const rowBadge = useCallback(
+    (item: TermItem) => {
+      const entry = templates.find((tpl) => tpl.id === item.template);
+      if (!entry) return "";
+      return entry.builtin ? t(`terms.templateShort.${entry.id}`) : entry.name;
+    },
+    [templates, t],
+  );
+
+  const addTemplate = useCallback(async () => {
+    const name = newTemplate.trim();
+    if (!name) return;
+    try {
+      await createTemplate(name);
+      setNewTemplate("");
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, [newTemplate, reload]);
+
+  const removeTemplate = useCallback(
+    async (id: string) => {
+      try {
+        await deleteTemplate(id);
+        setTemplate((current) => (current === id ? "" : current));
+        await reload();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      }
+    },
+    [reload],
+  );
+
   const addSuggestion = useCallback(
     async (from: string, to: string) => {
       const target = items.find((item) => item.term === to);
@@ -281,7 +323,6 @@ export function TermsLibrary({
     recent && (recent.corrections.length > 0 || recent.suggestions.length > 0);
 
   const filterActive = Boolean(query || template);
-  const activeTemplates = templates.filter((item) => item.enabled);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -312,13 +353,10 @@ export function TermsLibrary({
             onChange={setTemplate}
             allLabel={t("terms.filters.all")}
             label={t("terms.field.template")}
-            options={[
-              { value: "custom", label: t("terms.template.custom") },
-              ...activeTemplates.map((item) => ({
-                value: item.id,
-                label: t(`terms.template.${item.id}`),
-              })),
-            ]}
+            options={templates.map((entry) => ({
+              value: entry.id,
+              label: templateLabel(entry),
+            }))}
           />
 
           {/* 模板按插件处理：不开的那套连词条都不出现，随时可以插拔。 */}
@@ -329,43 +367,78 @@ export function TermsLibrary({
               <PuzzleIcon />
               {t("terms.templates.button")}
               <span className="text-muted-foreground text-[11px] tabular-nums">
-                {activeTemplates.length}/{TERM_TEMPLATES.length}
+                {templates.filter((entry) => entry.enabled).length}/{templates.length}
               </span>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-64">
+            <PopoverContent align="end" className="w-72">
               <p className="text-muted-foreground px-1 text-[11px] leading-relaxed">
                 {t("terms.templates.hint")}
               </p>
-              {templates.map((item) => (
-                <div key={item.id} className="flex items-center gap-2 px-1 py-1">
+              {templates.map((entry) => (
+                <div key={entry.id} className="flex items-center gap-2 px-1 py-1">
                   <Switch
                     size="sm"
-                    checked={item.enabled}
+                    checked={entry.enabled}
                     onCheckedChange={(next) =>
-                      void switchTemplate(item.id, Boolean(next))
+                      void switchTemplate(entry.id, Boolean(next))
                     }
                   />
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-xs",
-                      !item.enabled && "text-muted-foreground",
+                      !entry.enabled && "text-muted-foreground",
                     )}
+                    title={templateLabel(entry)}
                   >
-                    {t(`terms.template.${item.id}`)}
+                    {templateLabel(entry)}
                   </span>
                   <span className="text-muted-foreground text-[11px] tabular-nums">
-                    {item.count}
+                    {entry.count}
                   </span>
-                  <InlineConfirmButton
-                    size="xs"
-                    variant="ghost"
-                    className="text-muted-foreground/60 hover:text-foreground h-5 px-1 text-[11px]"
-                    label={t("terms.template.reset")}
-                    confirmLabel={t("terms.template.resetConfirm")}
-                    onConfirm={() => void restoreTemplate(item.id)}
-                  />
+                  {entry.builtin && entry.id !== "custom" ? (
+                    <InlineConfirmButton
+                      size="xs"
+                      variant="ghost"
+                      className="text-muted-foreground/60 hover:text-foreground h-5 px-1 text-[11px]"
+                      label={t("terms.template.reset")}
+                      confirmLabel={t("terms.template.resetConfirm")}
+                      onConfirm={() => void restoreTemplate(entry.id)}
+                    />
+                  ) : !entry.builtin ? (
+                    <InlineConfirmButton
+                      size="xs"
+                      variant="ghost"
+                      className="text-muted-foreground/60 hover:text-destructive h-5 px-1 text-[11px]"
+                      label={t("terms.templates.delete")}
+                      confirmLabel={t("terms.templates.deleteConfirm")}
+                      onConfirm={() => void removeTemplate(entry.id)}
+                    />
+                  ) : null}
                 </div>
               ))}
+
+              <div className="border-border mt-1 flex items-center gap-1.5 border-t pt-2">
+                <Input
+                  value={newTemplate}
+                  onChange={(event) => setNewTemplate(event.target.value)}
+                  placeholder={t("terms.templates.namePlaceholder")}
+                  className="h-7 flex-1 text-xs"
+                  maxLength={24}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      void addTemplate();
+                    }
+                  }}
+                />
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={!newTemplate.trim()}
+                  onClick={() => void addTemplate()}
+                >
+                  {t("terms.templates.add")}
+                </Button>
+              </div>
             </PopoverContent>
           </Popover>
         </div>
@@ -466,7 +539,7 @@ export function TermsLibrary({
                     </span>
                     {!template && (
                       <span className="text-muted-foreground/70 shrink-0 text-[10px] leading-none">
-                        {t(`terms.templateShort.${item.template}`)}
+                        {rowBadge(item)}
                       </span>
                     )}
                   </span>
@@ -532,6 +605,7 @@ export function TermsLibrary({
       <TermsFormDialog
         open={createOpen}
         item={null}
+        templates={templates}
         onClose={() => setCreateOpen(false)}
         onSubmit={submitCreate}
       />
@@ -539,6 +613,7 @@ export function TermsLibrary({
       <TermsFormDialog
         open={editing !== null}
         item={editing}
+        templates={templates}
         onClose={() => setEditing(null)}
         onSubmit={submitEdit}
       />

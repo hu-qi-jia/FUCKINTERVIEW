@@ -104,16 +104,55 @@ def test_glossary_truncates_definition(store):
 # --------------------------------------------------------------------------
 def test_templates_are_seeded_once(store):
     total = store.stats()["total"]
-    assert total == sum(item["count"] for item in store.template_catalog())
+    assert total == sum(item["count"] for item in store.list_templates())
     store.connect().close()
     assert store.stats()["total"] == total
 
 
 def test_stats_ignores_disabled_templates(store):
     before = store.stats()["total"]
-    product = next(item for item in store.template_catalog() if item["id"] == "product")
+    product = next(item for item in store.list_templates() if item["id"] == "product")
     store.set_template_enabled("product", False)
     assert store.stats()["total"] == before - product["count"]
+
+
+def test_custom_template_holds_its_terms(store):
+    template = store.create_template("我的黑话")
+    item = add(store, "内部黑话")
+    moved = store.create_term({"term": "内部术语", "template": template["id"]})
+
+    assert moved["template"] == template["id"]
+    listed = store.list_templates()
+    assert any(entry["id"] == template["id"] and entry["count"] == 1 for entry in listed)
+    assert [row["term"] for row in store.list_terms(template=template["id"])["items"]] == [
+        "内部术语"
+    ]
+    assert item["template"] == store.CUSTOM_TEMPLATE
+
+
+def test_delete_custom_template_keeps_terms(store):
+    template = store.create_template("临时模板")
+    item = store.create_term({"term": "内部术语", "template": template["id"]})
+
+    store.delete_template(template["id"])
+
+    fresh = store.get_term(item["id"])
+    assert fresh["template"] == store.CUSTOM_TEMPLATE
+    assert all(entry["id"] != template["id"] for entry in store.list_templates())
+
+
+def test_builtin_template_cannot_be_renamed_or_deleted(store):
+    with pytest.raises(ValueError):
+        store.rename_template("product", "新名字")
+    with pytest.raises(ValueError):
+        store.delete_template("product")
+
+
+def test_reset_template_keeps_user_added_terms(store):
+    store.create_term({"term": "内部术语", "template": "product"})
+    store.reset_template("product")
+    items = store.list_terms(template="product")["items"]
+    assert any(item["term"] == "内部术语" for item in items)
 
 
 def test_new_template_terms_are_added_but_existing_kept(store):

@@ -2,9 +2,8 @@
 
 import i18n from "@/i18n";
 
-export type TermTemplate = "product" | "engineering" | "ai" | "ops" | "custom";
-
-export const TERM_TEMPLATES: TermTemplate[] = ["product", "engineering", "ai", "ops"];
+/** 内置术语内容的模板；自建模板的 id 由后端生成。 */
+export const BUILTIN_TEMPLATES = ["product", "engineering", "ai", "ops"] as const;
 
 /** 和后端 app/terms.py 的上限保持一致。 */
 export const MAX_TERM = 32;
@@ -12,7 +11,8 @@ export const MAX_ALIAS = 32;
 
 export interface TermItem {
   id: number;
-  template: TermTemplate;
+  /** 模板 id：内置的固定，自建的形如 u1a2b3c4d。 */
+  template: string;
   term: string;
   definition: string;
   aliases: string[];
@@ -28,6 +28,7 @@ export interface TermPatch {
   definition?: string;
   aliases?: string[];
   enabled?: boolean;
+  template?: string;
 }
 
 export interface TermStats {
@@ -37,11 +38,13 @@ export interface TermStats {
   version: number;
 }
 
-export interface TemplateCatalogItem {
-  id: TermTemplate;
+export interface TemplateItem {
+  id: string;
+  /** 自建模板的名字；内置模板为空，界面按 id 取文案。 */
+  name: string;
+  builtin: boolean;
   count: number;
   enabled: boolean;
-  terms: Array<{ term: string; aliases: string[] }>;
 }
 
 export interface TermCorrection {
@@ -105,7 +108,7 @@ function json(method: string, body: unknown): RequestInit {
 function toItem(raw: Record<string, unknown>): TermItem {
   return {
     id: Number(raw.id),
-    template: (raw.template as TermTemplate) ?? "custom",
+    template: String(raw.template ?? "custom"),
     term: String(raw.term ?? ""),
     definition: String(raw.definition ?? ""),
     aliases: (raw.aliases as string[]) ?? [],
@@ -146,9 +149,21 @@ export async function termStats(): Promise<TermStats> {
   return request<TermStats>("/api/terms/stats");
 }
 
-export async function listTemplates(): Promise<TemplateCatalogItem[]> {
-  const data = await request<{ items: TemplateCatalogItem[] }>("/api/terms/templates");
+export async function listTemplates(): Promise<TemplateItem[]> {
+  const data = await request<{ items: TemplateItem[] }>("/api/terms/templates");
   return data.items;
+}
+
+export async function createTemplate(name: string): Promise<TemplateItem> {
+  return request<TemplateItem>("/api/terms/templates", json("POST", { name }));
+}
+
+export async function renameTemplate(id: string, name: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/terms/templates/${id}`, json("PATCH", { name }));
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/terms/templates/${id}`, { method: "DELETE" });
 }
 
 export async function toggleTemplate(id: string, enabled: boolean) {

@@ -531,6 +531,10 @@ const zh = {
     templates: {
       button: "模板",
       hint: "内置模板按插件用：关掉的那套不会出现在列表里，也不参与纠错和提示词注入。",
+      namePlaceholder: "新模板名称",
+      add: "新建",
+      delete: "删除",
+      deleteConfirm: "确认删除？",
     },
     dialog: {
       title: "新建术语",
@@ -1113,6 +1117,10 @@ const en = {
     templates: {
       button: "Templates",
       hint: "Templates work like plugins: a switched-off set leaves the table, and stops fixing or explaining terms.",
+      namePlaceholder: "New template name",
+      add: "Add",
+      delete: "Delete",
+      deleteConfirm: "Delete it?",
     },
     dialog: {
       title: "New term",

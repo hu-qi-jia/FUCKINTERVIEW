@@ -17,6 +17,7 @@ import re
 import sqlite3
 import threading
 import unicodedata
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -39,6 +40,9 @@ MAX_BULK = 500
 
 TEMPLATE_IDS = ("product", "engineering", "ai", "ops")
 TEMPLATE_ORDER = {name: index for index, name in enumerate(TEMPLATE_IDS)}
+# 不属于任何具体模板时的归属。内置，用户删不掉。
+CUSTOM_TEMPLATE = "custom"
+MAX_TEMPLATE_NAME = 32
 
 _lock = threading.RLock()
 _initialised: set[str] = set()
@@ -60,6 +64,14 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS templates (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL DEFAULT '',
+  builtin    INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS terms (
@@ -219,19 +231,132 @@ _TEMPLATES: dict[str, list[tuple[str, list[str]]]] = {
 }
 
 
-def template_catalog() -> list[dict[str, Any]]:
-    """内置模板的词表，供界面预览。"""
+def _seed_templates(conn: sqlite3.Connection) -> None:
+    """内置模板写进 templates 表；用户自建的模板行不会被覆盖。"""
+    now = _now()
+    for index, name in enumerate(TEMPLATE_IDS):
+        conn.execute(
+            "INSERT INTO templates(id, name, builtin, sort_order, created_at) "
+            "VALUES (?, '', 1, ?, ?) ON CONFLICT(id) DO NOTHING",
+            (name, index, now),
+        )
+    conn.execute(
+        "INSERT INTO templates(id, name, builtin, sort_order, created_at) "
+        "VALUES (?, '', 1, -1, ?) ON CONFLICT(id) DO NOTHING",
+        (CUSTOM_TEMPLATE, now),
+    )
+
+
+def list_templates() -> list[dict[str, Any]]:
+    """模板清单。内置模板的 name 留空，由界面按语言取文案；自建的直接用名字。"""
+    enabled = templates_enabled()
+    with _lock:
+        conn = connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM templates ORDER BY sort_order, created_at"
+            ).fetchall()
+            counts = {
+                row[0]: row[1]
+                for row in conn.execute(
+                    "SELECT template, COUNT(*) FROM terms "
+                    "WHERE hidden = 0 AND enabled = 1 GROUP BY template"
+                )
+            }
+        finally:
+            conn.close()
     return [
         {
-            "id": name,
-            "count": len(_TEMPLATES[name]),
-            "terms": [
-                {"term": term, "aliases": list(aliases)}
-                for term, aliases in _TEMPLATES[name]
-            ],
+            "id": row["id"],
+            "name": row["name"],
+            "builtin": bool(row["builtin"]),
+            "count": counts.get(row["id"], 0),
+            "enabled": enabled.get(row["id"], True),
         }
-        for name in TEMPLATE_IDS
+        for row in rows
     ]
+
+
+def _template_names(conn: sqlite3.Connection) -> dict[str, str]:
+    return {row[0]: row[1] for row in conn.execute("SELECT id, name FROM templates")}
+
+
+def create_template(name: str) -> dict[str, Any]:
+    clean = _clean_text(name, MAX_TEMPLATE_NAME)
+    if not clean:
+        raise ValueError("模板名称不能为空")
+    key = normalize(clean)
+    now = _now()
+    template_id = "u" + uuid.uuid4().hex[:8]
+
+    with _lock:
+        conn = connect()
+        try:
+            for row in conn.execute("SELECT name FROM templates"):
+                if normalize(row[0]) == key:
+                    raise ValueError("已经有同名模板")
+            order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) FROM templates WHERE builtin = 0"
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO templates(id, name, builtin, sort_order, created_at) "
+                "VALUES (?, ?, 0, ?, ?)",
+                (template_id, clean, max(int(order), len(TEMPLATE_IDS)) + 1, now),
+            )
+        finally:
+            conn.close()
+    _touch()
+    return {
+        "id": template_id,
+        "name": clean,
+        "builtin": False,
+        "count": 0,
+        "enabled": True,
+    }
+
+
+def rename_template(template_id: str, name: str) -> None:
+    clean = _clean_text(name, MAX_TEMPLATE_NAME)
+    if not clean:
+        raise ValueError("模板名称不能为空")
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute(
+                "SELECT builtin FROM templates WHERE id = ?", (template_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(template_id)
+            if row[0]:
+                raise ValueError("内置模板不能改名")
+            conn.execute(
+                "UPDATE templates SET name = ? WHERE id = ?", (clean, template_id)
+            )
+        finally:
+            conn.close()
+    _touch()
+
+
+def delete_template(template_id: str) -> None:
+    """删掉自建模板，里面的词条退回「自定义」，不跟着一起消失。"""
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute(
+                "SELECT builtin FROM templates WHERE id = ?", (template_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(template_id)
+            if row[0]:
+                raise ValueError("内置模板不能删除")
+            conn.execute(
+                "UPDATE terms SET template = ? WHERE template = ?",
+                (CUSTOM_TEMPLATE, template_id),
+            )
+            conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
+        finally:
+            conn.close()
+    _touch()
 
 
 def _now() -> str:
@@ -268,6 +393,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         (str(SCHEMA_VERSION),),
     )
     sync_templates(conn)
+    _seed_templates(conn)
     upgrade_templates(conn)
     _initialised.add(key)
 
@@ -360,6 +486,7 @@ def templates_enabled() -> dict[str, bool]:
     with _lock:
         conn = connect()
         try:
+            ids = [row[0] for row in conn.execute("SELECT id FROM templates")]
             row = conn.execute(
                 "SELECT value FROM meta WHERE key = 'templates'"
             ).fetchone()
@@ -371,12 +498,23 @@ def templates_enabled() -> dict[str, bool]:
             stored = json.loads(row[0])
         except (TypeError, ValueError):
             stored = {}
-    return {name: bool(stored.get(name, True)) for name in TEMPLATE_IDS}
+    return {name: bool(stored.get(name, True)) for name in ids}
+
+
+def _require_template(conn: sqlite3.Connection, template_id: str) -> None:
+    if conn.execute(
+        "SELECT 1 FROM templates WHERE id = ?", (template_id,)
+    ).fetchone() is None:
+        raise ValueError(f"未知模板：{template_id}")
 
 
 def set_template_enabled(name: str, enabled: bool) -> dict[str, bool]:
-    if name not in TEMPLATE_IDS:
-        raise ValueError(f"未知模板：{name}")
+    with _lock:
+        conn = connect()
+        try:
+            _require_template(conn, name)
+        finally:
+            conn.close()
     state = templates_enabled()
     state[name] = bool(enabled)
     with _lock:
@@ -437,14 +575,25 @@ def _hydrate(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
-def _order(item: dict[str, Any]) -> tuple[int, int, int]:
-    template = item["template"]
-    group = -1 if template == "custom" else TEMPLATE_ORDER.get(template, len(TEMPLATE_IDS))
-    return (group, int(item["sort_order"] or 0), int(item["id"]))
+def _template_order(conn: sqlite3.Connection) -> dict[str, int]:
+    return {row[0]: row[1] for row in conn.execute("SELECT id, sort_order FROM templates")}
+
+
+def _sort_key(order: dict[str, int]):
+    """「自定义」排最前，其余按模板在表里的顺序；未知模板垫底。"""
+
+    def key(item: dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            order.get(item["template"], 99),
+            int(item["sort_order"] or 0),
+            int(item["id"]),
+        )
+
+    return key
 
 
 def active_terms() -> list[dict[str, Any]]:
-    """当前生效的词条：自定义优先，其次按模板顺序；停用、屏蔽、模板关掉的不算。"""
+    """当前生效的词条：「自定义」优先，其次按模板顺序；停用、屏蔽、模板关掉的不算。"""
     enabled_templates = templates_enabled()
     with _lock:
         conn = connect()
@@ -452,13 +601,16 @@ def active_terms() -> list[dict[str, Any]]:
             rows = conn.execute(
                 "SELECT * FROM terms WHERE enabled = 1 AND hidden = 0"
             ).fetchall()
+            order = _template_order(conn)
         finally:
             conn.close()
 
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for row in sorted((_hydrate(row) for row in rows), key=_order):
-        if row["template"] != "custom" and not enabled_templates.get(row["template"], True):
+    for row in sorted((_hydrate(row) for row in rows), key=_sort_key(order)):
+        if row["template"] != CUSTOM_TEMPLATE and not enabled_templates.get(
+            row["template"], True
+        ):
             continue
         key = normalize(row["term"])
         if not key or key in seen:
@@ -486,10 +638,11 @@ def list_terms(q: str = "", template: str = "") -> dict[str, Any]:
             rows = conn.execute(
                 f"SELECT * FROM terms WHERE {' AND '.join(clauses)}", params
             ).fetchall()
+            order = _template_order(conn)
         finally:
             conn.close()
 
-    items = sorted((_hydrate(row) for row in rows), key=_order)
+    items = sorted((_hydrate(row) for row in rows), key=_sort_key(order))
     return {"items": items, "total": len(items)}
 
 
@@ -528,16 +681,19 @@ def create_term(fields: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("术语不能为空")
     aliases = _split_aliases(fields.get("aliases"))
     definition = _clean_text(fields.get("definition"), MAX_DEFINITION)
+    template = str(fields.get("template") or CUSTOM_TEMPLATE).strip()
     now = _now()
 
     with _lock:
         conn = connect()
         try:
+            _require_template(conn, template)
             cursor = conn.execute(
                 """INSERT INTO terms(template, term, term_key, definition, aliases,
                                      enabled, hidden, sort_order, created_at, updated_at)
-                   VALUES ('custom',?,?,?,?,?,0,0,?,?)""",
+                   VALUES (?,?,?,?,?,?,0,0,?,?)""",
                 (
+                    template,
                     term,
                     normalize(term),
                     definition,
@@ -556,6 +712,16 @@ def create_term(fields: dict[str, Any]) -> dict[str, Any]:
     return _hydrate(row)
 
 
+def get_term(term_id: int) -> dict[str, Any] | None:
+    with _lock:
+        conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM terms WHERE id = ?", (term_id,)).fetchone()
+        finally:
+            conn.close()
+    return _hydrate(row) if row else None
+
+
 def update_term(term_id: int, patch: dict[str, Any]) -> dict[str, Any]:
     with _lock:
         conn = connect()
@@ -564,7 +730,10 @@ def update_term(term_id: int, patch: dict[str, Any]) -> dict[str, Any]:
             if row is None:
                 raise KeyError(term_id)
             current = _hydrate(row)
-            if current["template"] != "custom" and "term" in patch:
+            owner = conn.execute(
+                "SELECT builtin FROM templates WHERE id = ?", (current["template"],)
+            ).fetchone()
+            if owner is not None and owner[0] and "term" in patch:
                 raise ValueError("内置模板的术语不能改名，可以停用它")
 
             fields: dict[str, Any] = {}
@@ -619,15 +788,20 @@ def delete_term(term_id: int) -> bool:
     return True
 
 
-def _reset_template(conn: sqlite3.Connection, name: str) -> int:
-    """按内置内容重写一套模板：删掉多余的行、恢复屏蔽、覆盖用户改动。"""
+def _reset_template(conn: sqlite3.Connection, name: str, prune: bool = True) -> int:
+    """按内置内容重写一套模板：恢复屏蔽、覆盖用户改动、补齐缺失的词。
+
+    ``prune`` 为真时把模板里多出来的行也删掉——模板内容改版时用，
+    否则用户自己加进内置模板的词条会被误伤。
+    """
     now = _now()
-    conn.execute(
-        "DELETE FROM terms WHERE template = ? AND term_key NOT IN ("
-        + ",".join("?" * len(_TEMPLATES[name]))
-        + ")",
-        [name, *[normalize(term) for term, _ in _TEMPLATES[name]]],
-    )
+    if prune:
+        conn.execute(
+            "DELETE FROM terms WHERE template = ? AND term_key NOT IN ("
+            + ",".join("?" * len(_TEMPLATES[name]))
+            + ")",
+            [name, *[normalize(term) for term, _ in _TEMPLATES[name]]],
+        )
     conn.execute(
         "UPDATE terms SET hidden = 0, enabled = 1, updated_at = ? WHERE template = ?",
         (now, name),
@@ -675,7 +849,7 @@ def reset_template(name: str) -> int:
     with _lock:
         conn = connect()
         try:
-            restored = _reset_template(conn, name)
+            restored = _reset_template(conn, name, prune=False)
         finally:
             conn.close()
     _touch()

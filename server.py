@@ -574,14 +574,43 @@ async def api_terms_stats():
 
 @app.get("/api/terms/templates")
 async def api_terms_templates():
-    enabled = terms_store.templates_enabled()
-    return {
-        "enabled": enabled,
-        "items": [
-            {**item, "enabled": enabled.get(item["id"], True)}
-            for item in terms_store.template_catalog()
-        ],
-    }
+    return {"items": terms_store.list_templates()}
+
+
+@app.post("/api/terms/templates")
+async def api_terms_template_create(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        return terms_store.create_template(str(payload.get("name") or ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/terms/templates/{name}")
+async def api_terms_template_rename(name: str, request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        terms_store.rename_template(name, str(payload.get("name") or ""))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/terms/templates/{name}")
+async def api_terms_template_delete(name: str):
+    try:
+        terms_store.delete_template(name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
 
 
 @app.post("/api/terms/templates/{name}")
