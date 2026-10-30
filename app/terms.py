@@ -25,6 +25,8 @@ from app.materials import data_dir
 
 TERMS_FILENAME = "terms.db"
 SCHEMA_VERSION = 1
+# 模板内容改版时递增：老库下次启动会按新内容重写模板行，自定义词条不受影响。
+TEMPLATE_VERSION = 2
 
 MAX_TERM = 20
 MAX_ALIAS = 20
@@ -87,132 +89,132 @@ CREATE INDEX IF NOT EXISTS terms_template ON terms(template, sort_order);
 # --------------------------------------------------------------------------
 _TEMPLATES: dict[str, list[tuple[str, list[str]]]] = {
     "product": [
-        ("PRD", ["PRB"]),
-        ("MRD", ["MR0"]),
-        ("BRD", ["BR0"]),
-        ("MVP", ["NVP", "MBV"]),
-        ("PMF", ["PME"]),
-        ("NPS", ["MPS"]),
-        ("KPI", ["KPL"]),
-        ("OKR", ["OKB"]),
-        ("用户画像", []),
-        ("用户旅程", []),
-        ("原型图", []),
-        ("线框图", []),
-        ("高保真", []),
-        ("交互设计", []),
-        ("信息架构", []),
-        ("需求池", []),
-        ("需求评审", []),
-        ("版本规划", []),
-        ("迭代", []),
-        ("埋点", []),
-        ("灰度发布", []),
-        ("AB测试", []),
-        ("留存率", []),
-        ("转化率", []),
-        ("漏斗", []),
-        ("北极星指标", []),
-        ("竞品分析", []),
-        ("用户访谈", []),
-        ("可用性测试", []),
-        ("冷启动", []),
+        ("PRD", ["PRB", "产品需求文档"]),
+        ("MRD", ["MR0", "市场需求文档"]),
+        ("BRD", ["BR0", "商业需求文档"]),
+        ("MVP", ["NVP", "最小可行产品"]),
+        ("PMF", ["PME", "产品市场契合"]),
+        ("NPS", ["MPS", "净推荐值"]),
+        ("KPI", ["KPL", "关键绩效指标"]),
+        ("OKR", ["OKB", "目标与关键结果"]),
+        ("Persona", ["用户画像", "用户角色"]),
+        ("User Journey", ["用户旅程", "用户旅程图"]),
+        ("Wireframe", ["线框图", "线框稿"]),
+        ("Prototype", ["原型图", "原型稿"]),
+        ("High Fidelity", ["高保真", "高保真原型"]),
+        ("Interaction Design", ["交互设计", "交互稿"]),
+        ("Information Architecture", ["信息架构", "IA架构"]),
+        ("Requirement Pool", ["需求池", "需求清单"]),
+        ("Requirement Review", ["需求评审", "需求评审会"]),
+        ("Release Plan", ["版本规划", "发布计划"]),
+        ("Iteration", ["迭代", "版本迭代"]),
+        ("Tracking", ["埋点", "数据埋点"]),
+        ("Canary Release", ["灰度发布", "灰度"]),
+        ("AB Test", ["AB测试", "A/B测试"]),
+        ("Retention Rate", ["留存率", "次日留存"]),
+        ("Conversion Rate", ["转化比率", "转化比例"]),
+        ("User Story", ["用户故事", "用户故事卡"]),
+        ("North Star Metric", ["北极星指标", "北极星"]),
+        ("Competitive Analysis", ["竞品分析", "竞品调研"]),
+        ("User Interview", ["用户访谈", "用户访谈法"]),
+        ("Usability Testing", ["可用性测试", "可用性评测"]),
+        ("Cold Start", ["冷启动", "冷启"]),
     ],
     "engineering": [
-        ("API", []),
-        ("SDK", []),
-        ("CI", ["C1"]),
-        ("CD", ["C0"]),
-        ("QPS", ["QBS"]),
-        ("TPS", ["TBS"]),
-        ("SLA", []),
-        ("SLO", []),
-        ("SRE", ["SBE"]),
-        ("DDD", ["DBD"]),
-        ("TDD", ["TDB"]),
-        ("BDD", ["BDB"]),
-        ("ORM", ["0RM"]),
-        ("CRUD", []),
-        ("RPC", ["RBC"]),
-        ("MQ", []),
-        ("GC", []),
-        ("JVM", []),
-        ("K8s", []),
-        ("Docker", []),
-        ("微服务", []),
-        ("中台", []),
-        ("熔断", []),
-        ("限流", []),
-        ("降级", []),
-        ("幂等", []),
-        ("压测", []),
-        ("全链路", []),
-        ("持续集成", []),
-        ("持续交付", []),
+        ("API", ["接口文档", "A P I"]),
+        ("SDK", ["开发工具包", "S D K"]),
+        ("CI", ["持续集成", "C I"]),
+        ("CD", ["持续交付", "C D"]),
+        ("QPS", ["QBS", "每秒查询数"]),
+        ("TPS", ["TBS", "每秒事务数"]),
+        ("SLA", ["服务等级协议", "S L A"]),
+        ("SLO", ["服务等级目标", "S L O"]),
+        ("SRE", ["SBE", "站点可靠性工程"]),
+        ("DDD", ["DBD", "领域驱动设计"]),
+        ("TDD", ["TDB", "测试驱动开发"]),
+        ("BDD", ["BDB", "行为驱动开发"]),
+        ("ORM", ["0RM", "对象关系映射"]),
+        ("CRUD", ["增删改查", "C R U D"]),
+        ("RPC", ["RBC", "远程调用协议"]),
+        ("MQ", ["消息队列", "M Q"]),
+        ("GC", ["垃圾回收", "G C"]),
+        ("JVM", ["Java虚拟机", "J V M"]),
+        ("Kubernetes", ["K8s", "k8s集群"]),
+        ("Docker", ["容器化", "Docker容器"]),
+        ("Microservices", ["微服务架构", "微服务化"]),
+        ("Middle Platform", ["中台", "业务中台"]),
+        ("Circuit Breaker", ["熔断器", "熔断机制"]),
+        ("Rate Limiting", ["限流器", "限流策略"]),
+        ("Degradation", ["服务降级", "降级方案"]),
+        ("Idempotency", ["幂等性", "幂等设计"]),
+        ("Load Testing", ["压力测试", "压测方案"]),
+        ("Distributed Transaction", ["分布式事务", "分布式事物"]),
+        ("Sharding", ["分库分表", "分片"]),
+        ("Gateway", ["网关", "API网关"]),
     ],
     "ai": [
-        ("LLM", ["LLN"]),
-        ("RAG", ["LAG"]),
-        ("RLHF", ["RLHE"]),
-        ("SFT", ["SFE"]),
-        ("LoRA", []),
-        ("PEFT", ["PEFE"]),
-        ("Embedding", []),
-        ("Token", []),
-        ("Prompt", []),
-        ("Fine-tune", []),
-        ("Inference", []),
-        ("Hallucination", []),
-        ("Transformer", []),
-        ("Attention", []),
-        ("MoE", []),
-        ("Agent", []),
-        ("MCP", []),
-        ("大模型", []),
-        ("提示词", []),
-        ("微调", []),
-        ("推理", []),
-        ("幻觉", []),
-        ("智能体", []),
-        ("知识库", []),
-        ("多模态", []),
-        ("思维链", []),
-        ("向量检索", []),
-        ("余弦相似度", []),
-        ("上下文窗口", []),
-        ("温度参数", []),
+        ("LLM", ["LLN", "大语言模型"]),
+        ("RAG", ["LAG", "检索增强生成"]),
+        ("RLHF", ["RLHE", "人类反馈强化学习"]),
+        ("SFT", ["SFE", "监督微调"]),
+        ("LoRA", ["低秩适配", "LoRA微调"]),
+        ("PEFT", ["PEFE", "参数高效微调"]),
+        ("Embedding", ["向量化", "嵌入向量"]),
+        ("Token", ["词元", "Token数"]),
+        ("Prompt", ["提示词", "提示语"]),
+        ("Fine-tuning", ["模型微调", "finetune"]),
+        ("Inference", ["模型推理", "推理服务"]),
+        ("Hallucination", ["模型幻觉", "幻觉现象"]),
+        ("Transformer", ["变换器", "自注意力模型"]),
+        ("Attention", ["注意力机制", "自注意力机制"]),
+        ("MoE", ["混合专家", "专家混合模型"]),
+        ("Agent", ["智能体", "Agent应用"]),
+        ("MCP", ["M C P", "模型上下文协议"]),
+        ("Multimodal", ["多模态模型", "多模态能力"]),
+        ("Knowledge Base", ["知识库", "向量知识库"]),
+        ("Vector Search", ["向量检索", "向量搜索"]),
+        ("Cosine Similarity", ["余弦相似度", "余弦距离"]),
+        ("Context Window", ["上下文窗口", "上下文长度"]),
+        ("Temperature", ["温度参数", "温度值"]),
+        ("Chain of Thought", ["思维链", "思维链提示"]),
+        ("Prompt Engineering", ["提示词工程", "提示工程"]),
+        ("Function Calling", ["函数调用", "工具调用"]),
+        ("Streaming", ["流式输出", "流式返回"]),
+        ("Latency", ["响应延迟", "时延"]),
+        ("Throughput", ["吞吐量", "吞吐能力"]),
+        ("Benchmark", ["基准测试", "评测集"]),
     ],
     "ops": [
-        ("GMV", ["JGV", "GMW"]),
-        ("ROI", ["RUI", "R0I"]),
-        ("CPA", ["CBA"]),
-        ("CPC", []),
-        ("CPM", ["CPN"]),
-        ("CTR", ["CTB"]),
-        ("CVR", ["CVB"]),
-        ("DAU", ["DAV", "DA0"]),
-        ("MAU", ["NAU", "MA0"]),
-        ("ARPU", []),
-        ("LTV", ["LTB"]),
-        ("CAC", ["CAB"]),
-        ("AOV", ["A0V"]),
-        ("SKU", ["SKV"]),
-        ("SPU", ["SPV"]),
-        ("UV", ["UB"]),
-        ("PV", ["PB"]),
-        ("复购率", []),
-        ("客单价", []),
-        ("转化漏斗", []),
-        ("私域", []),
-        ("公域", []),
-        ("拉新", []),
-        ("促活", []),
-        ("召回", []),
-        ("裂变", []),
-        ("投放", []),
-        ("归因", []),
-        ("用户增长", []),
-        ("留存", []),
+        ("GMV", ["JGV", "商品交易总额"]),
+        ("ROI", ["RUI", "投入产出比"]),
+        ("CPA", ["CBA", "每次获客成本"]),
+        ("CPC", ["单次点击成本", "点击成本"]),
+        ("CPM", ["CPN", "千次曝光成本"]),
+        ("CTR", ["CTB", "点击率"]),
+        ("CVR", ["CVB", "转化率"]),
+        ("DAU", ["DAV", "日活"]),
+        ("MAU", ["NAU", "月活"]),
+        ("ARPU", ["ARPV", "每用户平均收入"]),
+        ("LTV", ["LTB", "用户生命周期价值"]),
+        ("CAC", ["CAB", "获客成本"]),
+        ("AOV", ["A0V", "客单价"]),
+        ("SKU", ["SKV", "库存单位"]),
+        ("SPU", ["SPV", "标准产品单元"]),
+        ("UV", ["U V", "独立访客"]),
+        ("PV", ["P V", "页面浏览量"]),
+        ("Repurchase Rate", ["复购率", "复购比例"]),
+        ("Private Domain", ["私域流量", "私域"]),
+        ("Public Domain", ["公域流量", "公域"]),
+        ("Acquisition", ["拉新", "获客拉新"]),
+        ("Activation", ["促活", "用户激活"]),
+        ("Retention", ["留存用户", "用户留存"]),
+        ("Reactivation", ["用户召回", "召回活动"]),
+        ("Viral Growth", ["裂变增长", "病毒式增长"]),
+        ("Attribution", ["归因分析", "渠道归因"]),
+        ("User Growth", ["用户增长", "增长策略"]),
+        ("Conversion Funnel", ["转化漏斗", "漏斗分析"]),
+        ("Impression", ["曝光量", "曝光次数"]),
+        ("Churn Rate", ["流失率", "用户流失"]),
     ],
 }
 
@@ -266,7 +268,27 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         (str(SCHEMA_VERSION),),
     )
     sync_templates(conn)
+    upgrade_templates(conn)
     _initialised.add(key)
+
+
+def upgrade_templates(conn: sqlite3.Connection) -> int:
+    """模板内容改版后重写老库里的模板行。自定义词条不动。"""
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = 'template_version'"
+    ).fetchone()
+    version = int(row[0]) if row and str(row[0]).isdigit() else 0
+    if version >= TEMPLATE_VERSION:
+        return 0
+    for name in TEMPLATE_IDS:
+        _reset_template(conn, name)
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES ('template_version', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (str(TEMPLATE_VERSION),),
+    )
+    _touch()
+    return len(TEMPLATE_IDS)
 
 
 def reset_cache() -> None:
@@ -597,61 +619,67 @@ def delete_term(term_id: int) -> bool:
     return True
 
 
+def _reset_template(conn: sqlite3.Connection, name: str) -> int:
+    """按内置内容重写一套模板：删掉多余的行、恢复屏蔽、覆盖用户改动。"""
+    now = _now()
+    conn.execute(
+        "DELETE FROM terms WHERE template = ? AND term_key NOT IN ("
+        + ",".join("?" * len(_TEMPLATES[name]))
+        + ")",
+        [name, *[normalize(term) for term, _ in _TEMPLATES[name]]],
+    )
+    conn.execute(
+        "UPDATE terms SET hidden = 0, enabled = 1, updated_at = ? WHERE template = ?",
+        (now, name),
+    )
+    for position, (term, aliases) in enumerate(_TEMPLATES[name]):
+        key = normalize(term)
+        existing = conn.execute(
+            "SELECT id FROM terms WHERE template = ? AND term_key = ?",
+            (name, key),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE terms SET term = ?, definition = '', aliases = ?, "
+                "sort_order = ?, updated_at = ? WHERE id = ?",
+                (
+                    term,
+                    json.dumps(aliases, ensure_ascii=False),
+                    position,
+                    now,
+                    existing[0],
+                ),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO terms(template, term, term_key, definition, aliases,
+                                     enabled, hidden, sort_order, created_at, updated_at)
+                   VALUES (?,?,?,'',?,1,0,?,?,?)""",
+                (
+                    name,
+                    term,
+                    key,
+                    json.dumps(aliases, ensure_ascii=False),
+                    position,
+                    now,
+                    now,
+                ),
+            )
+    return len(_TEMPLATES[name])
+
+
 def reset_template(name: str) -> int:
     """把某套模板恢复到内置内容：取消屏蔽、清掉用户改动、补齐缺失的词。"""
     if name not in TEMPLATE_IDS:
         raise ValueError(f"未知模板：{name}")
-    now = _now()
     with _lock:
         conn = connect()
         try:
-            conn.execute(
-                "DELETE FROM terms WHERE template = ? AND term_key NOT IN ("
-                + ",".join("?" * len(_TEMPLATES[name]))
-                + ")",
-                [name, *[normalize(term) for term, _ in _TEMPLATES[name]]],
-            )
-            conn.execute(
-                "UPDATE terms SET hidden = 0, enabled = 1, updated_at = ? WHERE template = ?",
-                (now, name),
-            )
-            for position, (term, aliases) in enumerate(_TEMPLATES[name]):
-                key = normalize(term)
-                existing = conn.execute(
-                    "SELECT id FROM terms WHERE template = ? AND term_key = ?",
-                    (name, key),
-                ).fetchone()
-                if existing:
-                    conn.execute(
-                        "UPDATE terms SET term = ?, definition = '', aliases = ?, "
-                        "sort_order = ?, updated_at = ? WHERE id = ?",
-                        (
-                            term,
-                            json.dumps(aliases, ensure_ascii=False),
-                            position,
-                            now,
-                            existing[0],
-                        ),
-                    )
-                else:
-                    conn.execute(
-                        """INSERT INTO terms(template, term, term_key, definition, aliases,
-                                             enabled, hidden, sort_order, created_at, updated_at)
-                           VALUES (?,?,?,'',?,1,0,?,?,?)""",
-                        (
-                            name,
-                            term,
-                            key,
-                            json.dumps(aliases, ensure_ascii=False),
-                            position,
-                            now,
-                            now,
-                        ),
-                    )
+            restored = _reset_template(conn, name)
         finally:
             conn.close()
     _touch()
-    return len(_TEMPLATES[name])
+    return restored
 
 
 # --------------------------------------------------------------------------

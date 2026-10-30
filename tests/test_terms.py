@@ -131,6 +131,27 @@ def test_new_template_terms_are_added_but_existing_kept(store):
     assert fresh["id"] == item["id"]
 
 
+def test_template_upgrade_rewrites_stale_rows(store):
+    conn = store.connect()
+    try:
+        conn.execute(
+            "INSERT INTO terms(template, term, term_key, definition, aliases, enabled, "
+            "hidden, sort_order, created_at, updated_at) "
+            "VALUES ('product','旧术语','旧术语','','[]',1,0,99,?,?)",
+            ("2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00"),
+        )
+        conn.execute("UPDATE meta SET value = '1' WHERE key = 'template_version'")
+        store.upgrade_templates(conn)
+        names = {
+            row[0]
+            for row in conn.execute("SELECT term FROM terms WHERE template = 'product'")
+        }
+    finally:
+        conn.close()
+    assert "旧术语" not in names
+    assert "PRD" in names
+
+
 def test_deleted_template_term_stays_deleted(store):
     item = store.list_terms(q="GMV")["items"][0]
     store.delete_term(item["id"])
@@ -186,8 +207,9 @@ def test_bulk_create_updates_existing_custom_term(store):
 # 离线候选
 # --------------------------------------------------------------------------
 def test_referenced_confusions_finds_near_miss(store):
-    suggestions = store.referenced_confusions("我们看 ARPV 这个指标")
-    assert suggestions == [{"from": "ARPV", "to": "ARPU", "reason": "near-miss"}]
+    add(store, "QWEK")
+    suggestions = store.referenced_confusions("我们看 QWEJ 这个指标")
+    assert suggestions == [{"from": "QWEJ", "to": "QWEK", "reason": "near-miss"}]
 
 
 def test_referenced_confusions_skips_known_tokens(store):
@@ -195,8 +217,9 @@ def test_referenced_confusions_skips_known_tokens(store):
 
 
 def test_record_session_dedupes_and_keeps_suggestions(store):
+    add(store, "QWEK")
     store.record_session(
-        "我们看 ARPV 这个指标",
+        "我们看 QWEJ 这个指标",
         [
             {"from": "JGV", "to": "GMV"},
             {"from": "JGV", "to": "GMV"},
@@ -208,7 +231,7 @@ def test_record_session_dedupes_and_keeps_suggestions(store):
         {"from": "JGV", "to": "GMV"},
         {"from": "RUI", "to": "ROI"},
     ]
-    assert data["suggestions"] == [{"from": "ARPV", "to": "ARPU", "reason": "near-miss"}]
+    assert data["suggestions"] == [{"from": "QWEJ", "to": "QWEK", "reason": "near-miss"}]
 
     store.clear_recent()
     assert store.recent() == {"corrections": [], "suggestions": []}

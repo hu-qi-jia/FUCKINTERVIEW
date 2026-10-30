@@ -1,6 +1,6 @@
 "use client";
 
-import { PencilIcon, PuzzleIcon, SearchIcon, XIcon } from "lucide-react";
+import { PuzzleIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -446,7 +446,7 @@ export function TermsLibrary({
                 <span>{t("terms.table.aliases")}</span>
                 <span className="hidden sm:block">{t("terms.table.definition")}</span>
                 <span className="text-center">{t("terms.table.enabled")}</span>
-                <span className="text-right">{t("terms.table.actions")}</span>
+                <span className="text-center">{t("terms.table.actions")}</span>
               </div>
 
               {visibleItems.map((item) => (
@@ -499,7 +499,6 @@ export function TermsLibrary({
 
                   <span className="flex items-center justify-end gap-1">
                     <Button size="xs" variant="ghost" onClick={() => setEditing(item)}>
-                      <PencilIcon />
                       {t("terms.table.edit")}
                     </Button>
                     <DeleteConfirm
