@@ -23,6 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -89,6 +90,8 @@ export function MaterialsPage({
   const [busy, setBusy] = useState(false);
   const [focusNameToken, setFocusNameToken] = useState(0);
   const [pendingDelete, setPendingDelete] = useState(false);
+  // 删除确认浮层挂在「…」按钮上，菜单关掉后原地弹出。
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
   // 问答库的「导入 / 新建」放在标签栏右侧，和面试档案的「新建档案」同一位置。
   const qaRef = useRef<QaLibraryHandle | null>(null);
   const [qaView, setQaView] = useState<"list" | "import">("list");
@@ -297,6 +300,7 @@ export function MaterialsPage({
               <DropdownMenuTrigger
                 render={
                   <Button
+                    ref={moreButtonRef}
                     size="icon-sm"
                     variant="ghost"
                     aria-label={t("materials.moreActions")}
@@ -324,20 +328,33 @@ export function MaterialsPage({
         </div>
       )}
 
-      {pendingDelete && profile && (
-        <div className="bg-destructive/5 flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs">
-          <span className="text-destructive min-w-0 flex-1">
-            {t("materials.deleteConfirm", {
-              name: profile.name || t("materials.untitled"),
-            })}
-          </span>
-          <Button size="xs" variant="destructive" onClick={() => void remove()}>
-            {t("materials.confirmDelete")}
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => setPendingDelete(false)}>
-            {t("materials.cancel")}
-          </Button>
-        </div>
+      {segment === "profiles" && inDetail && profile && (
+        <Popover open={pendingDelete} onOpenChange={setPendingDelete}>
+          <PopoverContent
+            anchor={() => moreButtonRef.current}
+            align="end"
+            sideOffset={6}
+            className="w-64"
+          >
+            <p className="text-xs leading-relaxed">
+              {t("materials.deleteConfirm", {
+                name: profile.name || t("materials.untitled"),
+              })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => setPendingDelete(false)}
+              >
+                {t("materials.cancel")}
+              </Button>
+              <Button size="xs" variant="destructive" onClick={() => void remove()}>
+                {t("materials.confirmDelete")}
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
       )}
 
       {status === "failed" && saveError && (
