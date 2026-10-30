@@ -7,8 +7,8 @@ export type TermTemplate = "product" | "engineering" | "ai" | "ops" | "custom";
 export const TERM_TEMPLATES: TermTemplate[] = ["product", "engineering", "ai", "ops"];
 
 /** 和后端 app/terms.py 的上限保持一致。 */
-export const MAX_TERM = 20;
-export const MAX_ALIAS = 20;
+export const MAX_TERM = 32;
+export const MAX_ALIAS = 32;
 
 export interface TermItem {
   id: number;

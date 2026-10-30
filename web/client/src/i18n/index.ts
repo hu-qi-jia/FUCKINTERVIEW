@@ -518,7 +518,14 @@ const zh = {
       ai: "AI 术语",
       ops: "运营术语",
       reset: "恢复默认",
-      resetConfirm: "确定恢复？你改过的释义和别名会被清掉。",
+      resetConfirm: "确定恢复？你改过的释义和替换词会被清掉。",
+    },
+    templateShort: {
+      custom: "自定义",
+      product: "产品",
+      engineering: "研发",
+      ai: "AI",
+      ops: "运营",
     },
     filters: { all: "全部模板" },
     templates: {
@@ -535,7 +542,7 @@ const zh = {
     },
     field: {
       term: "术语",
-      termHint: "最多 20 个字符，比如 GMV",
+      termHint: "比如 GMV、North Star Metric",
       aliases: "替换词",
       aliasesHint: "转写里可能听成的写法，用英文逗号分隔，每个最多 {{max}} 个字符",
       aliasTooLong: "「{{value}}」超过 {{max}} 个字符",
@@ -1093,7 +1100,14 @@ const en = {
       ai: "AI",
       ops: "Operations",
       reset: "Restore defaults",
-      resetConfirm: "Restore? Your edited definitions and aliases will be lost.",
+      resetConfirm: "Restore? Your edited definitions and replacements will be lost.",
+    },
+    templateShort: {
+      custom: "Custom",
+      product: "Product",
+      engineering: "Eng",
+      ai: "AI",
+      ops: "Ops",
     },
     filters: { all: "All templates" },
     templates: {
@@ -1108,7 +1122,7 @@ const en = {
     },
     field: {
       term: "Term",
-      termHint: "Up to 20 characters, e.g. GMV",
+      termHint: "e.g. GMV or North Star Metric",
       aliases: "Replacements",
       aliasesHint: "How the ASR might mishear it, separated by commas, {{max}} characters each",
       aliasTooLong: "\"{{value}}\" is longer than {{max}} characters",

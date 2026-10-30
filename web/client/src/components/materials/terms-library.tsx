@@ -52,7 +52,7 @@ const ALL = "__all__";
 
 // 表头与每一行都是同一个 grid 的子网格，列宽才会真正对齐（各算各的会错位）。
 const GRID_COLS =
-  "grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_auto_auto] sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.6fr)_auto_auto]";
+  "grid-cols-[minmax(0,1.7fr)_minmax(0,1.6fr)_auto_auto] sm:grid-cols-[minmax(0,1.7fr)_minmax(0,1.6fr)_minmax(0,1fr)_auto_auto]";
 const SUBGRID_ROW = "col-span-full grid grid-cols-subgrid items-center gap-3 px-3";
 
 function FilterSelect({
@@ -456,6 +456,7 @@ export function TermsLibrary({
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span
+                      title={item.term}
                       className={cn(
                         "truncate font-medium",
                         !item.enabled && "text-muted-foreground",
@@ -463,9 +464,11 @@ export function TermsLibrary({
                     >
                       {item.term}
                     </span>
-                    <span className="text-muted-foreground/70 shrink-0 text-[10px]">
-                      {t(`terms.template.${item.template}`)}
-                    </span>
+                    {!template && (
+                      <span className="text-muted-foreground/70 shrink-0 text-[10px] leading-none">
+                        {t(`terms.templateShort.${item.template}`)}
+                      </span>
+                    )}
                   </span>
 
                   <span className="flex min-w-0 flex-wrap items-center gap-1">
