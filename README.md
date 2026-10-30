@@ -193,10 +193,12 @@ Markdown 用 `## 问题` + 紧随其后的 `> 别名: …` 元数据行，正文
 ASR 供应商侧的热词参数（`keywords` / `context`）**没有接**：默认的 MiniMax 没有这个字段，
 接了也只对个别供应商生效，与「换模型也依旧生效」冲突。
 
-纯逻辑有测试覆盖（替换词命中、大小写、词边界、停用、模板同步、批量解析）：
+测试分两层：`tests/test_terms.py` 测纯逻辑（替换词命中、大小写、词边界、停用、
+模板同步、批量解析），`tests/test_pipeline.py` 用 pipecat 的 `run_test` 把帧真的过一遍，
+确认转写确实被改写、释义确实进了系统提示词、历史确实被裁剪：
 
 ```bash
-PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests/test_terms.py -q
+PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 ```
 
 ## 设置页
