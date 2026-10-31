@@ -3,7 +3,8 @@
 import {
   BookOpenIcon,
   ClipboardListIcon,
-  MicIcon,
+  HistoryIcon,
+  HomeIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SettingsIcon,
@@ -21,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Top-level pages. Each renders its own Console and connection. */
-export type AppPage = "interview" | "mock" | "materials";
+export type AppPage = "home" | "history" | "interview" | "mock" | "materials";
 
 function SidebarItem({
   icon,
@@ -93,9 +94,14 @@ export function AppSidebar({
     icon: ReactNode;
   }> = [
     {
-      id: "interview",
-      label: t("nav.interview"),
-      icon: <MicIcon className="size-4 shrink-0" />,
+      id: "home",
+      label: t("nav.home"),
+      icon: <HomeIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "history",
+      label: t("nav.history"),
+      icon: <HistoryIcon className="size-4 shrink-0" />,
     },
     {
       id: "mock",
@@ -148,7 +154,10 @@ export function AppSidebar({
         {pages.map((page) => (
           <SidebarItem
             key={page.id}
-            active={activePage === page.id}
+            active={
+              activePage === page.id ||
+              (page.id === "home" && activePage === "interview")
+            }
             collapsed={collapsed}
             icon={page.icon}
             label={page.label}

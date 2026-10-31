@@ -142,6 +142,12 @@ const MEMORY_STORAGE: LayoutStorage = {
 
 type JotaiStore = ReturnType<typeof createStore>;
 
+/**
+ * 首页「开始面试」带过来的自动连接信号只消费一次。React StrictMode 在
+ * 开发环境会挂载两次，这个模块级游标保证不会弹出两次系统音频授权。
+ */
+let lastAutoConnectSignal = 0;
+
 export interface ConsoleProps {
   /**
    * Pane arrangement. "default" is the media / conversation+metrics / info
@@ -171,6 +177,13 @@ export interface ConsoleProps {
    * audio from the browser's own bar.
    */
   disconnectSignal?: number;
+  /**
+   * 首页确认档案后跳过来时，用这个信号让 Console 自动发起一次连接。
+   * 值必须递增；同一个值只在第一次挂载时生效（StrictMode 会挂载两次）。
+   */
+  autoConnectSignal?: number;
+  /** 用户主动结束会话时调用（点断开、停止共享系统音频）。 */
+  onEnd?: () => void;
 
   // -- Bootstrap (forwarded to usePipecatApp) --------------------------------
   /** Transport backing the client (default "smallwebrtc"). Match it to transportFactory; codec and ICE handling depend on it. */
@@ -231,6 +244,8 @@ export interface ConsoleProps {
   noEvents?: boolean;
   noStatusInfo?: boolean;
   noSessionInfo?: boolean;
+  /** Interview layout: start the metrics pane collapsed to its icon strip. */
+  collapseMetricsPanel?: boolean;
 
   // -- Behavior --------------------------------------------------------------
   /** How the DTMF keypad dispatches presses (default "buffered"). */
@@ -355,6 +370,8 @@ function ConsoleShell({
   beforeConnect,
   liveConversation,
   disconnectSignal,
+  autoConnectSignal,
+  onEnd,
   transportOptions,
   connectParams,
   startBotParams,
@@ -376,6 +393,7 @@ function ConsoleShell({
   noEvents = false,
   noStatusInfo = false,
   noSessionInfo = false,
+  collapseMetricsPanel = false,
   keypadMode = "buffered",
   textRenderMode,
   noTextRenderModeSwitch = false,
@@ -487,7 +505,8 @@ function ConsoleShell({
     React.useState(collapseMediaPanel);
   const [isInfoCollapsed, setIsInfoCollapsed] =
     React.useState(collapseInfoPanel);
-  const [isMetricsCollapsed, setIsMetricsCollapsed] = React.useState(false);
+  const [isMetricsCollapsed, setIsMetricsCollapsed] =
+    React.useState(collapseMetricsPanel);
   const [isEventsCollapsed, setIsEventsCollapsed] =
     React.useState(collapseEventsPanel);
   const [connectError, setConnectError] = React.useState<string | null>(null);
@@ -499,8 +518,9 @@ function ConsoleShell({
     if (!disconnectSignal || disconnectSignal === handledDisconnectSignal.current)
       return;
     handledDisconnectSignal.current = disconnectSignal;
+    onEnd?.();
     void app.disconnect();
-  }, [app, disconnectSignal]);
+  }, [app, disconnectSignal, onEnd]);
 
   const connectionUrl = getConnectionUrl(
     startBotParams,
@@ -611,9 +631,22 @@ function ConsoleShell({
     <ConnectButton
       size="sm"
       onConnect={handleConnect}
-      onDisconnect={app.disconnect}
+      onDisconnect={() => {
+        onEnd?.();
+        void app.disconnect();
+      }}
     />
   );
+
+  // 首页确认档案后跳过来：等 Console 真正挂载、client 就绪，再发起连接。
+  // beforeConnect 里的系统音频选择器仍然在浏览器允许的临时用户激活窗口内。
+  const handleConnectRef = React.useRef(handleConnect);
+  handleConnectRef.current = handleConnect;
+  React.useEffect(() => {
+    if (!autoConnectSignal || autoConnectSignal <= lastAutoConnectSignal) return;
+    lastAutoConnectSignal = autoConnectSignal;
+    void handleConnectRef.current();
+  }, [autoConnectSignal]);
 
   const errorText = connectError ?? app.error;
 
@@ -733,7 +766,7 @@ function ConsoleShell({
                   <ResizableHandle withHandle />
                   <ResizablePanel
                     id="metrics"
-                    defaultSize="30%"
+                    defaultSize={collapseMetricsPanel ? 56 : "30%"}
                     minSize="14%"
                     collapsible
                     collapsedSize={56}

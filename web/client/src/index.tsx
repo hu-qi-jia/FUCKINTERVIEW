@@ -15,6 +15,9 @@ import {
   PortalTo,
   SidebarDevices,
 } from "@/components/app-device-dock";
+import { HistoryPage } from "@/components/history/history-page";
+import { HomePage } from "@/components/home/home-page";
+import type { MaterialsSegment } from "@/components/home/quick-entries";
 import { MaterialsPage } from "@/components/materials/materials-page";
 import { LiveProfileSelect } from "@/components/materials/live-profile-select";
 import { Console, type ConsoleProps } from "@/components/pipecat/console/console";
@@ -37,6 +40,7 @@ import {
   saveCaptureMic,
   saveDeviceId,
 } from "@/lib/preferences";
+import { markSessionEnded } from "@/lib/sessions";
 import { startBotParams } from "@/lib/session-request";
 import type { TermCorrection } from "@/lib/terms";
 import {
@@ -79,17 +83,29 @@ function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
 }
 
-const PAGES: AppPage[] = ["interview", "mock", "materials"];
+const NAV_PAGES: AppPage[] = ["home", "history", "mock", "materials"];
 const pageLabelKey = (page: AppPage) =>
-  page === "mock"
-    ? "nav.mockInterview"
-    : page === "materials"
-      ? "nav.materials"
-      : "nav.interview";
+  page === "home"
+    ? "nav.home"
+    : page === "history"
+      ? "nav.history"
+      : page === "mock"
+        ? "nav.mockInterview"
+        : page === "materials"
+          ? "nav.materials"
+          : "nav.interview";
+
+function newInterviewId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 /**
  * Small-screen page switcher. The sidebar is hidden below 768px, so the
- * console header carries the two pages instead.
+ * page header carries the pages instead. The live interview page is not in
+ * the sidebar; it appears here only while it is the active page.
  */
 function PageSwitch({
   page,
@@ -99,9 +115,11 @@ function PageSwitch({
   onNavigate: (page: AppPage) => void;
 }) {
   const { t } = useTranslation();
+  const pages: AppPage[] =
+    page === "interview" ? [...NAV_PAGES, "interview"] : NAV_PAGES;
   return (
     <Select
-      items={PAGES.map((value) => ({ value, label: t(pageLabelKey(value)) }))}
+      items={pages.map((value) => ({ value, label: t(pageLabelKey(value)) }))}
       value={page}
       onValueChange={(value) => onNavigate(value as AppPage)}
     >
@@ -113,7 +131,7 @@ function PageSwitch({
         <SelectValue />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
-        {PAGES.map((value) => (
+        {pages.map((value) => (
           <SelectItem key={value} value={value}>
             {t(pageLabelKey(value))}
           </SelectItem>
@@ -150,8 +168,15 @@ function Home() {
     setLiveTerms((previous) => [...previous, ...payload.corrections!]);
   }, []);
 
+  // 本场实时面试的 join key：面试官和候选人两路连接都带它，后端据此拼成一场。
+  const [interviewId, setInterviewId] = useState(newInterviewId);
+  const [autoStartToken, setAutoStartToken] = useState(0);
+  // 模拟面试没有档案，单独一个 id，离开页面时换新的，避免两场并进一条记录。
+  const [mockInterviewId, setMockInterviewId] = useState(newInterviewId);
+
   const live = useLiveInterview({
     profileId: liveProfileId,
+    interviewId,
     onServerMessage: handleServerMessage,
   });
 
@@ -166,8 +191,19 @@ function Home() {
   };
   const [page, setPage] = useState<AppPage>(() => {
     const stored = localStorage.getItem(PAGE_KEY);
-    return stored === "mock" || stored === "materials" ? stored : "interview";
+    // 面试页现在由首页「开始面试」进入；旧版本存的 interview 一律回到首页。
+    return stored === "history" || stored === "mock" || stored === "materials"
+      ? stored
+      : "home";
   });
+  // 从首页/历史页跳过去时要打开的那一条记录、那一份档案。
+  const [historyFocus, setHistoryFocus] = useState<number | null>(null);
+  const [materialsSegment, setMaterialsSegment] = useState<
+    MaterialsSegment | undefined
+  >(undefined);
+  const [materialsProfileFocus, setMaterialsProfileFocus] = useState<
+    string | null
+  >(null);
   // 设置里切换数据目录后，让面试材料页重新拉一次档案。
   const [dataVersion, setDataVersion] = useState(0);
 
@@ -222,9 +258,57 @@ function Home() {
   };
 
   const navigate = (next: AppPage) => {
+    if (next === page) return;
+    // 离开面试页就当作主动结束；没连上的话后端找不到记录，什么也不做。
+    if (page === "interview") void markSessionEnded(interviewId);
+    if (page === "mock") {
+      void markSessionEnded(mockInterviewId);
+      setMockInterviewId(newInterviewId());
+    }
+    if (next !== "history") setHistoryFocus(null);
+    if (next !== "materials") setMaterialsProfileFocus(null);
     setPage(next);
     localStorage.setItem(PAGE_KEY, next);
   };
+
+  /** 侧栏/小屏切换：从导航进来时不带任何「直接打开某条」的意图。 */
+  const handleNavigate = (next: AppPage) => {
+    if (next === "history") setHistoryFocus(null);
+    if (next === "materials") setMaterialsProfileFocus(null);
+    navigate(next);
+  };
+
+  const startInterview = (profileId: string) => {
+    handleLiveProfileChange(profileId);
+    // 新的一场：新的 join key，两路连接都会带上它。
+    setInterviewId(newInterviewId());
+    setAutoStartToken(Date.now());
+    navigate("interview");
+  };
+
+  const openMaterials = (segment: MaterialsSegment) => {
+    setMaterialsSegment(segment);
+    setMaterialsProfileFocus(null);
+    navigate("materials");
+  };
+
+  const openSession = (id: number) => {
+    setHistoryFocus(id);
+    navigate("history");
+  };
+
+  const openHistory = () => {
+    setHistoryFocus(null);
+    navigate("history");
+  };
+
+  const openProfile = (profileId: string) => {
+    setMaterialsSegment("profiles");
+    setMaterialsProfileFocus(profileId);
+    navigate("materials");
+  };
+
+  const goHome = () => navigate("home");
 
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
     if (sidebarCollapsed) return;
@@ -289,7 +373,13 @@ function Home() {
     </Button>
   );
 
-  const pageSwitch = <PageSwitch page={page} onNavigate={navigate} />;
+  const pageSwitch = <PageSwitch page={page} onNavigate={handleNavigate} />;
+  const pageHeaderExtras = (
+    <>
+      {pageSwitch}
+      {settingsButton}
+    </>
+  );
   const liveDevices = { cam: true, screen: true, mic: !captureMic };
 
   // The mock page owns its client inside the Console, so the dock is portaled
@@ -361,7 +451,25 @@ function Home() {
         <div className="flex h-full min-w-0 flex-1 flex-col">
           {/* Each page owns its Console and connection; switching pages
               unmounts the other, so the two sessions stay independent. */}
-          {page === "interview" ? (
+          {page === "home" ? (
+            <HomePage
+              dataVersion={dataVersion}
+              headerExtras={pageHeaderExtras}
+              defaultProfileId={liveProfileId}
+              onStartInterview={startInterview}
+              onOpenMaterials={openMaterials}
+              onOpenSession={openSession}
+              onOpenHistory={openHistory}
+            />
+          ) : page === "history" ? (
+            <HistoryPage
+              headerExtras={pageHeaderExtras}
+              focusSessionId={historyFocus}
+              onFocusConsumed={() => setHistoryFocus(null)}
+              onOpenProfile={openProfile}
+              onGoHome={goHome}
+            />
+          ) : page === "interview" ? (
             <>
               {live.micError && (
                 <div className="bg-destructive/10 text-destructive flex items-center gap-2 border-b px-3 py-1.5 text-xs">
@@ -410,6 +518,8 @@ function Home() {
                   startBotParams={live.startBotParams}
                   beforeConnect={live.beforeConnect}
                   disconnectSignal={live.disconnectSignal}
+                  autoConnectSignal={autoStartToken}
+                  onEnd={() => void markSessionEnded(interviewId)}
                   liveConversation={{
                     messages: live.extraMessages,
                     interimText: live.interimText,
@@ -418,7 +528,8 @@ function Home() {
                     live.handleTransportStateChange
                   }
                   layout="interview"
-                  layoutPersistenceKey="live-interview"
+                  layoutPersistenceKey="live-interview-v2"
+                  collapseMetricsPanel
                   noLogo
                   titleText=""
                   noDTMF
@@ -435,6 +546,10 @@ function Home() {
               key="mock"
               jotaiStore={mockStore}
               {...SMALL_WEBRTC_PROPS}
+              startBotParams={startBotParams("mock", {
+                interviewId: mockInterviewId,
+              })}
+              onEnd={() => void markSessionEnded(mockInterviewId)}
               noLogo
               titleText=""
               noDTMF
@@ -447,12 +562,9 @@ function Home() {
           ) : (
             <MaterialsPage
               dataVersion={dataVersion}
-              headerExtras={
-                <>
-                  {pageSwitch}
-                  {settingsButton}
-                </>
-              }
+              initialSegment={materialsSegment}
+              initialProfileId={materialsProfileFocus}
+              headerExtras={pageHeaderExtras}
             />
           )}
         </div>

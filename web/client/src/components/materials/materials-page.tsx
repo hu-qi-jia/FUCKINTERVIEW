@@ -62,9 +62,15 @@ function formatTime(value: string | null | undefined): string {
 export function MaterialsPage({
   headerExtras,
   dataVersion = 0,
+  initialSegment,
+  initialProfileId,
 }: {
   headerExtras?: React.ReactNode;
   dataVersion?: number;
+  /** 从首页快捷入口进来时直接停在对应 tab。 */
+  initialSegment?: Segment;
+  /** 从历史详情点档案名进来时直接打开这份档案。 */
+  initialProfileId?: string | null;
 }) {
   const { t } = useTranslation();
   const {
@@ -85,7 +91,9 @@ export function MaterialsPage({
   const [summaries, setSummaries] = useState<ProfileSummary[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [segment, setSegment] = useState<Segment>(readSegment);
+  const [segment, setSegment] = useState<Segment>(
+    () => initialSegment ?? readSegment(),
+  );
   const [detailId, setDetailId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [focusNameToken, setFocusNameToken] = useState(0);
@@ -139,6 +147,19 @@ export function MaterialsPage({
     setDetailId(id);
     await open(id);
   };
+
+  // 从首页快捷入口进来：把落地 tab 记进本地，下次从侧栏回来也停在这里。
+  useEffect(() => {
+    if (initialSegment) localStorage.setItem(SEGMENT_KEY, initialSegment);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 从历史详情点档案名进来：等档案列表拉完再打开，避免 open 拿到空列表。
+  useEffect(() => {
+    if (!initialProfileId) return;
+    void openDetail(initialProfileId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProfileId, dataVersion]);
 
   const backToList = async () => {
     if (busy) return;

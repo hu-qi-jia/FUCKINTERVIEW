@@ -20,7 +20,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from app.materials import data_dir
 
@@ -1131,29 +1131,6 @@ def referenced_confusions(text: str) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------
 # 上一场会话的回顾
 #
-# 只在内存里，进程重启就没了——它是给「刚面完，回头看一眼」用的，
-# 不是需要留档的数据。
+# 纠错和疑似误听随会话写入 sessions.db（见 app/sessions.py），进程重启
+# 也不会丢；这里只保留离线的近似词判定。
 # --------------------------------------------------------------------------
-_recent: dict[str, list[dict[str, Any]]] = {"corrections": [], "suggestions": []}
-
-
-def record_session(raw_text: str, corrections: Iterable[dict[str, str]]) -> None:
-    deduped: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for hit in corrections:
-        key = (str(hit.get("from") or ""), str(hit.get("to") or ""))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append({"from": key[0], "to": key[1]})
-    _recent["corrections"] = deduped[:20]
-    _recent["suggestions"] = referenced_confusions(raw_text)
-
-
-def recent() -> dict[str, list[dict[str, Any]]]:
-    return {"corrections": list(_recent["corrections"]), "suggestions": list(_recent["suggestions"])}
-
-
-def clear_recent() -> None:
-    _recent["corrections"] = []
-    _recent["suggestions"] = []

@@ -18,6 +18,8 @@
 │   ├── qa_index.py              # 向量模型、后台索引线程、混合检索
 │   ├── qa_import.py             # xlsx / csv / md 的解析、预览与导入
 │   ├── terms.py                 # 术语库的 SQLite 存储、内置模板与转写纠错
+│   ├── sessions.py              # 面试历史的 SQLite 存储、统计与术语回顾
+│   ├── session_recorder.py      # 从 pipeline 帧里采集转写与指标
 │   ├── ai.py                    # 直接调用配置里的 LLM（不经过语音 pipeline）
 │   └── services/
 │       ├── qwen_stt.py          # Qwen ASR（DashScope OpenAI 兼容接口）
@@ -26,6 +28,7 @@
 ├── config/profiles.json         # 面试档案（含个人简历，勿提交）
 ├── config/qa.db                 # 问答库（SQLite，勿提交）
 ├── config/terms.db              # 术语库（SQLite，勿提交）
+├── config/sessions.db           # 面试历史与转写（SQLite，勿提交）
 ├── config/models/               # 向量模型缓存（约 90MB，勿提交）
 ├── docs/qa-library-design.md    # 问答库的设计说明
 ├── web/client/                  # 前端源码（pipecat-prebuilt 的 React 应用）
@@ -48,7 +51,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 ## 界面与语言
 
-- 左侧导航：**实时面试**、**模拟面试**、**面试材料** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（顶栏改为页面下拉 + 设置入口）
+- 左侧导航：**首页**、**历史记录**、**模拟面试**、**面试材料** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（顶栏改为页面下拉 + 设置入口）
 - **实时面试**：点「连接」先弹出系统音频选择器（选「整个屏幕」并勾选「分享系统音频」），
   采集面试官的系统声音；对话 / 回答 / 指标 三栏，栏间可拖拽改宽，指标栏拖窄到阈值后折叠成图标条
 - 实时面试建立两条会话：系统音频跑「STT + LLM」生成答案，麦克风只跑 STT 做复盘转写；
@@ -67,6 +70,42 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 - 界面只保留浏览器直连的 **SmallWebRTC**。Daily、LiveKit、Twilio、MoQ、原始 WebSocket
   等属于电话/第三方云/调试场景的传输，已从下拉框移除
 - 电话拨号盘（DTMF 键盘）用于拨打 IVR 按键菜单，语音面试用不到，已移除
+
+## 首页与历史记录
+
+首页是控制台，采用紧凑的 bento 布局：页头只放页面名「首页」和窄屏下的页面切换 / 设置，
+主操作放在内容区顶部的「开始下一场面试」面板里。桌面横屏（≥1024px）时整页按视口高度铺满，
+两行卡片等分剩余高度、图表跟着卡片拉伸，不出现页面滚动；更窄的窗口退回普通纵向滚动。
+
+- **开始面试**：内容区顶部面板里的大按钮，和两个场次指标放在同一块面板。先弹出面试档案选择
+  （名称 / 更新时间 / 经历卡数量，默认上次用过的一份），确认后跳到实时面试页并**自动连接**；
+  浏览器会紧接着弹系统音频和麦克风授权，取消授权就停在面试页显示错误，可以手动点「连接」。
+  没有档案时引导去「面试材料」新建。Electron 版本后续会用原生环回替代系统音频授权，这条流程不变
+- **面试热力图**：紧凑的 7 × 13 点阵（近 12 周），20px 正方形格子、周一为每列第一格；
+  色深按当天实时面试场次（5 档），悬停看「日期 · 场次 · token」
+- **场次指标**：累计场次、本周场次（只算实时面试），直接放进顶部面板。token 和延迟统一放在下面的图里，不重复出卡片
+- **模型与消耗**：最近 30 场实时面试的 token 折线图（与面试页指标图同一种样式），
+  上方是平均每场 / 累计 / 平均首字延迟，下方是当前 ASR / LLM / TTS 模型
+- **最近面试**：最近 5 场（实时 + 模拟），点进历史详情；标题栏只放「查看全部」
+- **快捷入口**：面试档案 / 问答库 / 术语库，带数量，直达「面试材料」对应标签页
+- 导航里不再有「实时面试」；面试页只从首页的「开始面试」进入，面试中侧栏高亮首页，
+  面试页右栏的实时指标面板默认折叠成图标条
+- **历史记录**：实时与模拟分开筛选，列表每次 30 条、可继续加载；点一条看摘要和按时间排序的
+  完整转写（面试官 / 候选人 / AI，AI 回答默认折叠两行，问答库直出的会单独标记），
+  异常断开的场次带「中断」标记，档案名可点回面试材料
+
+### 数据是怎么记的
+
+- 每场会话在 `config/sessions.db`（跟数据目录一起迁移）留一行：时间、时长、档案快照名、
+  实际使用的模型、token、TTFB / 首字延迟、STT 音频秒数、轮次；转写按句存在 `session_turns`，
+  术语纠错和疑似误听存在 `session_corrections`
+- 实时面试有两条连接（面试官 + 候选人麦克风），前端在开始面试时生成 `interviewId`，
+  两路 `/start` 的 body 都带上它；后端把两条连接拼成同一场。模拟面试只有一条连接
+- 转写来自 Pipecat 的 `TranscriptionFrame`；AI 输出按 `LLMFullResponseStart/EndFrame` 聚合成整条；
+  问答库直接贴原文的那一轮标成 `qa`，用来统计命中率
+- **不足 60 秒的会话按误触处理，整行删除**；前端主动结束（点断开、切页）会先上报，
+  没上报就断开的（关标签页、网络错误）记为「中断」
+- 术语库的「上一场回顾」改为读这个库，进程重启后仍在；「忽略」只对那一场生效
 
 ## 面试材料
 
@@ -248,6 +287,10 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 | GET | `/api/storage` | 数据目录信息 |
 | PUT | `/api/storage` | 切换数据目录（默认迁移现有文件） |
 | POST | `/api/storage/open` | 在资源管理器中打开数据目录 |
+| GET | `/api/sessions/stats` | 首页看板：热力图、总量/平均、当前模型 |
+| GET | `/api/sessions` | 历史列表（`mode=all|live|mock`、`limit`、`offset`） |
+| GET | `/api/sessions/{id}` | 单场摘要 + 完整转写 + 术语纠错 |
+| POST | `/api/sessions/end` | 前端主动结束上报（`{ interviewId }`），区分正常结束与中断 |
 | GET | `/status` | Runner 状态与可用传输 |
 | POST | `/start` | 建立会话（Pipecat 官方协议）；`body.mode` 选择管道 |
 | POST | `/api/offer` | SmallWebRTC 信令 |
@@ -259,6 +302,9 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 | `mock`（默认） | STT → LLM → TTS，连接后先问候 | 模拟面试 |
 | `live` | STT → LLM → 文本输出（无 TTS），不问候 | 实时面试的面试官一路 |
 | `listen` | 仅 STT | 实时面试的麦克风一路，只回传转写 |
+
+实时面试的两路 body 带同一个 `interviewId`（前端每次开始面试生成），`live` 另带 `profileId`；
+后端据此把两路写进同一场会话。模拟面试只带 `interviewId`。
 
 ## 环境要求（官方文档结论）
 

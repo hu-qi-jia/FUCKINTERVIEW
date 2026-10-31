@@ -43,5 +43,9 @@ config/qa.db-shm
 config/terms.db
 config/terms.db-wal
 config/terms.db-shm
+# 面试历史与完整转写（含个人对话内容）
+config/sessions.db
+config/sessions.db-wal
+config/sessions.db-shm
 config/models/
 config/imports/

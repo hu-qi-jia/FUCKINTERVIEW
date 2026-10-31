@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import uuid
 from pathlib import Path
 
 import aiohttp
@@ -50,7 +51,9 @@ from pipecat.workers.runner import WorkerRunner
 from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_model_dir, save_settings
 from app import qa as qa_store
 from app import qa_import, qa_index
+from app import sessions as sessions_store
 from app import terms as terms_store
+from app.session_recorder import SessionRecorder
 from app.materials import (
     apply_coach_result,
     apply_plan,
@@ -371,6 +374,7 @@ async def api_set_storage(request: Request):
     if data_dir_value:
         old_db = qa_store.db_path()
         old_terms = terms_store.db_path()
+        old_sessions = sessions_store.db_path()
         new_dir = set_data_dir(data_dir_value, migrate=bool(payload.get("migrate", True)))
         try:
             qa_store.migrate_db(old_db, Path(new_dir["dataDir"]) / qa_store.QA_FILENAME)
@@ -387,6 +391,15 @@ async def api_set_storage(request: Request):
             raise HTTPException(status_code=400, detail=str(e))
         except OSError as e:
             raise HTTPException(status_code=400, detail=f"迁移术语库失败：{e}")
+        try:
+            sessions_store.migrate_db(
+                old_sessions,
+                Path(new_dir["dataDir"]) / sessions_store.SESSION_FILENAME,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise HTTPException(status_code=400, detail=f"迁移面试历史失败：{e}")
 
     return _storage_payload()
 
@@ -415,6 +428,58 @@ async def api_open_storage():
     except OSError as e:
         raise HTTPException(status_code=400, detail=f"打开目录失败：{e}")
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# 面试历史：首页看板与历史记录页
+#
+# 静态路径必须声明在 /api/sessions/{session_id} 之前，否则会被当成 id 解析。
+# --------------------------------------------------------------------------
+def _current_models() -> dict[str, dict[str, str]]:
+    settings = load_settings()
+    return {
+        section: {
+            "provider": str((settings.get(section) or {}).get("provider") or ""),
+            "model": str((settings.get(section) or {}).get("model") or ""),
+        }
+        for section in ("asr", "llm", "tts")
+    }
+
+
+@app.get("/api/sessions/stats")
+async def api_session_stats():
+    return {**sessions_store.stats(), "models": _current_models()}
+
+
+@app.post("/api/sessions/end")
+async def api_session_end(request: Request):
+    """前端主动结束（点断开、切页）时上报，用来区分正常结束和意外中断。"""
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    interview_id = str(payload.get("interviewId") or "").strip()
+    if not interview_id:
+        raise HTTPException(status_code=400, detail="缺少 interviewId")
+    sessions_store.mark_completed(interview_id)
+    return {"ok": True}
+
+
+@app.get("/api/sessions")
+async def api_session_list(
+    mode: str = Query("all"),
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    normalized = mode if mode in sessions_store.MODES else None
+    return sessions_store.list_sessions(mode=normalized, limit=limit, offset=offset)
+
+
+@app.get("/api/sessions/{session_id}")
+async def api_session_detail(session_id: int):
+    session = sessions_store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return session
 
 
 # --------------------------------------------------------------------------
@@ -647,13 +712,13 @@ async def api_terms_bulk(request: Request):
 
 @app.get("/api/terms/recent")
 async def api_terms_recent():
-    """上一场实时面试里纠正过的词，以及疑似被听错的词。"""
-    return terms_store.recent()
+    """最近一场实时面试里纠正过的词，以及疑似被听错的词。"""
+    return sessions_store.recent_corrections()
 
 
 @app.post("/api/terms/recent/clear")
 async def api_terms_recent_clear():
-    terms_store.clear_recent()
+    sessions_store.clear_recent_corrections()
     return {"ok": True}
 
 
@@ -953,6 +1018,24 @@ async def _warm_qa_model() -> None:
         logger.warning(f"问答库向量模型预热失败，实时面试将全部交给 LLM：{error}")
 
 
+def _model_snapshot(settings: dict, mode: str) -> dict[str, str | None]:
+    """这场实际用到的模型，随会话留档；历史里换过模型也看得出当时用的哪套。"""
+
+    def label(section: str) -> str | None:
+        raw = settings.get(section) or {}
+        provider = str(raw.get("provider") or "").strip()
+        model = str(raw.get("model") or "").strip()
+        if provider and model:
+            return f"{provider}/{model}"
+        return model or provider or None
+
+    return {
+        "asr": label("asr"),
+        "llm": None if mode == "listen" else label("llm"),
+        "tts": label("tts") if mode == "mock" else None,
+    }
+
+
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     settings = load_settings()
     body = runner_args.body if isinstance(runner_args.body, dict) else {}
@@ -960,8 +1043,27 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     if mode not in ("live", "listen", "mock"):
         mode = "mock"
 
+    # 一场实时面试两条连接（面试官 + 候选人）靠 interviewId 拼成同一场；
+    # 老客户端没带 id 时各连各的，至少不会丢记录。
+    interview_id = str(body.get("interviewId") or "").strip() or uuid.uuid4().hex
+    session_mode = "mock" if mode == "mock" else "live"
+    try:
+        session_id: int | None = sessions_store.open_session(
+            interview_id, session_mode, models=_model_snapshot(settings, mode)
+        )
+    except Exception as error:
+        # 记录失败不能拖垮面试本身；这场照样进行，只是不进历史。
+        logger.warning(f"开启面试记录失败，这场不写历史：{error}")
+        session_id = None
+    recorder = SessionRecorder(
+        session_id=session_id,
+        role="candidate" if mode in ("listen", "mock") else "interviewer",
+        record_assistant=mode != "listen",
+        qa_source="QaAnswer" if mode == "live" else None,
+    )
+
     logger.info(
-        f"Starting bot mode={mode} with "
+        f"Starting bot mode={mode} session={interview_id} with "
         f"ASR={settings['asr'].get('provider')}/{settings['asr'].get('model')}, "
         f"LLM={settings['llm'].get('provider')}/{settings['llm'].get('model')}, "
         f"TTS={settings['tts'].get('provider')}/{settings['tts'].get('model')}"
@@ -979,6 +1081,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             prompt_builder = None
         elif mode == "live":
             profile = _live_profile(body)
+            if profile and session_id is not None:
+                sessions_store.set_profile(
+                    session_id, profile.get("id"), profile.get("name")
+                )
             llm_settings = dict(settings["llm"])
             llm_settings["system_prompt"] = build_live_system_prompt(profile)
             logger.info(
@@ -1047,6 +1153,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             ),
             idle_timeout_secs=runner_args.pipeline_idle_timeout_secs,
             processor_unusable_policy=ProcessorUnusablePolicy.END,
+            observers=[recorder],
         )
 
         runner = WorkerRunner(handle_sigint=runner_args.handle_sigint)
@@ -1064,8 +1171,25 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             logger.info("Client disconnected")
-            if mode == "live" and corrector.raw:
-                terms_store.record_session("\n".join(corrector.raw), corrector.hits)
+            if session_id is not None:
+                try:
+                    if mode == "listen":
+                        # 候选人那路只贡献转写和 STT 用量，收尾归面试官那路。
+                        sessions_store.add_metrics(session_id, **recorder.finish())
+                    else:
+                        metrics = recorder.finish()
+                        if mode == "live" and corrector.raw:
+                            sessions_store.add_corrections(
+                                session_id,
+                                corrector.hits,
+                                terms_store.referenced_confusions(
+                                    "\n".join(corrector.raw)
+                                ),
+                            )
+                        sessions_store.finalize_session(session_id, metrics=metrics)
+                except Exception as error:
+                    # 历史写失败不能影响断开本身。
+                    logger.warning(f"写入面试历史失败：{error}")
             await runner.cancel()
 
         await runner.run()

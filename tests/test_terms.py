@@ -14,9 +14,7 @@ import app.terms as terms
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(terms, "data_dir", lambda: tmp_path)
     terms.reset_cache()
-    terms.clear_recent()
     yield terms
-    terms.clear_recent()
     terms.reset_cache()
 
 
@@ -253,24 +251,3 @@ def test_referenced_confusions_finds_near_miss(store):
 
 def test_referenced_confusions_skips_known_tokens(store):
     assert store.referenced_confusions("我们看 JGV 这个指标") == []
-
-
-def test_record_session_dedupes_and_keeps_suggestions(store):
-    add(store, "QWEK")
-    store.record_session(
-        "我们看 QWEJ 这个指标",
-        [
-            {"from": "JGV", "to": "GMV"},
-            {"from": "JGV", "to": "GMV"},
-            {"from": "RUI", "to": "ROI"},
-        ],
-    )
-    data = store.recent()
-    assert data["corrections"] == [
-        {"from": "JGV", "to": "GMV"},
-        {"from": "RUI", "to": "ROI"},
-    ]
-    assert data["suggestions"] == [{"from": "QWEJ", "to": "QWEK", "reason": "near-miss"}]
-
-    store.clear_recent()
-    assert store.recent() == {"corrections": [], "suggestions": []}

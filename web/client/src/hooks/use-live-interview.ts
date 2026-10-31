@@ -26,10 +26,13 @@ import { SystemAudioMediaManager } from "@/lib/system-audio-media-manager";
  */
 export function useLiveInterview({
   profileId,
+  interviewId,
   onServerMessage,
 }: {
   /** 实时面试绑定的面试档案；随 /start 下发给后端。 */
   profileId?: string | null;
+  /** 本场面试 id：面试官和候选人两路连接都带上它，后端据此拼成一场。 */
+  interviewId?: string;
   /** 后端推来的自定义消息（目前只有术语纠错）。 */
   onServerMessage?: (data: unknown) => void;
 } = {}) {
@@ -54,7 +57,10 @@ export function useLiveInterview({
     transportType: "smallwebrtc",
     transportFactory: async () => new SmallWebRTCTransport({ waitForICEGathering: true }),
     initDevicesOnMount: false,
-    startBotParams: buildStartBotParams("listen"),
+    startBotParams: buildStartBotParams(
+      "listen",
+      interviewId ? { interviewId } : undefined,
+    ),
     onClient: (client) => {
       client.on(RTVIEvent.MicUpdated, (mic) => saveDeviceId("mic", mic?.deviceId));
       client.on(RTVIEvent.CamUpdated, (cam) => saveDeviceId("cam", cam?.deviceId));
@@ -101,10 +107,10 @@ export function useLiveInterview({
     [manager],
   );
 
-  const liveStartBotParams = buildStartBotParams(
-    "live",
-    profileId ? { profileId } : undefined,
-  );
+  const liveStartBotParams = buildStartBotParams("live", {
+    ...(profileId ? { profileId } : {}),
+    ...(interviewId ? { interviewId } : {}),
+  });
 
   const stopCapture = useCallback(() => {
     manager.stop();
