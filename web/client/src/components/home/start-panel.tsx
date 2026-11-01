@@ -75,9 +75,9 @@ export function StartPanel({
         </Button>
       </div>
 
-      <div className="flex items-center px-1 py-2 lg:col-span-2">
-        {/* 宽屏下两个指标不再各占半栏，靠在一起更紧凑。 */}
-        <div className="grid w-full grid-cols-2 gap-2.5 lg:flex lg:w-auto lg:gap-9">
+      <div className="flex items-center py-2 pl-1 lg:col-span-2">
+        {/* 宽屏下两个指标靠在一起，右边缘和下面一行卡片对齐。 */}
+        <div className="grid w-full grid-cols-2 gap-2.5 lg:flex lg:justify-end lg:gap-14">
           <StatBlock
             label={t("home.stats.totalSessions")}
             value={String(summary?.totalSessions ?? "–")}
