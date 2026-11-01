@@ -8,7 +8,7 @@ const zh = {
     history: "历史记录",
     interview: "实时面试",
     mockInterview: "模拟面试",
-    switchPage: "切换页面",
+    pages: "页面",
     collapse: "收起导航",
     expand: "展开导航",
     resize: "调整导航栏宽度",
@@ -17,17 +17,21 @@ const zh = {
   home: {
     title: "控制台",
     startButton: "开始面试",
-    startPanel: {
-      title: "开始下一场面试",
-      hint: "选择一份面试档案，AI 会按档案里的事实回答。",
-    },
     loadFailed: "看板加载失败：{{message}}",
     heatmap: {
       title: "面试热力图",
-      subtitle: "近 12 周",
-      weekdays: { mon: "一", wed: "三", fri: "五" },
+      subtitle: "近 5 周",
+      weekdays: {
+        mon: "周一",
+        tue: "周二",
+        wed: "周三",
+        thu: "周四",
+        fri: "周五",
+        sat: "周六",
+        sun: "周日",
+      },
       cellLabel: "{{date}}：{{count}} 场",
-      total: "近 12 周 {{count}} 场实时面试",
+      total: "近 5 周 {{count}} 场实时面试",
       empty: "还没有面试记录",
       sessions: "{{count}} 场",
       tokens: "{{count}} token",
@@ -53,14 +57,29 @@ const zh = {
       avgTtftShort: "首字",
       noTrend: "完成两场实时面试后显示趋势",
     },
+    latency: {
+      title: "首字响应",
+      subtitle: "最近 30 场",
+      avgTtft: "平均首字",
+      avgTtfb: "平均 TTFB",
+      firstToken: "首字",
+      ttfb: "TTFB",
+      noData: "完成两场实时面试后显示趋势",
+    },
     recent: {
       title: "最近面试",
       viewAll: "查看全部",
       loadFailed: "加载失败：{{message}}",
       empty: "还没有面试记录，开始第一场吧。",
     },
-    quick: {
-      title: "快捷入口",
+    continue: {
+      title: "面试准备",
+      manage: "管理材料",
+      mock: "模拟面试",
+      mockUnit: "次",
+      accuracy: "准确率",
+      mockPending: "完成模拟面试后生成报告",
+      mockReady: "最近一次模拟报告",
       count: "{{count}} 个",
       loading: "加载中…",
     },
@@ -155,7 +174,8 @@ const zh = {
       preparing: "AI 正在为这张卡准备问题…",
       incomplete: "AI 没有把问题出全，请重试。",
       start: "开始补全",
-      startHint: "AI 会先为这张卡生成 6 个针对性问题，之后逐项作答，最后一次性写回卡片。",
+      startHint:
+        "AI 会先为这张卡生成 6 个针对性问题，之后逐项作答，最后一次性写回卡片。",
       progress: "已补全 {{filled}} / {{total}}",
       placeholder: "用一两句话回答…",
       save: "保存回答",
@@ -589,14 +609,16 @@ const zh = {
         error: "错误",
       },
       previous: "这个文件在 {{time}} 导入过，本次会按当前内容更新。",
-      nearDuplicateUnavailable: "向量模型未加载，本次跳过疑似重复检查，其余照常导入。",
+      nearDuplicateUnavailable:
+        "向量模型未加载，本次跳过疑似重复检查，其余照常导入。",
       truncated: "只显示前 {{count}} 条，其余会在确认后一并导入。",
       errors: "{{count}} 行有问题，已跳过",
       modeMerge: "更新已存在、新增缺失",
       modeAppend: "全部作为新记录",
       confirm: "确认导入 {{count}} 条",
       undo: "撤销新增",
-      undone: "已撤销本次新增的 {{count}} 条（被更新的老条目保留更新后的内容）。",
+      undone:
+        "已撤销本次新增的 {{count}} 条（被更新的老条目保留更新后的内容）。",
     },
   },
   terms: {
@@ -654,7 +676,8 @@ const zh = {
       term: "术语",
       termHint: "比如 GMV、North Star Metric",
       aliases: "替换词",
-      aliasesHint: "转写里可能听成的写法，用英文逗号分隔，每个最多 {{max}} 个字符",
+      aliasesHint:
+        "转写里可能听成的写法，用英文逗号分隔，每个最多 {{max}} 个字符",
       aliasTooLong: "「{{value}}」超过 {{max}} 个字符",
       definition: "释义",
       definitionHint: "可选。不填只用来纠正转写；填了才会把含义告诉模型",
@@ -682,7 +705,8 @@ const zh = {
       open: "批量粘贴",
       title: "批量粘贴",
       hint: "每行一条术语，各段用英文逗号隔开。\n只写一段：就是术语本身。\n写两段：术语,释义。\n写三段以上：中间的都是替换词，最后一段才是释义。\n以 # 开头的行会被忽略。",
-      placeholder: "GMV\n北极星指标,团队内部对核心目标的叫法\nGMV,成交额,成交总额,商品交易总额",
+      placeholder:
+        "GMV\n北极星指标,团队内部对核心目标的叫法\nGMV,成交额,成交总额,商品交易总额",
       summary: "识别 {{count}} 条，{{errors}} 行有问题",
       errorLine: "第 {{line}} 行：{{message}}",
       commit: "导入",
@@ -704,7 +728,7 @@ const en = {
     history: "History",
     interview: "Live interview",
     mockInterview: "Mock interview",
-    switchPage: "Switch page",
+    pages: "Pages",
     collapse: "Collapse sidebar",
     expand: "Expand sidebar",
     resize: "Resize sidebar",
@@ -713,17 +737,21 @@ const en = {
   home: {
     title: "Dashboard",
     startButton: "Start interview",
-    startPanel: {
-      title: "Start the next interview",
-      hint: "Pick a profile; answers follow the facts in it.",
-    },
     loadFailed: "Could not load the dashboard: {{message}}",
     heatmap: {
       title: "Interview heatmap",
-      subtitle: "Last 12 weeks",
-      weekdays: { mon: "Mon", wed: "Wed", fri: "Fri" },
+      subtitle: "Last 5 weeks",
+      weekdays: {
+        mon: "Mon",
+        tue: "Tue",
+        wed: "Wed",
+        thu: "Thu",
+        fri: "Fri",
+        sat: "Sat",
+        sun: "Sun",
+      },
       cellLabel: "{{date}}: {{count}} sessions",
-      total: "{{count}} live interviews in the last 12 weeks",
+      total: "{{count}} live interviews in the last 5 weeks",
       empty: "No interviews yet",
       sessions: "{{count}} sessions",
       tokens: "{{count}} tokens",
@@ -749,14 +777,29 @@ const en = {
       avgTtftShort: "First token",
       noTrend: "The trend appears after two live interviews.",
     },
+    latency: {
+      title: "First-token latency",
+      subtitle: "Last 30",
+      avgTtft: "Avg first token",
+      avgTtfb: "Avg TTFB",
+      firstToken: "First token",
+      ttfb: "TTFB",
+      noData: "The trend appears after two live interviews.",
+    },
     recent: {
       title: "Recent interviews",
       viewAll: "View all",
       loadFailed: "Could not load: {{message}}",
       empty: "No interviews yet. Start the first one.",
     },
-    quick: {
-      title: "Quick access",
+    continue: {
+      title: "Interview prep",
+      manage: "Manage materials",
+      mock: "Mock interview",
+      mockUnit: "sessions",
+      accuracy: "Accuracy",
+      mockPending: "A report appears after a mock interview",
+      mockReady: "Latest mock report",
       count: "{{count}} items",
       loading: "Loading…",
     },
@@ -766,7 +809,8 @@ const en = {
       loading: "Loading interview profiles…",
       loadFailed: "Could not load: {{message}}",
       emptyTitle: "No interview profiles yet",
-      emptyHint: "Live interviews answer from a profile's facts. Create one first.",
+      emptyHint:
+        "Live interviews answer from a profile's facts. Create one first.",
       create: "New profile",
       profileMeta: "Updated {{time}} · {{count}} cards",
       hint: "Answers follow this profile; you can still switch it at the top before connecting.",
@@ -851,7 +895,8 @@ const en = {
       preparing: "Preparing questions for this card…",
       incomplete: "The AI didn't finish the questions. Try again.",
       start: "Start",
-      startHint: "The AI will write 6 tailored questions for this card first, then you answer them one by one and write them back in one go.",
+      startHint:
+        "The AI will write 6 tailored questions for this card first, then you answer them one by one and write them back in one go.",
       progress: "{{filled}} / {{total}} filled",
       placeholder: "Answer in a sentence or two…",
       save: "Save answer",
@@ -898,17 +943,20 @@ const en = {
       },
       resume: {
         title: "Resume",
-        description: "Paste the full resume; AI can rewrite it into a cleaner structure.",
+        description:
+          "Paste the full resume; AI can rewrite it into a cleaner structure.",
         placeholder: "Paste the resume…",
       },
       jobDescription: {
         title: "Job description",
-        description: "Paste the target role's JD so the most relevant experience is prioritized.",
+        description:
+          "Paste the target role's JD so the most relevant experience is prioritized.",
         placeholder: "Paste the job description…",
       },
       cards: {
         title: "Experience cards",
-        description: "Turn work and project experience into cards you can defend in an interview.",
+        description:
+          "Turn work and project experience into cards you can defend in an interview.",
       },
     },
     consolidate: {
@@ -926,9 +974,11 @@ const en = {
       manualAdd: "Add manually",
       newCardName: "New experience card",
       needMaterials: "Fill in the resume and job description first.",
-      stale: "The resume or job description changed; existing cards may be out of date.",
+      stale:
+        "The resume or job description changed; existing cards may be out of date.",
       staleBadge: "May be stale",
-      planTitle: "Found {{count}} experience units. Review, then generate them one by one.",
+      planTitle:
+        "Found {{count}} experience units. Review, then generate them one by one.",
       start: "Start generating",
       continue: "Continue generating",
       stop: "Stop",
@@ -1077,7 +1127,8 @@ const en = {
     waitingAnswer: "Waiting for an answer…",
     connecting: "Connecting to agent…",
     notConnected: "Not connected to agent",
-    connectHint: "Connect to an agent to see conversation messages in real-time.",
+    connectHint:
+      "Connect to an agent to see conversation messages in real-time.",
     botOutputUnsupported: "BotOutput events not supported",
     botOutputHint:
       "This server does not support BotOutput events (requires RTVI 1.1.0+). Conversation messages cannot be displayed without them.",
@@ -1191,7 +1242,7 @@ const en = {
       saved: "Model folder updated",
     },
     embedding: {
-      hint: "The model runs locally: no API key, no torch. After changing the model, run \"Rebuild index\" or search will come back empty.",
+      hint: 'The model runs locally: no API key, no torch. After changing the model, run "Rebuild index" or search will come back empty.',
       indexed: "{{ready}} of {{total}} entries indexed",
       rebuild: "Rebuild index",
     },
@@ -1280,15 +1331,19 @@ const en = {
         nearDuplicate: "Possible duplicate",
         error: "Error",
       },
-      previous: "This file was imported on {{time}}; existing entries will be updated.",
-      nearDuplicateUnavailable: "The embedding model isn't loaded, so duplicate detection was skipped. Everything else still imports.",
-      truncated: "Showing the first {{count}} rows; the rest import on confirm.",
+      previous:
+        "This file was imported on {{time}}; existing entries will be updated.",
+      nearDuplicateUnavailable:
+        "The embedding model isn't loaded, so duplicate detection was skipped. Everything else still imports.",
+      truncated:
+        "Showing the first {{count}} rows; the rest import on confirm.",
       errors: "{{count}} row(s) had problems and were skipped",
       modeMerge: "Update existing, add missing",
       modeAppend: "Add everything as new",
       confirm: "Import {{count}}",
       undo: "Undo add",
-      undone: "Removed the {{count}} entries this import added (entries it updated keep their new content).",
+      undone:
+        "Removed the {{count}} entries this import added (entries it updated keep their new content).",
     },
   },
   terms: {
@@ -1316,7 +1371,8 @@ const en = {
       ai: "AI",
       ops: "Operations",
       reset: "Restore defaults",
-      resetConfirm: "Restore? Your edited definitions and replacements will be lost.",
+      resetConfirm:
+        "Restore? Your edited definitions and replacements will be lost.",
     },
     templateShort: {
       custom: "Custom",
@@ -1344,10 +1400,12 @@ const en = {
       term: "Term",
       termHint: "e.g. GMV or North Star Metric",
       aliases: "Replacements",
-      aliasesHint: "How the ASR might mishear it, separated by commas, {{max}} characters each",
-      aliasTooLong: "\"{{value}}\" is longer than {{max}} characters",
+      aliasesHint:
+        "How the ASR might mishear it, separated by commas, {{max}} characters each",
+      aliasTooLong: '"{{value}}" is longer than {{max}} characters',
       definition: "Definition",
-      definitionHint: "Optional. Without one it only fixes the transcript; with one the model also learns what it means",
+      definitionHint:
+        "Optional. Without one it only fixes the transcript; with one the model also learns what it means",
       template: "Template",
     },
     table: {
@@ -1372,7 +1430,8 @@ const en = {
       open: "Bulk paste",
       title: "Bulk paste",
       hint: "One term per line, fields separated by commas.\nOne field: just the term.\nTwo fields: term, definition.\nThree or more: the middle fields are replacements, the last one is the definition.\nLines starting with # are ignored.",
-      placeholder: "GMV\nROI,Return on investment\nGMV,JGV,GMW,Gross merchandise value",
+      placeholder:
+        "GMV\nROI,Return on investment\nGMV,JGV,GMW,Gross merchandise value",
       summary: "{{count}} rows parsed, {{errors}} with problems",
       errorLine: "Line {{line}}: {{message}}",
       commit: "Import",
@@ -1397,7 +1456,9 @@ export type AppLanguage = (typeof LANGUAGES)[number]["value"];
 const STORAGE_KEY = "interview-assistant.language";
 
 const stored =
-  typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+  typeof localStorage !== "undefined"
+    ? localStorage.getItem(STORAGE_KEY)
+    : null;
 
 i18n.use(initReactI18next).init({
   resources: {

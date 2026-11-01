@@ -8,6 +8,7 @@ import { SessionDetailView } from "@/components/history/session-detail";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   formatDateTime,
   formatDuration,
@@ -37,12 +38,15 @@ function ModeDot({ mode }: { mode: SessionMode }) {
  */
 export function HistoryPage({
   headerExtras,
+  leadingExtras,
   focusSessionId = null,
   onFocusConsumed,
   onOpenProfile,
   onGoHome,
 }: {
   headerExtras?: ReactNode;
+  /** 窄屏顶栏左侧的页面入口（桌面端由侧栏承担）。 */
+  leadingExtras?: ReactNode;
   focusSessionId?: number | null;
   onFocusConsumed?: () => void;
   onOpenProfile: (profileId: string) => void;
@@ -115,7 +119,8 @@ export function HistoryPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <h1 className="min-w-0 truncate text-sm font-semibold">
+        {leadingExtras}
+        <h1 className="hidden min-w-0 truncate text-sm font-semibold md:block">
           {t("history.title")}
         </h1>
         <div className="ml-auto flex min-w-0 items-center gap-1.5">
@@ -129,34 +134,32 @@ export function HistoryPage({
           detailId !== null && "hidden",
         )}
       >
-        <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pt-4">
-          <div className="bg-muted inline-flex items-center gap-0.5 rounded-lg p-0.5">
-            {(["all", "live", "mock"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setFilter(value)}
-                aria-pressed={filter === value}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs transition-colors",
-                  filter === value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t(`history.filter.${value}`)}
-              </button>
-            ))}
+        {/* 与面试材料页同一套标签栏：同样的组件、同样的位置和内容宽度。 */}
+        <div className="shrink-0 pt-4">
+          <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2 px-4">
+            <Tabs
+              value={filter}
+              onValueChange={(value) => setFilter(value as Filter)}
+            >
+              {/* p-0：滑块容器去掉默认的 3px 内边距，让选中块和下面的卡片左边缘对齐 */}
+              <TabsList className="h-8 overflow-hidden p-0">
+                {(["all", "live", "mock"] as const).map((value) => (
+                  <TabsTrigger key={value} value={value} className="px-2.5">
+                    {t(`history.filter.${value}`)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            {!loading && !error && (
+              <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+                {t("history.total", { count: total })}
+              </span>
+            )}
           </div>
-          {!loading && !error && (
-            <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-              {t("history.total", { count: total })}
-            </span>
-          )}
         </div>
 
         <ScrollArea className="mt-3 min-h-0 flex-1">
-          <div className="mx-auto grid w-full max-w-3xl gap-3 px-4 pb-8">
+          <div className="mx-auto grid w-full max-w-7xl gap-3 px-4 pb-8">
             {loading && (
               <div className="grid gap-2">
                 {[0, 1, 2, 3].map((row) => (

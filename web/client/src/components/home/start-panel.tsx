@@ -1,19 +1,22 @@
 "use client";
 
-import { MicIcon } from "lucide-react";
+import { CalendarDaysIcon, MicIcon, TrendingUpIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AsciiWordmark } from "@/components/home/ascii-wordmark";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import type { SessionStatsSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
 function StatBlock({
+  icon,
   label,
   value,
   unit,
   hint,
 }: {
+  icon: ReactNode;
   label: string;
   value: string;
   unit: string;
@@ -21,16 +24,17 @@ function StatBlock({
 }) {
   return (
     <div className="min-w-0">
-      <span className="text-muted-foreground block truncate text-[11px]">
-        {label}
+      <span className="text-muted-foreground flex items-center gap-1.5 text-sm">
+        <span className="[&>svg]:size-3.5">{icon}</span>
+        <span className="truncate">{label}</span>
       </span>
-      <span className="mt-0.5 flex items-baseline gap-1 text-xl leading-none font-semibold tabular-nums">
+      <span className="mt-1.5 flex items-baseline gap-1 text-2xl leading-none font-semibold tabular-nums">
         {value}
-        <span className="text-muted-foreground text-[11px] font-normal">
+        <span className="text-muted-foreground text-xs font-normal">
           {unit}
         </span>
       </span>
-      <span className="text-muted-foreground/70 mt-1 block truncate text-[10px]">
+      <span className="text-muted-foreground/70 mt-1.5 block truncate text-[11px]">
         {hint}
       </span>
     </div>
@@ -38,8 +42,8 @@ function StatBlock({
 }
 
 /**
- * 页头下方的第一块面板：说明 + 两个场次指标 + 大号「开始面试」。
- * 主操作放在内容面板里，页头只负责页面身份和窄屏导航。
+ * 首页第一行：左边是 ASCII 字标主视觉，右边是统计数字 + 开始面试按钮。
+ * 右侧不套卡片，直接落在页面底色上，只留数字和按钮本身。
  */
 export function StartPanel({
   summary,
@@ -53,48 +57,36 @@ export function StartPanel({
   const { t } = useTranslation();
 
   return (
-    <Card
-      className={cn(
-        "flex flex-col gap-4 p-4 lg:flex-row lg:items-center",
-        className
-      )}
-    >
-      <div className="flex min-w-0 items-center gap-3 lg:flex-1">
-        <span className="bg-heat-1/50 text-heat-4 flex size-11 shrink-0 items-center justify-center rounded-xl">
-          <MicIcon className="size-5" />
-        </span>
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">
-            {t("home.startPanel.title")}
-          </h2>
-          <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-            {t("home.startPanel.hint")}
-          </p>
+    <div className={cn("grid gap-4 lg:grid-cols-5", className)}>
+      <div className="flex min-w-0 items-center px-1 py-2 lg:col-span-3">
+        <AsciiWordmark />
+      </div>
+
+      <div className="flex flex-col gap-4 px-1 py-2 lg:col-span-2 xl:flex-row xl:items-center">
+        <div className="grid flex-1 grid-cols-2 gap-4">
+          <StatBlock
+            icon={<TrendingUpIcon />}
+            label={t("home.stats.totalSessions")}
+            value={String(summary?.totalSessions ?? "–")}
+            unit={t("home.stats.sessionsUnit")}
+            hint={t("home.stats.liveOnly")}
+          />
+          <StatBlock
+            icon={<CalendarDaysIcon />}
+            label={t("home.stats.weekSessions")}
+            value={String(summary?.weekSessions ?? "–")}
+            unit={t("home.stats.sessionsUnit")}
+            hint={t("home.stats.sinceMonday")}
+          />
         </div>
+        <Button
+          className="h-11 w-full px-5 text-sm xl:w-auto xl:shrink-0"
+          onClick={onStart}
+        >
+          <MicIcon className="size-4" />
+          {t("home.startButton")}
+        </Button>
       </div>
-
-      <div className="grid grid-cols-2 gap-6 lg:w-64 lg:shrink-0">
-        <StatBlock
-          label={t("home.stats.totalSessions")}
-          value={String(summary?.totalSessions ?? "–")}
-          unit={t("home.stats.sessionsUnit")}
-          hint={t("home.stats.liveOnly")}
-        />
-        <StatBlock
-          label={t("home.stats.weekSessions")}
-          value={String(summary?.weekSessions ?? "–")}
-          unit={t("home.stats.sessionsUnit")}
-          hint={t("home.stats.sinceMonday")}
-        />
-      </div>
-
-      <Button
-        className="h-11 w-full px-6 text-sm lg:w-auto lg:shrink-0"
-        onClick={onStart}
-      >
-        <MicIcon className="size-4" />
-        {t("home.startButton")}
-      </Button>
-    </Card>
+    </div>
   );
 }

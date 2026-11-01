@@ -1,9 +1,9 @@
 "use client";
 
 import { CpuIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -12,6 +12,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { InlineMetric } from "@/components/home/inline-metric";
 import { formatDateTime, formatMs, formatTokens } from "@/lib/format";
 import type { SessionStats, SessionSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,7 @@ function shortDate(value: number, language: string): string {
 }
 
 /**
- * 「模型与消耗」：当前模型 + 最近若干场实时面试的 token 折线图。
+ * 「模型与消耗」：内联指标 + 最近若干场实时面试的 token 面积图。
  * 数据取最近 30 场（和首页列表同一次请求），只画实时面试。
  */
 export function ModelUsageCard({
@@ -38,6 +39,7 @@ export function ModelUsageCard({
 }) {
   const { t, i18n } = useTranslation();
   const summary = stats?.summary;
+  const gradientId = `token-fill-${useId().replace(/:/g, "")}`;
 
   const rows = useMemo(() => {
     return (sessions ?? [])
@@ -69,7 +71,7 @@ export function ModelUsageCard({
     <Card
       className={cn("flex min-h-0 flex-col gap-0 py-0 lg:h-full", className)}
     >
-      <CardHeader className="flex shrink-0 items-center gap-2 border-b py-2.5">
+      <CardHeader className="flex shrink-0 items-center gap-2 py-2.5">
         <CpuIcon className="text-muted-foreground size-4" />
         <CardTitle className="min-w-0 flex-1 text-sm">
           {t("home.models.title")}
@@ -80,36 +82,48 @@ export function ModelUsageCard({
       </CardHeader>
 
       <CardContent className="flex min-h-0 flex-1 flex-col px-4 py-3">
-        <div className="text-muted-foreground mb-1.5 flex shrink-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-[11px]">
-          <span className="flex items-baseline gap-1">
-            {t("home.models.avgTokensShort")}
-            <b className="text-foreground text-sm font-semibold tabular-nums">
-              {summary?.avgTokens
+        <div className="mb-2 flex shrink-0 items-stretch divide-x">
+          <InlineMetric
+            label={t("home.models.avgTokensShort")}
+            value={
+              summary?.avgTokens
                 ? formatTokens(summary.avgTokens, i18n.language)
-                : "–"}
-            </b>
-          </span>
-          <span className="flex items-baseline gap-1">
-            {t("home.models.totalTokensShort")}
-            <b className="text-foreground text-sm font-semibold tabular-nums">
-              {summary ? formatTokens(summary.totalTokens, i18n.language) : "–"}
-            </b>
-          </span>
-          <span className="flex items-baseline gap-1">
-            {t("home.models.avgTtftShort")}
-            <b className="text-foreground text-sm font-semibold tabular-nums">
-              {formatMs(summary?.avgTtftMs)}
-              <span className="text-muted-foreground ml-0.5 text-[10px] font-normal">
-                ms
-              </span>
-            </b>
-          </span>
+                : "–"
+            }
+            unit="token"
+          />
+          <InlineMetric
+            label={t("home.models.totalTokensShort")}
+            value={
+              summary ? formatTokens(summary.totalTokens, i18n.language) : "–"
+            }
+            unit="token"
+          />
+          <InlineMetric
+            label={t("home.models.avgTtftShort")}
+            value={formatMs(summary?.avgTtftMs)}
+            unit="ms"
+          />
         </div>
 
         {rows.length >= 2 ? (
           <div className="min-h-[144px] flex-1 lg:min-h-0">
             <ChartContainer config={config} className="h-full w-full">
-              <LineChart data={rows} accessibilityLayer>
+              <AreaChart data={rows} accessibilityLayer>
+                <defs>
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor="var(--color-tokens)"
+                      stopOpacity={0.28}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="var(--color-tokens)"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="time"
@@ -142,15 +156,17 @@ export function ModelUsageCard({
                     />
                   }
                 />
-                <Line
-                  type="linear"
+                <Area
+                  type="monotone"
                   dataKey="tokens"
                   stroke="var(--color-tokens)"
                   strokeWidth={2}
-                  dot={{ r: 2 }}
+                  fill={`url(#${gradientId})`}
+                  dot={false}
+                  activeDot={{ r: 3 }}
                   isAnimationActive={false}
                 />
-              </LineChart>
+              </AreaChart>
             </ChartContainer>
           </div>
         ) : (

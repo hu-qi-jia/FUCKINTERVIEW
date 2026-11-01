@@ -327,7 +327,7 @@ export function TermsLibrary({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 pt-3">
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-4">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2 px-4">
           <div className="relative min-w-40 flex-1">
             <SearchIcon className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
             <Input
@@ -445,7 +445,7 @@ export function TermsLibrary({
       </div>
 
       {hasRecent && (
-        <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-3">
+        <div className="mx-auto w-full max-w-7xl shrink-0 px-4 pt-3">
           <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs">
             <span className="font-medium">{t("terms.recent.title")}</span>
             {recent.corrections.map((item) => (
@@ -486,7 +486,7 @@ export function TermsLibrary({
       )}
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto w-full max-w-3xl px-4 py-3">
+        <div className="mx-auto w-full max-w-7xl px-4 py-3">
           {loading && items.length === 0 ? (
             <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
               <Spinner />
@@ -590,7 +590,7 @@ export function TermsLibrary({
       </ScrollArea>
 
       <div className="shrink-0 border-t">
-        <div className="text-muted-foreground mx-auto flex h-10 w-full max-w-3xl items-center gap-3 px-4 text-xs">
+        <div className="text-muted-foreground mx-auto flex h-10 w-full max-w-7xl items-center gap-3 px-4 text-xs">
           <span className="truncate">
             {filterActive
               ? t("terms.summaryFiltered", {

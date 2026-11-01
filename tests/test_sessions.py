@@ -127,6 +127,8 @@ def test_stats_only_counts_finalized_live_sessions(store):
     assert payload["summary"]["avgTtftMs"] == 450
     assert payload["summary"]["qaRatio"] == 0.5
     assert payload["summary"]["totalTurns"] == 2
+    assert payload["summary"]["mockSessions"] == 1
+    assert payload["summary"]["mockAccuracy"] is None
 
     days = {day["date"]: day for day in payload["heatmap"]["days"]}
     today = datetime.now().astimezone().date().isoformat()

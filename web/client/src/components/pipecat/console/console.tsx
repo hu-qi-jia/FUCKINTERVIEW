@@ -221,6 +221,11 @@ export interface ConsoleProps {
    * app's theme toggle. Rendered only when provided.
    */
   headerSlot?: React.ReactNode;
+  /**
+   * Extra header content rendered at the very left, before the logo —
+   * e.g. the app's narrow-screen page switcher.
+   */
+  leadingSlot?: React.ReactNode;
 
   // -- Region toggles (all default false unless noted) -----------------------
   noUserAudio?: boolean;
@@ -379,6 +384,7 @@ function ConsoleShell({
   logo,
   noLogo = false,
   headerSlot,
+  leadingSlot,
   noUserAudio = false,
   noUserVideo = false,
   noScreenControl = false,
@@ -663,6 +669,9 @@ function ConsoleShell({
         data-slot="console-header"
         className="flex items-center gap-2 border-b px-3 py-2"
       >
+        {leadingSlot && (
+          <div className="flex shrink-0 items-center gap-1">{leadingSlot}</div>
+        )}
         {!noLogo && (
           <div className="flex shrink-0 items-center">
             {logo ?? <PipecatLogo height={20} />}

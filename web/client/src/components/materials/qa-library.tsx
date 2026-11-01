@@ -360,7 +360,7 @@ export function QaLibrary({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 pt-3">
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 gap-y-2 px-4">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2 gap-y-2 px-4">
           <div className="relative min-w-40 flex-1">
             <SearchIcon className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
             <Input
@@ -403,7 +403,7 @@ export function QaLibrary({
 
       {/* 用统一的 ScrollArea：浮层滚动条不占宽度，内容左边缘和上面的滑块对齐 */}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto w-full max-w-3xl px-4 py-3">
+        <div className="mx-auto w-full max-w-7xl px-4 py-3">
           {loading && items.length === 0 ? (
             <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
               <Spinner />
@@ -550,7 +550,7 @@ export function QaLibrary({
 
       {/* 底部固定条：统计与批量操作都放这里，列表滚动时不动。 */}
       <div className="shrink-0 border-t">
-        <div className="text-muted-foreground mx-auto flex h-10 w-full max-w-3xl items-center gap-3 px-4 text-xs">
+        <div className="text-muted-foreground mx-auto flex h-10 w-full max-w-7xl items-center gap-3 px-4 text-xs">
           {selecting ? (
             <>
               <span className="text-foreground font-medium">

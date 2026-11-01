@@ -153,7 +153,7 @@ export function QaImport({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto px-4 pb-6 pt-3 scroll-stable">
+      <div className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-y-auto px-4 pb-6 pt-3 scroll-stable">
         <div className="grid gap-3">
           <div className="bg-card ring-foreground/10 rounded-xl p-4 ring-1">
             <div className="flex items-start gap-3">

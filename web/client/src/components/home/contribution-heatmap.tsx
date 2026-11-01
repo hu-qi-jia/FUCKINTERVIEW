@@ -6,7 +6,8 @@ import { useTranslation } from "react-i18next";
 import type { HeatmapDay, SessionHeatmap } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
-const LEGEND_CELL = 10;
+const GAP = 4;
+const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 
 /** 色阶写死成完整类名，Tailwind 才能扫到。 */
 const LEVEL_CLASS = [
@@ -58,15 +59,11 @@ interface HoverState {
   y: number;
 }
 
+/** 后端的完整范围切成「周一到周日」的行，只取最近若干周。 */
 function useWeeks(
   heatmap: SessionHeatmap,
-  weekCount?: number
-): {
-  weeks: (WeekCell | null)[][];
-  months: { index: number; label: string }[];
-  total: number;
-} {
-  const { i18n } = useTranslation();
+  weekCount: number
+): { weeks: (WeekCell | null)[][]; total: number } {
   return React.useMemo(() => {
     const byDate = new Map(heatmap.days.map((day) => [day.date, day]));
     const start = parseDateKey(heatmap.start);
@@ -88,62 +85,35 @@ function useWeeks(
       allWeeks.push(week);
     }
 
-    // 只展示最近若干周；月份标签和总数都按可见范围重算。
-    const weeks = weekCount
-      ? allWeeks.slice(Math.max(0, allWeeks.length - weekCount))
-      : allWeeks;
-    const formatter = new Intl.DateTimeFormat(i18n.language, {
-      month: "short",
-    });
-    const months: { index: number; label: string }[] = [];
-    let previousMonth = -1;
-    let total = 0;
-    weeks.forEach((week, index) => {
-      const first = week.find((cell): cell is WeekCell => Boolean(cell));
-      if (!first) return;
-      const month = first.date.getMonth();
-      if (month !== previousMonth) {
-        previousMonth = month;
-        months.push({ index, label: formatter.format(first.date) });
-      }
-      total += week.reduce((sum, cell) => sum + (cell?.day?.sessions ?? 0), 0);
-    });
-
-    return { weeks, months, total };
-  }, [heatmap, weekCount, i18n.language]);
+    const weeks = allWeeks.slice(Math.max(0, allWeeks.length - weekCount));
+    const total = weeks.reduce(
+      (sum, week) =>
+        sum + week.reduce((acc, cell) => acc + (cell?.day?.sessions ?? 0), 0),
+      0
+    );
+    return { weeks, total };
+  }, [heatmap, weekCount]);
 }
 
 /**
- * GitHub 个人首页那种按日期排的点阵图。
+ * 面试热力图。
  *
- * 一列一周、一行一天，颜色深浅按当天实时面试场次；`weeks` 控制显示最近
- * 多少周（首页用紧凑的 12 周），`cellSize` 让格子保持正方形。悬停/聚焦看
- * 当天明细，数据很少所以用固定定位的浮层，不依赖父级的 overflow。
+ * 列是周一到周日，行是最近的若干周。方格用 CSS Grid 铺满卡片可用区域，
+ * 不再测量尺寸，因此移动端不会因为高度回环而抖动；悬停/聚焦看当天明细。
  */
 export function ContributionHeatmap({
   heatmap,
-  weeks: weekCount,
-  cellSize = 10,
+  weeks: weekCount = 5,
   className,
 }: {
   heatmap: SessionHeatmap;
-  /** 只显示最近多少周；省略时显示后端返回的完整范围。 */
+  /** 显示最近多少周。 */
   weeks?: number;
-  /** 格子边长（正方形）。 */
-  cellSize?: number;
   className?: string;
 }) {
   const { t, i18n } = useTranslation();
-  const { weeks, months, total } = useWeeks(heatmap, weekCount);
+  const { weeks, total } = useWeeks(heatmap, weekCount);
   const [hover, setHover] = React.useState<HoverState | null>(null);
-  const scrollerRef = React.useRef<HTMLDivElement | null>(null);
-  const gap = cellSize >= 16 ? 4 : 3;
-
-  // 窄屏只放得下一部分周：默认滚到最右，让最近的活动先入眼。
-  React.useEffect(() => {
-    const element = scrollerRef.current;
-    if (element) element.scrollLeft = element.scrollWidth;
-  }, [weeks.length]);
 
   const dateFormatter = React.useMemo(
     () =>
@@ -162,103 +132,79 @@ export function ContributionHeatmap({
     [i18n.language]
   );
 
-  const showHover = (element: HTMLElement, cell: WeekCell) => {
+  const showHover = (element: HTMLElement, cellData: WeekCell) => {
     const rect = element.getBoundingClientRect();
     setHover({
-      day: cell.day ?? { date: cell.key, sessions: 0, tokens: 0 },
-      date: cell.date,
+      day: cellData.day ?? { date: cellData.key, sessions: 0, tokens: 0 },
+      date: cellData.date,
       x: rect.left + rect.width / 2,
       y: rect.top,
     });
   };
 
-  const weekdayLabels = [
-    t("home.heatmap.weekdays.mon"),
-    "",
-    t("home.heatmap.weekdays.wed"),
-    "",
-    t("home.heatmap.weekdays.fri"),
-    "",
-    "",
-  ];
+  const weekdays = WEEKDAY_KEYS.map((key) => t(`home.heatmap.weekdays.${key}`));
 
   return (
     <section
       data-slot="contribution-heatmap"
-      className={cn("flex flex-col gap-2.5", className)}
+      className={cn("flex h-full min-h-0 w-full flex-col gap-2", className)}
     >
-      <div className="flex items-start gap-2">
-        <div
-          className="flex shrink-0 flex-col"
-          style={{ paddingTop: 16, gap }}
-          aria-hidden
-        >
-          {weekdayLabels.map((label, index) => (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="grid shrink-0 grid-cols-7" style={{ gap: GAP }}>
+          {weekdays.map((label) => (
             <span
-              key={index}
-              className="text-muted-foreground text-[10px]"
-              style={{ height: cellSize, lineHeight: `${cellSize}px` }}
+              key={label}
+              className="text-muted-foreground text-center text-[10px]"
             >
               {label}
             </span>
           ))}
         </div>
 
-        <div ref={scrollerRef} className="min-w-0 flex-1 overflow-x-auto pb-1">
-          <div className="relative h-3" aria-hidden>
-            {months.map((month) => (
-              <span
-                key={`${month.index}-${month.label}`}
-                className="text-muted-foreground absolute top-0 text-[10px] whitespace-nowrap"
-                style={{ left: month.index * (cellSize + gap) }}
-              >
-                {month.label}
-              </span>
-            ))}
-          </div>
-
-          <div className="flex" style={{ gap }}>
-            {weeks.map((week, weekIndex) => (
-              <div key={weekIndex} className="flex flex-col" style={{ gap }}>
-                {week.map((cell, rowIndex) =>
-                  cell ? (
-                    <button
-                      key={cell.key}
-                      type="button"
-                      tabIndex={-1}
-                      aria-label={t("home.heatmap.cellLabel", {
-                        date: dateFormatter.format(cell.date),
-                        count: cell.day?.sessions ?? 0,
-                      })}
-                      className={cn(
-                        "rounded-[3px] ring-1 ring-inset ring-black/5 transition-transform",
-                        "hover:scale-110 focus-visible:outline-2 focus-visible:outline-ring",
-                        "dark:ring-white/5",
-                        LEVEL_CLASS[levelOf(cell.day?.sessions ?? 0)]
-                      )}
-                      style={{ width: cellSize, height: cellSize }}
-                      onMouseEnter={(event) =>
-                        showHover(event.currentTarget, cell)
-                      }
-                      onMouseLeave={() => setHover(null)}
-                      onFocus={(event) => showHover(event.currentTarget, cell)}
-                      onBlur={() => setHover(null)}
-                    />
-                  ) : (
-                    <span
-                      key={`${weekIndex}-${rowIndex}`}
-                      aria-hidden
-                      style={{ width: cellSize, height: cellSize }}
-                    />
-                  )
-                )}
-              </div>
-            ))}
-          </div>
+        <div
+          className="mt-1 grid min-h-[180px] flex-1 grid-cols-7 lg:min-h-0"
+          style={{
+            gap: GAP,
+            gridTemplateRows: `repeat(${Math.max(1, weeks.length)}, minmax(0, 1fr))`,
+          }}
+        >
+          {weeks.flatMap((week, weekIndex) =>
+            week.map((cellData, dayIndex) =>
+              cellData ? (
+                <button
+                  key={cellData.key}
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={t("home.heatmap.cellLabel", {
+                    date: dateFormatter.format(cellData.date),
+                    count: cellData.day?.sessions ?? 0,
+                  })}
+                  className={cn(
+                    "h-full w-full rounded-[5px] ring-1 ring-inset ring-black/5 transition-transform",
+                    "hover:scale-[1.03] focus-visible:outline-2 focus-visible:outline-ring",
+                    "dark:ring-white/5",
+                    LEVEL_CLASS[levelOf(cellData.day?.sessions ?? 0)]
+                  )}
+                  onMouseEnter={(event) =>
+                    showHover(event.currentTarget, cellData)
+                  }
+                  onMouseLeave={() => setHover(null)}
+                  onFocus={(event) => showHover(event.currentTarget, cellData)}
+                  onBlur={() => setHover(null)}
+                />
+              ) : (
+                <span
+                  key={`${weekIndex}-${dayIndex}`}
+                  aria-hidden
+                  className="h-full w-full"
+                />
+              )
+            )
+          )}
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <span className="text-muted-foreground text-[11px]">
           {total > 0
             ? t("home.heatmap.total", { count: total })
@@ -269,8 +215,7 @@ export function ContributionHeatmap({
           {[0, 1, 2, 3, 4].map((level) => (
             <span
               key={level}
-              className={cn("rounded-[2px]", LEVEL_CLASS[level])}
-              style={{ width: LEGEND_CELL, height: LEGEND_CELL }}
+              className={cn("size-2.5 rounded-[2px]", LEVEL_CLASS[level])}
             />
           ))}
           {t("home.heatmap.more")}

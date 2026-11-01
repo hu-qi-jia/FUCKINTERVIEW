@@ -5,12 +5,13 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ContributionHeatmap } from "@/components/home/contribution-heatmap";
+import { InterviewPrepCard } from "@/components/home/interview-prep-card";
+import type {
+  LibraryCounts,
+  MaterialsSegment,
+} from "@/components/home/interview-prep-card";
+import { LatencyCard } from "@/components/home/latency-card";
 import { ModelUsageCard } from "@/components/home/model-usage-card";
-import {
-  QuickEntries,
-  type MaterialsSegment,
-  type QuickEntryCounts,
-} from "@/components/home/quick-entries";
 import { RecentSessions } from "@/components/home/recent-sessions";
 import { StartInterviewDialog } from "@/components/home/start-interview-dialog";
 import { StartPanel } from "@/components/home/start-panel";
@@ -31,27 +32,33 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * 首页控制台：紧凑的 bento 布局。
+ * 首页控制台。
  *
- * 页头只在窄屏保留页面切换与设置；桌面端直接进入数据区。开始面试的入口
- * 放在「最近面试」卡片的标题栏，和列表内容同属一组。
+ * 12 栏网格：第一行是开始面试的主视觉 + 独立的统计/CTA 卡片；
+ * 第二行是热力图（4）+ 首字响应（4）+ 模型消耗（4）；
+ * 第三行是面试准备（4）+ 最近面试（8）。视觉沿用项目自己的 token。
  */
 export function HomePage({
   dataVersion = 0,
+  leadingExtras,
   headerExtras,
   defaultProfileId,
   onStartInterview,
   onOpenMaterials,
   onOpenSession,
   onOpenHistory,
+  onOpenMock,
 }: {
   dataVersion?: number;
+  /** 窄屏顶栏左侧的页面入口（桌面端由侧栏承担）。 */
+  leadingExtras?: ReactNode;
   headerExtras?: ReactNode;
   defaultProfileId?: string | null;
   onStartInterview: (profileId: string) => void;
   onOpenMaterials: (segment: MaterialsSegment) => void;
   onOpenSession: (id: number) => void;
   onOpenHistory: () => void;
+  onOpenMock: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -59,7 +66,7 @@ export function HomePage({
   const [statsError, setStatsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
-  const [counts, setCounts] = useState<QuickEntryCounts>({
+  const [counts, setCounts] = useState<LibraryCounts>({
     profiles: null,
     questions: null,
     terms: null,
@@ -147,6 +154,7 @@ export function HomePage({
     <div className="flex h-full min-h-0 flex-col">
       {/* 页头只放页面身份和窄屏导航；主操作在下面的面板里。 */}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+        {leadingExtras}
         <h1 className="hidden min-w-0 truncate text-sm font-semibold md:block">
           {t("nav.home")}
         </h1>
@@ -156,7 +164,7 @@ export function HomePage({
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 md:p-4 lg:overflow-hidden">
-        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-3">
+        <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-3">
           {statsError && (
             <div className="border-destructive/30 bg-destructive/5 text-destructive flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs">
               <span className="min-w-0 flex-1">
@@ -179,9 +187,9 @@ export function HomePage({
             onStart={openDialog}
           />
 
-          <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-2 xl:grid-cols-3">
-            <Card className="flex flex-col gap-0 py-0 lg:h-full lg:min-h-0">
-              <CardHeader className="flex shrink-0 items-center gap-2 border-b py-2.5">
+          <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-12">
+            <Card className="flex flex-col gap-0 py-0 lg:col-span-4 lg:h-full lg:min-h-0">
+              <CardHeader className="flex shrink-0 items-center gap-2 py-2.5">
                 <CalendarDaysIcon className="text-muted-foreground size-4" />
                 <CardTitle className="min-w-0 flex-1 text-sm">
                   {t("home.heatmap.title")}
@@ -190,39 +198,48 @@ export function HomePage({
                   {t("home.heatmap.subtitle")}
                 </span>
               </CardHeader>
-              <CardContent className="flex min-h-0 flex-1 items-center px-3 py-3">
+              <CardContent className="flex min-h-0 flex-1 px-3 py-3">
                 {stats ? (
                   <ContributionHeatmap
                     heatmap={stats.heatmap}
-                    weeks={13}
-                    cellSize={20}
+                    weeks={5}
                     className="w-full"
                   />
                 ) : (
-                  <div className="bg-muted/50 h-[190px] w-full animate-pulse rounded-lg" />
+                  <div className="bg-muted/50 h-full min-h-[190px] w-full animate-pulse rounded-lg" />
                 )}
               </CardContent>
             </Card>
 
+            <LatencyCard
+              stats={stats}
+              sessions={sessions}
+              className="lg:col-span-4"
+            />
+
             <ModelUsageCard
               stats={stats}
               sessions={sessions}
-              className="xl:col-span-2"
+              className="lg:col-span-4"
             />
           </div>
 
-          <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-12">
+            <InterviewPrepCard
+              className="lg:col-span-4"
+              counts={counts}
+              loading={countsLoading}
+              mockSessions={stats?.summary.mockSessions ?? 0}
+              mockAccuracy={stats?.summary.mockAccuracy ?? null}
+              onOpenMaterials={onOpenMaterials}
+              onOpenMock={onOpenMock}
+            />
             <RecentSessions
-              className="xl:col-span-2"
+              className="lg:col-span-8"
               sessions={recent}
               error={sessionsError}
               onOpen={onOpenSession}
               onViewAll={onOpenHistory}
-            />
-            <QuickEntries
-              counts={counts}
-              loading={countsLoading}
-              onOpen={onOpenMaterials}
             />
           </div>
         </div>

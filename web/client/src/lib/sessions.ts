@@ -88,6 +88,10 @@ export interface SessionStatsSummary {
   qaRatio: number | null;
   avgTtfbMs: number | null;
   avgTtftMs: number | null;
+  /** 模拟面试场次（单独计数，不进热力图）。 */
+  mockSessions: number;
+  /** 模拟面试报告准确率；报告功能接入前是 null。 */
+  mockAccuracy: number | null;
 }
 
 export interface ModelSetting {

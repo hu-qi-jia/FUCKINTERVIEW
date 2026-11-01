@@ -609,7 +609,11 @@ def get_session(session_id: int) -> dict[str, Any] | None:
 
 
 def stats(*, days: int = HEATMAP_DAYS) -> dict[str, Any]:
-    """首页要的热力图和汇总。只统计实时面试。"""
+    """首页要的热力图和汇总。
+
+    热力图和 token / 延迟汇总只统计实时面试；模拟面试单独计数。模拟报告的
+    准确率由后续的报告功能写入 ``mockAccuracy``，目前恒为 None。
+    """
     today = _local_today()
     start = today - timedelta(days=max(1, int(days)))
     # 对齐到周一，热力图每一列才是一整周。
@@ -647,6 +651,11 @@ def stats(*, days: int = HEATMAP_DAYS) -> dict[str, Any]:
             (week_start.isoformat(),),
         ).fetchone()
 
+        mock_row = conn.execute(
+            "SELECT COUNT(*) AS sessions FROM sessions "
+            "WHERE mode = 'mock' AND ended_at IS NOT NULL"
+        ).fetchone()
+
     session_count = int(summary["sessions"] or 0)
     return {
         "heatmap": {
@@ -672,6 +681,8 @@ def stats(*, days: int = HEATMAP_DAYS) -> dict[str, Any]:
             "qaRatio": _average(summary["qa_hits"] or 0, summary["ai_turns"] or 0),
             "avgTtfbMs": _average(summary["ttfb_sum"] or 0, summary["ttfb_count"] or 0),
             "avgTtftMs": _average(summary["ttft_sum"] or 0, summary["ttft_count"] or 0),
+            "mockSessions": int(mock_row["sessions"] or 0),
+            "mockAccuracy": None,
         },
     }
 

@@ -177,7 +177,7 @@ export function SessionDetailView({
       </header>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto grid w-full max-w-3xl gap-4 px-4 py-5">
+        <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-5">
           {!detail && !error && (
             <div className="text-muted-foreground flex h-64 items-center justify-center gap-2 text-sm">
               <Spinner className="size-4" />

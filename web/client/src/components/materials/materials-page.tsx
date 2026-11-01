@@ -61,11 +61,14 @@ function formatTime(value: string | null | undefined): string {
  */
 export function MaterialsPage({
   headerExtras,
+  leadingExtras,
   dataVersion = 0,
   initialSegment,
   initialProfileId,
 }: {
   headerExtras?: React.ReactNode;
+  /** 窄屏顶栏左侧的页面入口（桌面端由侧栏承担）。 */
+  leadingExtras?: React.ReactNode;
   dataVersion?: number;
   /** 从首页快捷入口进来时直接停在对应 tab。 */
   initialSegment?: Segment;
@@ -211,14 +214,19 @@ export function MaterialsPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 与其他页面一致的顶栏：小屏放页面切换和设置入口，桌面端留空。 */}
+      {/* 与其他页面一致的顶栏：左边是页面标题，小屏放页面切换和设置入口。 */}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <span className="min-w-0 flex-1" />
-        {headerExtras}
+        {leadingExtras}
+        <h1 className="hidden min-w-0 truncate text-sm font-semibold md:block">
+          {t("nav.materials")}
+        </h1>
+        <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          {headerExtras}
+        </div>
       </header>
 
       <div className="shrink-0 pt-4">
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-4">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2 px-4">
           <Tabs value={segment} onValueChange={changeSegment}>
             {/* p-0：滑块容器去掉默认的 3px 内边距，让选中块和下面的卡片左边缘对齐 */}
             <TabsList className="h-8 overflow-hidden p-0">
@@ -305,7 +313,7 @@ export function MaterialsPage({
 
       {segment === "profiles" && inDetail && profile && (
         <div className="shrink-0 pt-3">
-          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4">
+          <div className="mx-auto flex w-full max-w-7xl items-center gap-2 px-4">
             <h2 className="min-w-0 flex-1 truncate text-base font-semibold">
               {profile.name || t("materials.untitled")}
             </h2>
@@ -418,7 +426,7 @@ export function MaterialsPage({
             )
           ) : (
             <ScrollArea className="min-h-0 flex-1">
-              <div className="mx-auto w-full max-w-3xl px-4 py-4">
+              <div className="mx-auto w-full max-w-7xl px-4 py-4">
                 <ProfileFlow
                   profile={profile}
                   busy={busy}
@@ -460,7 +468,7 @@ export function MaterialsPage({
           </div>
         ) : (
           <ScrollArea className="min-h-0 flex-1">
-            <div className="mx-auto w-full max-w-3xl px-4 py-4">
+            <div className="mx-auto w-full max-w-7xl px-4 py-4">
               <ul className="grid gap-2">
                 {summaries.map((item) => (
                   <li key={item.id}>

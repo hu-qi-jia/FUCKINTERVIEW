@@ -17,20 +17,16 @@ import {
 } from "@/components/app-device-dock";
 import { HistoryPage } from "@/components/history/history-page";
 import { HomePage } from "@/components/home/home-page";
-import type { MaterialsSegment } from "@/components/home/quick-entries";
+import type { MaterialsSegment } from "@/components/home/interview-prep-card";
 import { MaterialsPage } from "@/components/materials/materials-page";
 import { LiveProfileSelect } from "@/components/materials/live-profile-select";
-import { Console, type ConsoleProps } from "@/components/pipecat/console/console";
-import { SettingsDialog } from "@/components/pipecat/settings-dialog";
-import { AppSidebar, type AppPage } from "@/components/app-sidebar";
-import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Console,
+  type ConsoleProps,
+} from "@/components/pipecat/console/console";
+import { SettingsDialog } from "@/components/pipecat/settings-dialog";
+import { AppSidebar, MobileNav, type AppPage } from "@/components/app-sidebar";
+import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLiveInterview } from "@/hooks/use-live-interview";
 import { readLiveProfileId, saveLiveProfileId } from "@/lib/live-profile";
@@ -43,12 +39,7 @@ import {
 import { markSessionEnded } from "@/lib/sessions";
 import { startBotParams } from "@/lib/session-request";
 import type { TermCorrection } from "@/lib/terms";
-import {
-  readTheme,
-  resolveDark,
-  saveTheme,
-  type ThemeMode,
-} from "@/lib/theme";
+import { readTheme, resolveDark, saveTheme, type ThemeMode } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 import "./index.css";
@@ -71,9 +62,8 @@ type TransportProps = Pick<
 const SMALL_WEBRTC_PROPS: TransportProps = {
   transportType: "smallwebrtc",
   transportFactory: async () => {
-    const { SmallWebRTCTransport } = await import(
-      "@pipecat-ai/small-webrtc-transport"
-    );
+    const { SmallWebRTCTransport } =
+      await import("@pipecat-ai/small-webrtc-transport");
     return new SmallWebRTCTransport({ waitForICEGathering: true });
   },
   startBotParams: startBotParams(),
@@ -83,62 +73,11 @@ function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
 }
 
-const NAV_PAGES: AppPage[] = ["home", "history", "mock", "materials"];
-const pageLabelKey = (page: AppPage) =>
-  page === "home"
-    ? "nav.home"
-    : page === "history"
-      ? "nav.history"
-      : page === "mock"
-        ? "nav.mockInterview"
-        : page === "materials"
-          ? "nav.materials"
-          : "nav.interview";
-
 function newInterviewId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-/**
- * Small-screen page switcher. The sidebar is hidden below 768px, so the
- * page header carries the pages instead. The live interview page is not in
- * the sidebar; it appears here only while it is the active page.
- */
-function PageSwitch({
-  page,
-  onNavigate,
-}: {
-  page: AppPage;
-  onNavigate: (page: AppPage) => void;
-}) {
-  const { t } = useTranslation();
-  const pages: AppPage[] =
-    page === "interview" ? [...NAV_PAGES, "interview"] : NAV_PAGES;
-  return (
-    <Select
-      items={pages.map((value) => ({ value, label: t(pageLabelKey(value)) }))}
-      value={page}
-      onValueChange={(value) => onNavigate(value as AppPage)}
-    >
-      <SelectTrigger
-        size="sm"
-        aria-label={t("nav.switchPage")}
-        className="h-8 w-28 md:hidden"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false}>
-        {pages.map((value) => (
-          <SelectItem key={value} value={value}>
-            {t(pageLabelKey(value))}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
 }
 
 function initialSidebarWidth(): number {
@@ -154,15 +93,21 @@ function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [captureMic, setCaptureMic] = useState(readCaptureMic);
   const [liveProfileId, setLiveProfileId] = useState<string | null>(
-    readLiveProfileId,
+    readLiveProfileId
   );
 
   // 术语纠错提示：面试官那一路（Console 的 client）和候选人那一路（麦克风
   // session）各自推一条 server message，这里合并成一条列表。
   const [liveTerms, setLiveTerms] = useState<TermCorrection[]>([]);
   const handleServerMessage = useCallback((data: unknown) => {
-    const payload = data as { kind?: string; corrections?: TermCorrection[] } | null;
-    if (payload?.kind !== "glossary.corrected" || !Array.isArray(payload.corrections)) {
+    const payload = data as {
+      kind?: string;
+      corrections?: TermCorrection[];
+    } | null;
+    if (
+      payload?.kind !== "glossary.corrected" ||
+      !Array.isArray(payload.corrections)
+    ) {
       return;
     }
     setLiveTerms((previous) => [...previous, ...payload.corrections!]);
@@ -224,7 +169,7 @@ function Home() {
   const [mockStore] = useState(createStore);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1"
   );
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizing, setResizing] = useState(false);
@@ -343,9 +288,11 @@ function Home() {
     // audio devices at the start of the next session (the page's own
     // selector covers the rest). The camera is deliberately not restored —
     // doing so would switch it on for users who had it on last time.
-    client.on(RTVIEvent.MicUpdated, (mic) => saveDeviceId("mic", mic?.deviceId));
+    client.on(RTVIEvent.MicUpdated, (mic) =>
+      saveDeviceId("mic", mic?.deviceId)
+    );
     client.on(RTVIEvent.SpeakerUpdated, (speaker) =>
-      saveDeviceId("speaker", speaker?.deviceId),
+      saveDeviceId("speaker", speaker?.deviceId)
     );
 
     let applied = false;
@@ -373,13 +320,9 @@ function Home() {
     </Button>
   );
 
-  const pageSwitch = <PageSwitch page={page} onNavigate={handleNavigate} />;
-  const pageHeaderExtras = (
-    <>
-      {pageSwitch}
-      {settingsButton}
-    </>
-  );
+  // 窄屏顶栏左侧的页面入口；桌面端由侧栏负责，所以按钮自带 md:hidden。
+  const mobileNav = <MobileNav activePage={page} onNavigate={handleNavigate} />;
+  const pageHeaderExtras = settingsButton;
   const liveDevices = { cam: true, screen: true, mic: !captureMic };
 
   // The mock page owns its client inside the Console, so the dock is portaled
@@ -389,7 +332,6 @@ function Home() {
     <>
       <SidebarDevices collapsed={sidebarCollapsed} version={page} />
       <HeaderDeviceButton />
-      {pageSwitch}
       {settingsButton}
     </>
   );
@@ -403,7 +345,6 @@ function Home() {
         value={liveProfileId}
         onChange={handleLiveProfileChange}
       />
-      {pageSwitch}
       {settingsButton}
     </>
   );
@@ -413,15 +354,13 @@ function Home() {
       <div
         className={cn(
           "flex h-dvh",
-          resizing && "cursor-col-resize select-none",
+          resizing && "cursor-col-resize select-none"
         )}
       >
         <div
           className="hidden h-full shrink-0 md:block"
           style={{
-            width: sidebarCollapsed
-              ? SIDEBAR_COLLAPSED_WIDTH
-              : sidebarWidth,
+            width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth,
           }}
         >
           <AppSidebar
@@ -441,7 +380,7 @@ function Home() {
             onPointerDown={startResize}
             className={cn(
               "relative hidden w-px shrink-0 cursor-col-resize items-center justify-center bg-border md:flex",
-              resizing && "bg-ring",
+              resizing && "bg-ring"
             )}
           >
             <div className="z-10 h-6 w-1 shrink-0 rounded-lg bg-border" />
@@ -454,16 +393,19 @@ function Home() {
           {page === "home" ? (
             <HomePage
               dataVersion={dataVersion}
+              leadingExtras={mobileNav}
               headerExtras={pageHeaderExtras}
               defaultProfileId={liveProfileId}
               onStartInterview={startInterview}
               onOpenMaterials={openMaterials}
               onOpenSession={openSession}
               onOpenHistory={openHistory}
+              onOpenMock={() => navigate("mock")}
             />
           ) : page === "history" ? (
             <HistoryPage
               headerExtras={pageHeaderExtras}
+              leadingExtras={mobileNav}
               focusSessionId={historyFocus}
               onFocusConsumed={() => setHistoryFocus(null)}
               onOpenProfile={openProfile}
@@ -524,15 +466,14 @@ function Home() {
                     messages: live.extraMessages,
                     interimText: live.interimText,
                   }}
-                  onConnectionStateChange={
-                    live.handleTransportStateChange
-                  }
+                  onConnectionStateChange={live.handleTransportStateChange}
                   layout="interview"
                   layoutPersistenceKey="live-interview-v2"
                   collapseMetricsPanel
                   noLogo
                   titleText=""
                   noDTMF
+                  leadingSlot={mobileNav}
                   headerSlot={liveHeaderSlot}
                   onClient={(client) => {
                     onClient(client);
@@ -556,12 +497,14 @@ function Home() {
               noUserAudio
               noUserVideo
               noScreenControl
+              leadingSlot={mobileNav}
               headerSlot={mockHeaderSlot}
               onClient={onClient}
             />
           ) : (
             <MaterialsPage
               dataVersion={dataVersion}
+              leadingExtras={mobileNav}
               initialSegment={materialsSegment}
               initialProfileId={materialsProfileFocus}
               headerExtras={pageHeaderExtras}
@@ -601,5 +544,5 @@ function Home() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Home />
-  </StrictMode>,
+  </StrictMode>
 );

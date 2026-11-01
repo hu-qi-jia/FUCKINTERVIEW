@@ -24,6 +24,43 @@ import { cn } from "@/lib/utils";
 /** Top-level pages. Each renders its own Console and connection. */
 export type AppPage = "home" | "history" | "interview" | "mock" | "materials";
 
+interface NavItem {
+  id: AppPage;
+  label: string;
+  icon: ReactNode;
+}
+
+/** 侧栏和窄屏顶栏共用同一份入口定义，图标和顺序不会两边跑偏。 */
+function navItems(t: (key: string) => string): NavItem[] {
+  return [
+    {
+      id: "home",
+      label: t("nav.home"),
+      icon: <HomeIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "history",
+      label: t("nav.history"),
+      icon: <HistoryIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "mock",
+      label: t("nav.mockInterview"),
+      icon: <ClipboardListIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "materials",
+      label: t("nav.materials"),
+      icon: <BookOpenIcon className="size-4 shrink-0" />,
+    },
+  ];
+}
+
+/** 面试页由首页进入，侧栏和顶栏都把「首页」点亮。 */
+function isActive(id: AppPage, activePage: AppPage): boolean {
+  return id === activePage || (id === "home" && activePage === "interview");
+}
+
 function SidebarItem({
   icon,
   label,
@@ -70,6 +107,47 @@ function SidebarItem({
 }
 
 /**
+ * 窄屏（<768px）的页面入口：侧栏隐藏后，每个页面一个图标按钮排在顶栏左侧，
+ * 取代原来的下拉选择框。
+ */
+export function MobileNav({
+  activePage,
+  onNavigate,
+}: {
+  activePage: AppPage;
+  onNavigate: (page: AppPage) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <nav
+      aria-label={t("nav.pages")}
+      className="flex min-w-0 items-center gap-0.5 md:hidden"
+    >
+      {navItems(t).map((page) => {
+        const active = isActive(page.id, activePage);
+        return (
+          <Button
+            key={page.id}
+            variant="ghost"
+            size="icon-sm"
+            aria-label={page.label}
+            aria-current={active ? "page" : undefined}
+            onClick={() => onNavigate(page.id)}
+            className={cn(
+              "text-muted-foreground hover:text-foreground shrink-0",
+              active && "bg-accent text-accent-foreground"
+            )}
+          >
+            {page.icon}
+          </Button>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
  * 左侧导航：宽度由外层容器控制，可拖拽调整；
  * 折叠后只保留图标，悬停显示名称。
  */
@@ -88,32 +166,7 @@ export function AppSidebar({
 }) {
   const { t } = useTranslation();
 
-  const pages: Array<{
-    id: AppPage;
-    label: string;
-    icon: ReactNode;
-  }> = [
-    {
-      id: "home",
-      label: t("nav.home"),
-      icon: <HomeIcon className="size-4 shrink-0" />,
-    },
-    {
-      id: "history",
-      label: t("nav.history"),
-      icon: <HistoryIcon className="size-4 shrink-0" />,
-    },
-    {
-      id: "mock",
-      label: t("nav.mockInterview"),
-      icon: <ClipboardListIcon className="size-4 shrink-0" />,
-    },
-    {
-      id: "materials",
-      label: t("nav.materials"),
-      icon: <BookOpenIcon className="size-4 shrink-0" />,
-    },
-  ];
+  const pages = navItems(t);
 
   return (
     <aside className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -154,10 +207,7 @@ export function AppSidebar({
         {pages.map((page) => (
           <SidebarItem
             key={page.id}
-            active={
-              activePage === page.id ||
-              (page.id === "home" && activePage === "interview")
-            }
+            active={isActive(page.id, activePage)}
             collapsed={collapsed}
             icon={page.icon}
             label={page.label}
