@@ -4,7 +4,7 @@ import { CalendarDaysIcon, MicIcon, TrendingUpIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AsciiWordmark } from "@/components/home/ascii-wordmark";
+import { Wordmark } from "@/components/home/wordmark";
 import { Button } from "@/components/ui/button";
 import type { SessionStatsSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
@@ -42,7 +42,7 @@ function StatBlock({
 }
 
 /**
- * 首页第一行：左边是 ASCII 字标主视觉，右边是统计数字 + 开始面试按钮。
+ * 首页第一行：左边是字标主视觉，右边是统计数字 + 开始面试按钮。
  * 右侧不套卡片，直接落在页面底色上，只留数字和按钮本身。
  */
 export function StartPanel({
@@ -58,9 +58,8 @@ export function StartPanel({
 
   return (
     <div className={cn("grid gap-4 lg:grid-cols-5", className)}>
-      {/* @container：字标的字号按这一栏的宽度算（cqw），换窗口宽度也放得下一行。 */}
-      <div className="@container flex min-w-0 items-center px-1 py-2 lg:col-span-3">
-        <AsciiWordmark />
+      <div className="flex min-w-0 items-center px-1 py-2 lg:col-span-3">
+        <Wordmark />
       </div>
 
       <div className="flex flex-col gap-4 px-1 py-2 lg:col-span-2 xl:flex-row xl:items-center">

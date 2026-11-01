@@ -209,9 +209,9 @@ body,
   scrollbar-gutter: stable;
 }
 
-/* 首页字标：底色是热的绿，一道高光缓慢从左扫到右。
+/* 首页字标：SVG 当遮罩铺在这层渐变上，底色是热的绿，一道高光缓慢从左扫到右。
    高光用前景色混出来，浅色和深色主题下都能看见。 */
-@keyframes ascii-sweep {
+@keyframes wordmark-sweep {
   from {
     background-position: 160% 0;
   }
@@ -220,7 +220,7 @@ body,
   }
 }
 
-@utility ascii-sweep {
+@utility wordmark-sweep {
   background-image: linear-gradient(
     100deg,
     var(--heat-4) 42%,
@@ -228,13 +228,11 @@ body,
     var(--heat-4) 58%
   );
   background-size: 320% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  animation: ascii-sweep 7s linear infinite;
+  animation: wordmark-sweep 7s linear infinite;
 
   @media (prefers-reduced-motion: reduce) {
     animation: none;
-    color: var(--heat-4);
+    background-image: none;
+    background-color: var(--heat-4);
   }
 }
