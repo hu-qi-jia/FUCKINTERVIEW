@@ -1,7 +1,6 @@
 "use client";
 
-import { CalendarDaysIcon, MicIcon, TrendingUpIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { MicIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Wordmark } from "@/components/home/wordmark";
@@ -10,32 +9,24 @@ import type { SessionStatsSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
 function StatBlock({
-  icon,
   label,
   value,
   unit,
-  hint,
 }: {
-  icon: ReactNode;
   label: string;
   value: string;
   unit: string;
-  hint: string;
 }) {
   return (
     <div className="min-w-0">
-      <span className="text-muted-foreground flex items-center gap-1.5 text-sm">
-        <span className="[&>svg]:size-3.5">{icon}</span>
-        <span className="truncate">{label}</span>
+      <span className="text-muted-foreground block truncate text-sm">
+        {label}
       </span>
       <span className="mt-1.5 flex items-baseline gap-1 text-2xl leading-none font-semibold tabular-nums">
         {value}
         <span className="text-muted-foreground text-xs font-normal">
           {unit}
         </span>
-      </span>
-      <span className="text-muted-foreground/70 mt-1.5 block truncate text-[11px]">
-        {hint}
       </span>
     </div>
   );
@@ -65,25 +56,30 @@ export function StartPanel({
       <div className="flex flex-col gap-4 px-1 py-2 lg:col-span-2 xl:flex-row xl:items-center">
         <div className="grid flex-1 grid-cols-2 gap-4">
           <StatBlock
-            icon={<TrendingUpIcon />}
             label={t("home.stats.totalSessions")}
             value={String(summary?.totalSessions ?? "–")}
             unit={t("home.stats.sessionsUnit")}
-            hint={t("home.stats.liveOnly")}
           />
           <StatBlock
-            icon={<CalendarDaysIcon />}
             label={t("home.stats.weekSessions")}
             value={String(summary?.weekSessions ?? "–")}
             unit={t("home.stats.sessionsUnit")}
-            hint={t("home.stats.sinceMonday")}
           />
         </div>
+        {/* 主操作：品牌绿实心按钮，麦克风放在一枚小圆片里，避免和处处都是的
+            黑白按钮混在一起。圆形圆角 + 一点绿色投影，像一颗实体按键。 */}
         <Button
-          className="h-11 w-full px-5 text-sm xl:w-auto xl:shrink-0"
           onClick={onStart}
+          className={cn(
+            "bg-heat-4 text-background hover:bg-heat-3",
+            "h-12 w-full gap-2.5 rounded-full px-5 text-sm font-semibold",
+            "shadow-[0_10px_24px_-12px_var(--heat-3)]",
+            "xl:w-auto xl:shrink-0"
+          )}
         >
-          <MicIcon className="size-4" />
+          <span className="bg-background/15 grid size-7 place-items-center rounded-full">
+            <MicIcon className="size-4" />
+          </span>
           {t("home.startButton")}
         </Button>
       </div>

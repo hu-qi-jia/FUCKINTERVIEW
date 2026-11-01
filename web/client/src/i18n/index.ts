@@ -42,8 +42,6 @@ const zh = {
       totalSessions: "累计场次",
       weekSessions: "本周场次",
       sessionsUnit: "场",
-      liveOnly: "只算实时面试",
-      sinceMonday: "本周一以来",
     },
     models: {
       title: "模型与消耗",
@@ -77,7 +75,6 @@ const zh = {
       manage: "管理材料",
       mock: "模拟面试",
       mockUnit: "次",
-      accuracy: "准确率",
       mockPending: "完成模拟面试后生成报告",
       mockReady: "最近一次模拟报告",
       count: "{{count}} 个",
@@ -762,8 +759,6 @@ const en = {
       totalSessions: "Total sessions",
       weekSessions: "This week",
       sessionsUnit: "",
-      liveOnly: "Live interviews only",
-      sinceMonday: "Since Monday",
     },
     models: {
       title: "Models & usage",
@@ -797,7 +792,6 @@ const en = {
       manage: "Manage materials",
       mock: "Mock interview",
       mockUnit: "sessions",
-      accuracy: "Accuracy",
       mockPending: "A report appears after a mock interview",
       mockReady: "Latest mock report",
       count: "{{count}} items",
