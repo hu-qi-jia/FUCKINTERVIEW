@@ -219,7 +219,3 @@ body,
 @utility app-no-drag {
   -webkit-app-region: no-drag;
 }
-
-html[data-desktop] .app-page-header {
-  padding-right: 7.5rem;
-}

@@ -27,6 +27,7 @@ import { Popover, PopoverContent } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WindowControls } from "@/components/window-controls";
 import { useProfileEditor } from "@/hooks/use-profile-editor";
 import {
   createProfile,
@@ -223,6 +224,7 @@ export function MaterialsPage({
         <div className="app-no-drag ml-auto flex min-w-0 items-center gap-1.5">
           {headerExtras}
         </div>
+        <WindowControls />
       </header>
 
       <div className="shrink-0 pt-4">

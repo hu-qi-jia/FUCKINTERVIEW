@@ -15,18 +15,16 @@ const BUTTON_CLASS = cn(
 /**
  * 桌面端的最小化 / 最大化 / 关闭。
  *
- * 不单独占一条标题栏：按钮浮在页头右端（页头自己留出 padding），
- * 背景透明、尺寸和项目里的 icon-sm 按钮一致，视觉上就是页头的一部分。
+ * 和页头放在同一行、同一个 flex 流里，所以它就是页头的一部分：
+ * 页头是拖拽区（`app-drag`），这三个按钮所在的容器标 `app-no-drag` 才收得到鼠标事件。
  * 浏览器里 `window.desktop` 不存在，整组不渲染。
  */
-export function WindowControls() {
+export function WindowControls({ className }: { className?: string }) {
   const desktop = typeof window === "undefined" ? undefined : window.desktop;
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
     if (!desktop) return;
-    // 页头靠这个标记让出右侧空间（见 index.css 的 .app-page-header）。
-    document.documentElement.dataset.desktop = "true";
     let alive = true;
     void desktop.isMaximized().then((value) => {
       if (alive) setMaximized(value);
@@ -35,7 +33,6 @@ export function WindowControls() {
     return () => {
       alive = false;
       unsubscribe();
-      delete document.documentElement.dataset.desktop;
     };
   }, [desktop]);
 
@@ -47,7 +44,7 @@ export function WindowControls() {
     <div
       role="group"
       aria-label="窗口控制"
-      className="app-no-drag fixed top-0 right-2 z-40 flex h-12 items-center gap-1"
+      className={cn("app-no-drag flex shrink-0 items-center gap-1", className)}
     >
       <button
         type="button"

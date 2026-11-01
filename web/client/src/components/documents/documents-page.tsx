@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
+import { WindowControls } from "@/components/window-controls";
 import {
   deleteDocument,
   DOCUMENT_ACCEPT,
@@ -204,6 +205,7 @@ export function DocumentsPage({
       <div className="app-no-drag ml-auto flex min-w-0 items-center gap-1.5">
         {headerExtras}
       </div>
+      <WindowControls />
     </header>
   );
 

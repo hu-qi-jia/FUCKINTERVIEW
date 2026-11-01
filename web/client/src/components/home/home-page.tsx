@@ -18,6 +18,7 @@ import { StartInterviewDialog } from "@/components/home/start-interview-dialog";
 import { StartPanel } from "@/components/home/start-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { WindowControls } from "@/components/window-controls";
 import { listProfiles, type ProfileSummary } from "@/lib/materials";
 import { qaStats } from "@/lib/qa";
 import {
@@ -165,6 +166,7 @@ export function HomePage({
         <div className="app-no-drag ml-auto flex min-w-0 items-center gap-1.5">
           {headerExtras}
         </div>
+        <WindowControls />
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 md:p-4 lg:overflow-hidden">

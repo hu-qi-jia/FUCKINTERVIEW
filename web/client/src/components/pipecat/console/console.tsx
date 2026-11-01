@@ -72,6 +72,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { WindowControls } from "@/components/window-controls";
 import {
   usePipecatApp,
   type UsePipecatAppReturn,
@@ -718,6 +719,7 @@ function ConsoleShell({
             connectButton
           )}
         </div>
+        <WindowControls />
       </header>
 
       {errorText && (

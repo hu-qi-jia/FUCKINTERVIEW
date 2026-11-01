@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WindowControls } from "@/components/window-controls";
 import {
   formatDateTime,
   formatDuration,
@@ -126,6 +127,7 @@ export function HistoryPage({
         <div className="app-no-drag ml-auto flex min-w-0 items-center gap-1.5">
           {headerExtras}
         </div>
+        <WindowControls />
       </header>
 
       <div

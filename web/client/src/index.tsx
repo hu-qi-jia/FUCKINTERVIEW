@@ -15,7 +15,6 @@ import {
   PortalTo,
   SidebarDevices,
 } from "@/components/app-device-dock";
-import { WindowControls } from "@/components/window-controls";
 import { HistoryPage } from "@/components/history/history-page";
 import { HomePage } from "@/components/home/home-page";
 import type { MaterialsSegment } from "@/components/home/interview-prep-card";
@@ -404,8 +403,6 @@ function Home() {
 
   return (
     <TooltipProvider>
-      {/* 桌面端：窗口按钮浮在页头右端，不单独占一条标题栏；浏览器里不渲染。 */}
-      <WindowControls />
       <div
         className={cn(
           "flex h-dvh",
