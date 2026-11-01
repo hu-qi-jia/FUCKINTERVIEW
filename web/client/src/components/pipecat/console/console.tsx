@@ -49,7 +49,6 @@ import { PipecatLogo } from "@/components/pipecat/console/logo";
 import { ConsoleMetricsPanel } from "@/components/pipecat/console/metrics-panel";
 import { useMinWidth } from "@/components/pipecat/console/panel";
 import type { ConversationProps } from "@/components/pipecat/conversation";
-import type { TextRenderMode } from "@/components/pipecat/conversation-message";
 import type { DTMFKeypadMode } from "@/components/pipecat/dtmf-keypad";
 import {
   Alert,
@@ -231,6 +230,8 @@ export interface ConsoleProps {
    * 系统音频被外部结束（disconnectSignal）走的不是这条路。
    */
   onDisconnected?: () => void;
+  /** 连接失败（授权取消、信令报错）时触发，带原始错误。 */
+  onConnectError?: (error: unknown) => void;
 
   // -- Region toggles (all default false unless noted) -----------------------
   noUserAudio?: boolean;
@@ -260,10 +261,6 @@ export interface ConsoleProps {
   // -- Behavior --------------------------------------------------------------
   /** How the DTMF keypad dispatches presses (default "buffered"). */
   keypadMode?: DTMFKeypadMode;
-  /** Seeds the transcript render mode (default "karaoke"). */
-  textRenderMode?: TextRenderMode;
-  /** Hides the render-mode select. Default false. */
-  noTextRenderModeSwitch?: boolean;
   /** Overrides merged onto the Conversation (labels, renderers, …). */
   conversationProps?: Partial<ConversationProps>;
   /** Preferred audio codec (smallwebrtc only). */
@@ -391,6 +388,7 @@ function ConsoleShell({
   headerSlot,
   leadingSlot,
   onDisconnected,
+  onConnectError,
   noUserAudio = false,
   noUserVideo = false,
   noScreenControl = false,
@@ -407,8 +405,6 @@ function ConsoleShell({
   noSessionInfo = false,
   collapseMetricsPanel = false,
   keypadMode = "buffered",
-  textRenderMode,
-  noTextRenderModeSwitch = false,
   conversationProps,
   collapseInfoPanel = false,
   collapseMediaPanel = false,
@@ -423,14 +419,6 @@ function ConsoleShell({
   // Three resizable columns need about 1024px; narrower screens get tabs.
   const isDesktop = useMinWidth(1024);
   const isInterviewLayout = layout === "interview";
-
-  // Interview layout: the transcript and answer panes show the same bot text,
-  // so they share one render mode.
-  const [sharedRenderMode, setSharedRenderMode] =
-    React.useState<TextRenderMode>(textRenderMode ?? "karaoke");
-  React.useEffect(() => {
-    if (textRenderMode !== undefined) setSharedRenderMode(textRenderMode);
-  }, [textRenderMode]);
 
   // -- Session facts collected from RTVI events ------------------------------
   const [participantId, setParticipantId] = React.useState<string>();
@@ -565,8 +553,6 @@ function ConsoleShell({
       noConversation={noConversation}
       noMetrics={noMetrics}
       noTextInput={noTextInput}
-      noTextRenderModeSwitch={noTextRenderModeSwitch}
-      textRenderMode={textRenderMode}
       conversationProps={conversationProps}
       className="h-full"
     />
@@ -599,9 +585,6 @@ function ConsoleShell({
 
   const answerPanel = (
     <ConsoleAnswerPanel
-      noTextRenderModeSwitch={noTextRenderModeSwitch}
-      textRenderMode={sharedRenderMode}
-      onTextRenderModeChange={setSharedRenderMode}
       conversationProps={conversationProps}
       className="h-full"
     />
@@ -634,6 +617,7 @@ function ConsoleShell({
       await app.connect();
     } catch (error) {
       setConnectError(error instanceof Error ? error.message : String(error));
+      onConnectError?.(error);
     } finally {
       setIsPreparing(false);
     }

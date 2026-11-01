@@ -406,10 +406,6 @@ const zh = {
     botOutputUnsupported: "服务端不支持 BotOutput 事件",
     botOutputHint:
       "当前服务端不支持 BotOutput 事件（需要 RTVI 1.1.0+），无法显示对话内容。",
-    renderMode: "文本显示方式",
-    karaoke: "逐词高亮",
-    captions: "字幕",
-    instant: "即时",
   },
   message: {
     assistant: "助手",
@@ -1126,10 +1122,6 @@ const en = {
     botOutputUnsupported: "BotOutput events not supported",
     botOutputHint:
       "This server does not support BotOutput events (requires RTVI 1.1.0+). Conversation messages cannot be displayed without them.",
-    renderMode: "Text render mode",
-    karaoke: "Karaoke",
-    captions: "Captions",
-    instant: "Instant",
   },
   message: {
     assistant: "assistant",

@@ -39,11 +39,6 @@ function navItems(t: (key: string) => string): NavItem[] {
       icon: <HomeIcon className="size-4 shrink-0" />,
     },
     {
-      id: "history",
-      label: t("nav.history"),
-      icon: <HistoryIcon className="size-4 shrink-0" />,
-    },
-    {
       id: "mock",
       label: t("nav.mockInterview"),
       icon: <ClipboardListIcon className="size-4 shrink-0" />,
@@ -52,6 +47,11 @@ function navItems(t: (key: string) => string): NavItem[] {
       id: "materials",
       label: t("nav.materials"),
       icon: <BookOpenIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "history",
+      label: t("nav.history"),
+      icon: <HistoryIcon className="size-4 shrink-0" />,
     },
   ];
 }
@@ -66,12 +66,14 @@ function SidebarItem({
   label,
   active = false,
   collapsed,
+  disabled = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   active?: boolean;
   collapsed: boolean;
+  disabled?: boolean;
   onClick?: () => void;
 }) {
   const button = (
@@ -80,6 +82,7 @@ function SidebarItem({
       size="sm"
       aria-label={label}
       aria-current={active ? "page" : undefined}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
         "h-9 w-full gap-2.5 px-2 text-sm font-normal",
@@ -113,9 +116,11 @@ function SidebarItem({
 export function MobileNav({
   activePage,
   onNavigate,
+  disabled = false,
 }: {
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -133,6 +138,7 @@ export function MobileNav({
             size="icon-sm"
             aria-label={page.label}
             aria-current={active ? "page" : undefined}
+            disabled={disabled}
             onClick={() => onNavigate(page.id)}
             className={cn(
               "text-muted-foreground hover:text-foreground shrink-0",
@@ -157,12 +163,15 @@ export function AppSidebar({
   onNavigate,
   onToggle,
   onOpenSettings,
+  locked = false,
 }: {
   collapsed: boolean;
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
   onToggle: () => void;
   onOpenSettings: () => void;
+  /** 实时面试进行中：除设备选择外全部置灰，结束后才放开。 */
+  locked?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -181,6 +190,7 @@ export function AppSidebar({
             variant="ghost"
             size="icon-sm"
             aria-label={t("nav.expand")}
+            disabled={locked}
             onClick={onToggle}
           >
             <PanelLeftOpenIcon />
@@ -195,6 +205,7 @@ export function AppSidebar({
               variant="ghost"
               size="icon-sm"
               aria-label={t("nav.collapse")}
+              disabled={locked}
               onClick={onToggle}
             >
               <PanelLeftCloseIcon />
@@ -209,6 +220,7 @@ export function AppSidebar({
             key={page.id}
             active={isActive(page.id, activePage)}
             collapsed={collapsed}
+            disabled={locked}
             icon={page.icon}
             label={page.label}
             onClick={() => onNavigate(page.id)}
@@ -222,6 +234,7 @@ export function AppSidebar({
       <div className="flex flex-col gap-1 border-t border-sidebar-border p-2">
         <SidebarItem
           collapsed={collapsed}
+          disabled={locked}
           icon={<SettingsIcon className="size-4 shrink-0" />}
           label={t("settings.title")}
           onClick={onOpenSettings}

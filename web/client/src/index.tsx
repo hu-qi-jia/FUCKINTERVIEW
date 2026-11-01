@@ -1,9 +1,9 @@
-import type { PipecatClient } from "@pipecat-ai/client-js";
+import type { PipecatClient, TransportState } from "@pipecat-ai/client-js";
 import { RTVIEvent } from "@pipecat-ai/client-js";
 import { PipecatClientProvider } from "@pipecat-ai/client-react";
 import { createStore } from "jotai/vanilla";
 import { SettingsIcon } from "lucide-react";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 
@@ -117,6 +117,9 @@ function Home() {
   const [autoStartToken, setAutoStartToken] = useState(0);
   // 模拟面试没有档案，单独一个 id，离开页面时换新的，避免两场并进一条记录。
   const [mockInterviewId, setMockInterviewId] = useState(newInterviewId);
+  // 实时面试进行中锁住导航；连接失败、中途断开都算结束，放开导航。
+  const [interviewEnded, setInterviewEnded] = useState(false);
+  const liveWasLinked = useRef(false);
 
   const live = useLiveInterview({
     profileId: liveProfileId,
@@ -228,7 +231,26 @@ function Home() {
    * 免得刚落地首页时列表里还看不到这一场。
    */
   const handleInterviewDisconnected = () => {
+    setInterviewEnded(true);
     window.setTimeout(() => navigate("home"), 400);
+  };
+
+  /**
+   * 面试官那一路的连接状态：连上过之后又断开（点断开、外部停止共享、网络错误）
+   * 就算这一场结束，放开导航。刚进页面时 transport 初始化也会报一次
+   * disconnected，那次不算。
+   */
+  const handleLiveStateChange = (state: TransportState) => {
+    live.handleTransportStateChange(state);
+    if (state === "connected" || state === "ready") {
+      liveWasLinked.current = true;
+      return;
+    }
+    if (state !== "disconnected" && state !== "error") return;
+    if (liveWasLinked.current) {
+      liveWasLinked.current = false;
+      setInterviewEnded(true);
+    }
   };
 
   const startInterview = (profileId: string) => {
@@ -236,6 +258,8 @@ function Home() {
     // 新的一场：新的 join key，两路连接都会带上它。
     setInterviewId(newInterviewId());
     setAutoStartToken(Date.now());
+    setInterviewEnded(false);
+    liveWasLinked.current = false;
     navigate("interview");
   };
 
@@ -314,6 +338,11 @@ function Home() {
     });
   };
 
+  // 实时面试进行中锁住导航：侧栏自动折叠、除设备选择外全部置灰，
+  // 结束后（回到首页）才恢复；用户自己的折叠状态不受影响。
+  const interviewLocked = page === "interview" && !interviewEnded;
+  const sidebarFolded = sidebarCollapsed || interviewLocked;
+
   // Header extras shared by both pages. Devices live in the sidebar; only
   // small screens (where the sidebar is hidden) put an entry in the header.
   const settingsButton = (
@@ -322,6 +351,7 @@ function Home() {
       size="icon-sm"
       className="md:hidden"
       aria-label={t("settings.title")}
+      disabled={interviewLocked}
       onClick={() => setSettingsOpen(true)}
     >
       <SettingsIcon />
@@ -329,7 +359,13 @@ function Home() {
   );
 
   // 窄屏顶栏左侧的页面入口；桌面端由侧栏负责，所以按钮自带 md:hidden。
-  const mobileNav = <MobileNav activePage={page} onNavigate={handleNavigate} />;
+  const mobileNav = (
+    <MobileNav
+      activePage={page}
+      onNavigate={handleNavigate}
+      disabled={interviewLocked}
+    />
+  );
   const pageHeaderExtras = settingsButton;
   const liveDevices = { cam: true, screen: true, mic: !captureMic };
 
@@ -363,11 +399,12 @@ function Home() {
         <div
           className="hidden h-full shrink-0 md:block"
           style={{
-            width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth,
+            width: sidebarFolded ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth,
           }}
         >
           <AppSidebar
-            collapsed={sidebarCollapsed}
+            collapsed={sidebarFolded}
+            locked={interviewLocked}
             activePage={page}
             onNavigate={navigate}
             onToggle={toggleSidebar}
@@ -375,7 +412,7 @@ function Home() {
           />
         </div>
 
-        {!sidebarCollapsed && (
+        {!sidebarFolded && (
           <div
             role="separator"
             aria-orientation="vertical"
@@ -466,11 +503,12 @@ function Home() {
                   autoConnectSignal={autoStartToken}
                   onEnd={() => void markSessionEnded(interviewId)}
                   onDisconnected={handleInterviewDisconnected}
+                  onConnectError={() => setInterviewEnded(true)}
                   liveConversation={{
                     messages: live.extraMessages,
                     interimText: live.interimText,
                   }}
-                  onConnectionStateChange={live.handleTransportStateChange}
+                  onConnectionStateChange={handleLiveStateChange}
                   layout="interview"
                   layoutPersistenceKey="live-interview-v2"
                   collapseMetricsPanel
@@ -519,7 +557,7 @@ function Home() {
         {page === "interview" && live.micClient && (
           <PipecatClientProvider client={live.micClient}>
             <SidebarDevices
-              collapsed={sidebarCollapsed}
+              collapsed={sidebarFolded}
               disabled={liveDevices}
               version={page}
             />

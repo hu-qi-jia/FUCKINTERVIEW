@@ -387,7 +387,7 @@ export function SettingsDialog({
         className="flex h-[600px] max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+        <div className="flex h-14 shrink-0 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <SettingsIcon className="size-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold">{t("settings.title")}</h2>
