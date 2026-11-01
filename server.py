@@ -37,8 +37,6 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.processors.aggregators.llm_text_processor import LLMTextProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
-from pipecat.utils.text.base_text_aggregator import TextType
-from pipecat.utils.text.simple_text_aggregator import SimpleTextAggregator
 import pipecat.runner.run as runner_run
 from pipecat.runner.run import app, main
 from pipecat.runner.types import RunnerArguments
@@ -1134,16 +1132,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 processors.append(tts)
             else:
                 processors.append(TextOnlyOutput())
-                # 实时面试没有 TTS，按 token 聚合：RTVIObserver 会把每个 token
-                # 当作一条 BotOutput 推给前端，界面上能逐字看到答案在写。
-                # 模拟面试有 TTS，仍走默认的按句聚合，朗读才自然。
-                processors.append(
-                    LLMTextProcessor(
-                        text_aggregator=SimpleTextAggregator(
-                            aggregation_type=TextType.TOKEN
-                        )
-                    )
-                )
+                processors.append(LLMTextProcessor())
             processors += [transport.output(), assistant_aggregator]
         else:
             # 分段 STT 靠 VAD 帧切句，而 VAD 由用户聚合器运行；只听不答的

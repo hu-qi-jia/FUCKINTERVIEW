@@ -235,6 +235,21 @@ function isBotOutputText(
   );
 }
 
+/**
+ * 一条消息的完整纯文本。assistant 的 part 存的是 `{spoken, unspoken}`，
+ * 直接 String() 会得到 "[object Object]"，这里按顺序拼起来。
+ */
+export function conversationMessageText(message: ConversationMessage): string {
+  return message.parts
+    .map((part) => {
+      if (isBotOutputText(part)) {
+        return `${part.text.spoken}${part.text.unspoken}`;
+      }
+      return typeof part.text === "string" ? part.text : "";
+    })
+    .join("");
+}
+
 function renderBotOutput(
   spoken: string,
   unspoken: string,

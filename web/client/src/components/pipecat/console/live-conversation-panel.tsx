@@ -1,6 +1,5 @@
 "use client";
 
-import type { ConversationMessage } from "@pipecat-ai/client-react";
 import {
   usePipecatClientTransportState,
   usePipecatConversation,
@@ -11,6 +10,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConsolePanel } from "@/components/pipecat/console/panel";
+import { conversationMessageText } from "@/components/pipecat/conversation-message";
 import { TextInput } from "@/components/pipecat/text-input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { LiveMessage } from "@/lib/live-message";
@@ -21,10 +21,6 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   second: "2-digit",
 });
-
-function messageText(message: ConversationMessage): string {
-  return message.parts.map((part) => part.text).join("");
-}
 
 function timeLabel(createdAt: string): string {
   const date = new Date(createdAt);
@@ -76,7 +72,7 @@ export function LiveConversationPanel({
       .filter((message) => message.role === "user")
       .map((message, index) => ({
         id: `interviewer-${message.createdAt}-${index}`,
-        text: messageText(message),
+        text: conversationMessageText(message),
         createdAt: message.createdAt,
         from: "interviewer",
       }));
