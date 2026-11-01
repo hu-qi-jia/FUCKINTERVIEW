@@ -21,9 +21,9 @@ function StatBlock({
       <span className="text-muted-foreground block truncate text-sm">
         {label}
       </span>
-      <span className="mt-1.5 flex items-baseline gap-1 text-2xl leading-none font-semibold tabular-nums">
+      <span className="mt-1.5 flex items-baseline gap-1 text-3xl leading-none font-semibold tabular-nums">
         {value}
-        <span className="text-muted-foreground text-xs font-normal">
+        <span className="text-muted-foreground text-sm font-normal">
           {unit}
         </span>
       </span>
@@ -56,12 +56,12 @@ export function StartPanel({
     >
       <div className="flex min-w-0 flex-col gap-3 px-1 py-2 lg:col-span-3">
         <Wordmark />
-        {/* 主操作：和字标同宽（占这一栏的 75%）。上亮下暗的渐变当受光面，顶部一道内高光；
-            hover 抬起来并划过一道亮光，按下再压回去。 */}
+        {/* 主操作：比字标再窄一点（这一栏的 60%）。上亮下暗的渐变当受光面，顶部一道内高光；
+            hover 只抬起来、微微提亮，按下再压回去——不划过光。 */}
         <Button
           onClick={onStart}
           className={cn(
-            "text-background group/button relative h-14 w-[75%] overflow-hidden",
+            "text-background relative h-14 w-[60%]",
             "rounded-[0.6rem] px-6 text-base font-semibold tracking-wide",
             "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
             "shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_12px_30px_-14px_var(--heat-3)]",
@@ -71,17 +71,13 @@ export function StartPanel({
             "active:translate-y-0 active:brightness-95"
           )}
         >
-          {/* hover 时从左划到右的一道高光。 */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-0 -translate-x-[130%] bg-[linear-gradient(100deg,transparent_40%,oklch(1_0_0/22%)_50%,transparent_60%)] transition-transform duration-700 ease-out group-hover/button:translate-x-[130%]"
-          />
-          <span className="relative">{t("home.startButton")}</span>
+          {t("home.startButton")}
         </Button>
       </div>
 
       <div className="flex items-center px-1 py-2 lg:col-span-2">
-        <div className="grid w-full grid-cols-2 gap-2.5">
+        {/* 宽屏下两个指标不再各占半栏，靠在一起更紧凑。 */}
+        <div className="grid w-full grid-cols-2 gap-2.5 lg:flex lg:w-auto lg:gap-9">
           <StatBlock
             label={t("home.stats.totalSessions")}
             value={String(summary?.totalSessions ?? "–")}
