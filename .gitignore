@@ -55,3 +55,7 @@ config/imports/
 
 # pipecat 清理前的完整源码备份（见 README「pipecat 精简」）
 /backups/
+
+# 桌面端
+desktop/node_modules/
+desktop/dist/

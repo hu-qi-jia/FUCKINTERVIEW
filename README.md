@@ -36,6 +36,7 @@
 ├── docs/qa-library-design.md    # 问答库的设计说明
 ├── web/client/                  # 前端源码（pipecat-prebuilt 的 React 应用）
 │   └── dist/                    # npm run build 产物，server.py 托管在 /client
+├── desktop/                     # Electron 桌面端外壳（见「桌面端（Electron）」）
 ├── pipecat/                     # Pipecat 源码（editable 安装，已按本项目用到的部分精简）
 └── .venv/                       # Python 3.12 虚拟环境
 ```
@@ -51,6 +52,28 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 ```
 
 打开 <http://localhost:7860/>，会自动跳转到 `/client/`。
+
+## 桌面端（Electron）
+
+`desktop/` 是 Electron 外壳：主进程拉起本地 Python 服务（项目 `.venv` 里的解释器 + `server.py`），
+等 `/status` 就绪后在窗口里加载同一套前端 `http://127.0.0.1:<port>/client/`。
+
+```bash
+npm --prefix web/client run build   # 先构建前端
+npm --prefix desktop install        # 首次
+npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额外打开开发者工具
+```
+
+- 端口默认 7860，被占用时自动往后找空闲端口；单实例运行，重复启动会聚焦已有窗口
+- **系统音频**：浏览器版要手动选「整个屏幕 + 共享系统音频」，桌面端由主进程
+  `setDisplayMediaRequestHandler` 直接给第一块屏幕并挂上 `audio: "loopback"`（Windows 环回），
+  点「开始面试」不再弹共享选择器
+- **权限**：麦克风、屏幕采集由 `setPermissionRequestHandler` 统一放行，不再弹浏览器授权框
+- 站外链接交给系统浏览器打开；退出时连同 Python 及其子进程一起收掉（Windows 用 `taskkill /T`）
+- 后端日志写在 Electron 的 userData 目录下：`%APPDATA%\interview-desktop\backend.log`
+- 首次安装如果卡在下载 Electron 二进制，用国内镜像：
+  `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix desktop install`
+- 打包成安装包（把 Python 运行时一起分发）还没做，第一版是「本机源码 + 虚拟环境」直接运行
 
 ## 界面与语言
 
