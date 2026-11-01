@@ -29,11 +29,6 @@ export interface ConversationViewProps extends Omit<
   reverseOrder?: boolean;
   /** Rendered when there are no messages. */
   empty?: React.ReactNode;
-  /**
-   * 正在流式生成、还没进正式消息的文本（token 级）。
-   * 显示在列表末尾，等正式消息追上来后由调用方传空。
-   */
-  pendingText?: string;
   className?: string;
   /** Classes for each message row. */
   messageClassName?: string;
@@ -49,7 +44,6 @@ export function ConversationView({
   noAutoscroll = false,
   reverseOrder = false,
   empty,
-  pendingText,
   className,
   messageClassName,
   ...messageProps
@@ -118,7 +112,7 @@ export function ConversationView({
     return () => observer.disconnect();
   }, [noAutoscroll, reverseOrder]);
 
-  if (messages.length === 0 && !pendingText) {
+  if (messages.length === 0) {
     return (
       <div
         data-slot="conversation"
@@ -156,15 +150,6 @@ export function ConversationView({
                 {...messageProps}
               />
             ),
-          )}
-          {pendingText && (
-            <div className="text-sm leading-relaxed whitespace-pre-wrap">
-              {pendingText}
-              <span
-                aria-hidden
-                className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-[-2px]"
-              />
-            </div>
           )}
         </div>
       </ScrollArea>

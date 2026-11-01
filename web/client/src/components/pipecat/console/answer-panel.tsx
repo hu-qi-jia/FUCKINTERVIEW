@@ -2,10 +2,7 @@
 
 import { RTVIEvent } from "@pipecat-ai/client-js";
 import type { ConversationMessage } from "@pipecat-ai/client-react";
-import {
-  usePipecatConversation,
-  useRTVIClientEvent,
-} from "@pipecat-ai/client-react";
+import { useRTVIClientEvent } from "@pipecat-ai/client-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,11 +16,18 @@ import {
   Conversation,
   type ConversationProps,
 } from "@/components/pipecat/conversation";
-import { conversationMessageText } from "@/components/pipecat/conversation-message";
 import type { TextRenderMode } from "@/components/pipecat/conversation-message";
 
 /** The bot's own turns only; that is the answer being read out. */
 const ANSWER_ROLES: ConversationMessage["role"][] = ["assistant"];
+
+/** 一轮回答：从 bot-llm-started 到 bot-llm-stopped。 */
+interface AnswerTurn {
+  id: string;
+  text: string;
+  createdAt: string;
+  final: boolean;
+}
 
 export interface ConsoleAnswerPanelProps {
   /** Seeds (and can push) the transcript render mode. Default "karaoke". */
@@ -41,6 +45,10 @@ export interface ConsoleAnswerPanelProps {
  * Console answer pane: the assistant's messages only, in the same window
  * chrome as the transcript pane. Must be rendered inside a
  * PipecatClientProvider.
+ *
+ * 回答列表由这里自己攒：没有 TTS 时 RTVI 拿不到「说完了」的边界，SDK 会把
+ * 后面几轮回答都并回同一个 assistant 消息里；按 bot-llm-started/stopped
+ * 切分就能一轮一条。
  */
 export function ConsoleAnswerPanel({
   textRenderMode,
@@ -53,75 +61,75 @@ export function ConsoleAnswerPanel({
   const [renderMode, setRenderMode] = React.useState<TextRenderMode>(
     textRenderMode ?? "karaoke",
   );
+  const [turns, setTurns] = React.useState<AnswerTurn[]>([]);
 
-  // 回答在写完之前由这里自己显示：SDK 的正式消息按句到（还要等朗读），
-  // 这里用 bot-llm-text 的逐 token 事件拼出「正在写」的全文。
-  // 正式消息追上来了再把显示权交还给它（对得上的判断看前 24 个字）。
-  const { messages } = usePipecatConversation();
-  const assistantCount = messages.filter(
-    (message) => message.role === "assistant",
-  ).length;
-  const assistantCountRef = React.useRef(assistantCount);
-  assistantCountRef.current = assistantCount;
+  // 重新连上就从头记。
+  useRTVIClientEvent(RTVIEvent.BotReady, () => setTurns([]));
 
-  const [stream, setStream] = React.useState("");
-  const [streamOpen, setStreamOpen] = React.useState(false);
-  // 从第几条 assistant 消息开始藏（streamCut 为 null 时全部显示）。
-  const [streamCut, setStreamCut] = React.useState<number | null>(null);
+  useRTVIClientEvent(RTVIEvent.BotLlmStarted, () =>
+    setTurns((previous) => [
+      ...previous,
+      {
+        id: `turn-${Date.now()}-${previous.length}`,
+        text: "",
+        createdAt: new Date().toISOString(),
+        final: false,
+      },
+    ])
+  );
 
-  useRTVIClientEvent(RTVIEvent.BotLlmStarted, () => {
-    setStream("");
-    setStreamOpen(true);
-    setStreamCut(assistantCountRef.current);
-  });
   useRTVIClientEvent(RTVIEvent.BotLlmText, (data) => {
-    const text = (data as { text?: string } | null)?.text ?? "";
-    if (text) setStream((previous) => previous + text);
-  });
-  useRTVIClientEvent(RTVIEvent.BotLlmStopped, () => setStreamOpen(false));
-
-  const compact = (value: string) => value.replace(/\s+/g, "");
-  const lastAssistantText = React.useMemo(() => {
-    const last = [...messages]
-      .reverse()
-      .find((message) => message.role === "assistant");
-    return last ? conversationMessageText(last) : "";
-  }, [messages]);
-
-  // 正式消息追上流式文本后，把显示权交还给它。
-  // 必须等它至少一样长再换，否则会看到文字先缩回去再一句句长出来。
-  React.useEffect(() => {
-    if (streamOpen || !stream) return;
-    const streamText = compact(stream);
-    const finalText = compact(lastAssistantText);
-    const head = streamText.slice(0, 12);
-    if (
-      head &&
-      finalText.includes(head) &&
-      finalText.length >= streamText.length
-    ) {
-      setStream("");
-      setStreamCut(null);
-    }
-  }, [streamOpen, stream, lastAssistantText]);
-
-  // 这一轮什么都没有（比如被中断）：别再藏着正式消息。
-  React.useEffect(() => {
-    if (streamOpen || stream || streamCut === null) return;
-    const timer = window.setTimeout(() => setStreamCut(null), 800);
-    return () => window.clearTimeout(timer);
-  }, [streamOpen, stream, streamCut]);
-
-  const visibleMessages = React.useMemo(() => {
-    let seen = -1;
-    return messages.filter((message) => {
-      if (message.role !== "assistant") return false;
-      seen += 1;
-      return streamCut === null || seen < streamCut;
+    const chunk = (data as { text?: string } | null)?.text ?? "";
+    if (!chunk) return;
+    setTurns((previous) => {
+      const last = previous[previous.length - 1];
+      if (!last) {
+        return [
+          {
+            id: `turn-${Date.now()}-0`,
+            text: chunk,
+            createdAt: new Date().toISOString(),
+            final: false,
+          },
+        ];
+      }
+      return [
+        ...previous.slice(0, -1),
+        { ...last, text: last.text + chunk },
+      ];
     });
-  }, [messages, streamCut]);
+  });
 
-  const pendingText = streamCut !== null && stream ? stream : undefined;
+  useRTVIClientEvent(RTVIEvent.BotLlmStopped, () =>
+    setTurns((previous) =>
+      previous.length === 0
+        ? previous
+        : [
+            ...previous.slice(0, -1),
+            { ...previous[previous.length - 1], final: true },
+          ]
+    )
+  );
+
+  const messages = React.useMemo<ConversationMessage[]>(
+    () =>
+      turns
+        .filter((turn) => turn.text.trim())
+        .map((turn) => ({
+          role: "assistant" as const,
+          final: turn.final,
+          createdAt: turn.createdAt,
+          parts: [
+            {
+              text: { spoken: turn.text, unspoken: "" },
+              final: turn.final,
+              createdAt: turn.createdAt,
+              aggregatedBy: "sentence",
+            },
+          ],
+        })),
+    [turns]
+  );
 
   React.useEffect(() => {
     if (textRenderMode !== undefined) setRenderMode(textRenderMode);
@@ -160,8 +168,7 @@ export function ConsoleAnswerPanel({
             </div>
           }
           {...conversationProps}
-          messages={visibleMessages}
-          pendingText={pendingText}
+          messages={messages}
         />
       </ConsolePanelContent>
     </ConsolePanel>

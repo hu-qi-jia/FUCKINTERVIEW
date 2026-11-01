@@ -285,9 +285,9 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
   国内 Base URL 用 `https://api.minimax.cn/v1`。国内 Key 打到国际站 `api.minimax.io` 会报
   `401 invalid api key`。注意官方接口只收带容器的音频、**不支持裸 PCM 流式输入**，
   所以识别仍是「VAD 切段 → 每段流式返回」，不是边说边出字
-- **流式显示**：「回答」面板订阅 `bot-llm-text`（LLM 的逐 token 事件），在一轮回答写完前
-  自己拼字显示、并先藏起 SDK 那条还在按句长的正式消息；等正式消息追上（长度不短于流式文本）
-  再切回去。bot-output 本身仍按句聚合，模拟面试的朗读节奏不变。
+- **流式显示**：「回答」面板自己攒回答——按 `bot-llm-started / bot-llm-text / bot-llm-stopped`
+  把每轮 LLM 输出切成一条消息并逐 token 填字。不直接用 SDK 的 assistant 消息：没有 TTS 时
+  RTVI 拿不到「说完了」的边界，SDK 会把后面几轮回答都并回同一条。
   识别侧的中间结果（`InterimTranscriptionFrame`）在「对话」面板里先以半透明气泡显示，
   最终转写到了再换成正式消息
 - **Qwen ASR / TTS / LLM** 都使用阿里云百炼的 `DASHSCOPE_API_KEY`，ASR 走 OpenAI 兼容的
