@@ -52,8 +52,8 @@ export function StartPanel({
         <Wordmark />
       </div>
 
-      <div className="flex flex-col gap-4 px-1 py-2 lg:col-span-2 xl:flex-row xl:items-center">
-        <div className="grid flex-1 grid-cols-2 gap-2.5">
+      <div className="flex flex-col gap-3 px-1 py-2 lg:col-span-2">
+        <div className="grid grid-cols-2 gap-2.5">
           <StatBlock
             label={t("home.stats.totalSessions")}
             value={String(summary?.totalSessions ?? "–")}
@@ -65,24 +65,34 @@ export function StartPanel({
             unit={t("home.stats.sessionsUnit")}
           />
         </div>
-        {/* 主操作：品牌绿实心按钮。顶上一道内高光当受光面，底下垫一层绿光，
-            hover 抬一下、按下压回去，做出实体按键的手感。 */}
-        <Button
-          onClick={onStart}
-          className={cn(
-            "text-background",
-            "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
-            "h-12 w-full min-w-28 rounded-xl px-7 text-sm font-semibold tracking-wide",
-            "shadow-[inset_0_1px_0_oklch(1_0_0/25%),0_10px_26px_-14px_var(--heat-3)]",
-            "transition-[transform,box-shadow,filter] duration-200 ease-out",
-            "hover:-translate-y-0.5 hover:brightness-110",
-            "hover:shadow-[inset_0_1px_0_oklch(1_0_0/30%),0_16px_32px_-14px_var(--heat-3)]",
-            "active:translate-y-0 active:brightness-95",
-            "xl:w-auto xl:shrink-0"
-          )}
-        >
-          {t("home.startButton")}
-        </Button>
+        {/* 主操作：整栏宽的品牌绿按钮。上亮下暗的渐变当受光面，顶部一道内高光，
+            外面一圈会呼吸的绿色光晕；hover 抬起来并划过一道亮光，按下再压回去。 */}
+        <span className="relative block">
+          <span
+            aria-hidden
+            className="cta-halo bg-heat-4/35 pointer-events-none absolute -inset-[3px] rounded-[0.7rem] blur-[10px]"
+          />
+          <Button
+            onClick={onStart}
+            className={cn(
+              "text-background group/button relative h-14 w-full overflow-hidden",
+              "rounded-[0.6rem] px-6 text-base font-semibold tracking-wide",
+              "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
+              "shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_12px_30px_-14px_var(--heat-3)]",
+              "transition-[transform,box-shadow,filter] duration-200 ease-out",
+              "hover:-translate-y-0.5 hover:brightness-110",
+              "hover:shadow-[inset_0_1px_0_oklch(1_0_0/34%),0_18px_38px_-14px_var(--heat-3)]",
+              "active:translate-y-0 active:brightness-95"
+            )}
+          >
+            {/* hover 时从左划到右的一道高光。 */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 -translate-x-[130%] bg-[linear-gradient(100deg,transparent_40%,oklch(1_0_0/22%)_50%,transparent_60%)] transition-transform duration-700 ease-out group-hover/button:translate-x-[130%]"
+            />
+            <span className="relative">{t("home.startButton")}</span>
+          </Button>
+        </span>
       </div>
     </div>
   );

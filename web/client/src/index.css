@@ -236,3 +236,23 @@ body,
     background-color: var(--heat-4);
   }
 }
+
+/* 首页主按钮外面那圈绿光：慢慢呼吸，把注意力留在主操作上。 */
+@keyframes cta-halo {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@utility cta-halo {
+  animation: cta-halo 3.8s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    opacity: 0.6;
+  }
+}

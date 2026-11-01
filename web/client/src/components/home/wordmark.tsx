@@ -16,7 +16,7 @@ export function Wordmark({ className }: { className?: string }) {
     <span
       aria-hidden
       className={cn(
-        "wordmark-sweep block aspect-[610/64] w-[86%] select-none",
+        "wordmark-sweep block aspect-[610/64] w-[75%] select-none",
         className
       )}
       style={{
