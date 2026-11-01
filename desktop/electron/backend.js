@@ -23,8 +23,9 @@ function isWindows() {
   return process.platform === "win32";
 }
 
-/** 优先用项目自己的虚拟环境，找不到再退回 PATH 里的 python。 */
+/** 优先用项目自己的虚拟环境，找不到再退回 PATH 里的 python；可用 INTERVIEW_PYTHON 覆盖。 */
 function resolvePython() {
+  if (process.env.INTERVIEW_PYTHON) return process.env.INTERVIEW_PYTHON;
   const venv = path.join(
     ROOT,
     ".venv",
@@ -68,6 +69,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** 最近一次拉起的后端进程，退出时兜底收掉（包括启动到一半就退出的情况）。 */
+let currentChild = null;
+
 /**
  * 启动后端。
  *
@@ -97,6 +101,7 @@ async function startBackend({ port, onLog } = {}) {
       stdio: ["ignore", "pipe", "pipe"],
     }
   );
+  currentChild = child;
 
   const tail = [];
   const push = (chunk, stream) => {
@@ -144,10 +149,14 @@ async function startBackend({ port, onLog } = {}) {
 function stopBackend(child) {
   return new Promise((resolve) => {
     if (!child || child.killed || child.exitCode !== null) {
+      if (currentChild === child) currentChild = null;
       resolve();
       return;
     }
-    const done = () => resolve();
+    const done = () => {
+      if (currentChild === child) currentChild = null;
+      resolve();
+    };
     child.once("exit", done);
     if (isWindows()) {
       spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
@@ -161,4 +170,9 @@ function stopBackend(child) {
   });
 }
 
-module.exports = { startBackend, stopBackend, ROOT, HOST };
+/** 退出时兜底：不管后端有没有走到「就绪」，把它收掉。 */
+function stopAll() {
+  return currentChild ? stopBackend(currentChild) : Promise.resolve();
+}
+
+module.exports = { startBackend, stopBackend, stopAll, ROOT, HOST };

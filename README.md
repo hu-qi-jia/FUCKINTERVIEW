@@ -64,16 +64,39 @@ npm --prefix desktop install        # 首次
 npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额外打开开发者工具
 ```
 
-- 端口默认 7860，被占用时自动往后找空闲端口；单实例运行，重复启动会聚焦已有窗口
+- 端口默认 7860，被占用时自动往后找空闲端口；单实例运行，重复启动会唤起已有窗口
+- **无边框窗口**：标题栏由前端自己画（`web/client/src/components/desktop-titlebar.tsx`），
+  拖动、双击最大化、最小化、最大化还原、关闭都在里面；浏览器版没有这条栏
+- **关闭 = 收进托盘**：右上角 ✕ 只是隐藏窗口，点托盘图标恢复，托盘菜单里才有「退出」；
+  真退出时用 `taskkill /T` 连 Python 及其子进程一起收掉
+- **图标**：`desktop/build/` 下是 logo 的 svg / png / ico 和托盘图标；侧栏顶部换成和首页同款的
+  FUCKINTERVIEW 字标，不再显示 Pipecat 的占位 logo
 - **系统音频**：浏览器版要手动选「整个屏幕 + 共享系统音频」，桌面端由主进程
   `setDisplayMediaRequestHandler` 直接给第一块屏幕并挂上 `audio: "loopback"`（Windows 环回），
-  点「开始面试」不再弹共享选择器
+  点「开始面试」不再弹共享选择器；Linux 没有环回，实时面试仍要用浏览器版
 - **权限**：麦克风、屏幕采集由 `setPermissionRequestHandler` 统一放行，不再弹浏览器授权框
-- 站外链接交给系统浏览器打开；退出时连同 Python 及其子进程一起收掉（Windows 用 `taskkill /T`）
-- 后端日志写在 Electron 的 userData 目录下：`%APPDATA%\interview-desktop\backend.log`
+- 站外链接交给系统浏览器打开；后端日志写在 `%APPDATA%\interview-desktop\backend.log`
 - 首次安装如果卡在下载 Electron 二进制，用国内镜像：
   `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix desktop install`
 - 打包成安装包（把 Python 运行时一起分发）还没做，第一版是「本机源码 + 虚拟环境」直接运行
+
+### 换一台机器
+
+桌面端只依赖项目目录里的相对路径，拷一份代码过去按下面装一遍就能跑：
+
+```bash
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt   # macOS/Linux 换成 .venv/bin/python
+npm --prefix web/client install && npm --prefix web/client run build
+npm --prefix desktop install
+npm --prefix desktop start
+```
+
+- 需要 Node 20+、Python 3.11+；`requirements.txt` 里的 `-e ./pipecat` 会装仓库里这份精简版 Pipecat
+- Python 解释器按「`.venv` → PATH 里的 python」找，也可以用环境变量 `INTERVIEW_PYTHON` 指定
+- 数据（档案 / 问答库 / 术语库 / 历史 / 其他资料）都在 `config/` 下，跟着项目目录走；
+  换机器时一起拷过去，或在「设置 → 通用设置 → 数据目录」指到同步盘
+- 系统音频环回依赖平台：Windows 可以，macOS 需要 14.2+，Linux 拿不到环回音轨
 
 ## 界面与语言
 

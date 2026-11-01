@@ -15,6 +15,7 @@ import {
   PortalTo,
   SidebarDevices,
 } from "@/components/app-device-dock";
+import { DesktopTitleBar } from "@/components/desktop-titlebar";
 import { HistoryPage } from "@/components/history/history-page";
 import { HomePage } from "@/components/home/home-page";
 import type { MaterialsSegment } from "@/components/home/interview-prep-card";
@@ -403,9 +404,15 @@ function Home() {
 
   return (
     <TooltipProvider>
+      {/* 桌面端是无边框窗口：标题栏由这里画，浏览器里不渲染。 */}
+      <DesktopTitleBar />
       <div
         className={cn(
-          "flex h-dvh",
+          "flex",
+          // 桌面端顶部多一条 32px 的拖拽区（只放窗口按钮），内容区相应让出高度。
+          typeof window !== "undefined" && window.desktop
+            ? "h-[calc(100dvh-2rem)]"
+            : "h-dvh",
           resizing && "cursor-col-resize select-none"
         )}
       >

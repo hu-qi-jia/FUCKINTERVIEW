@@ -13,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { PipecatLogo } from "@/components/pipecat/console/logo";
+import { Wordmark } from "@/components/home/wordmark";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -209,10 +209,9 @@ export function AppSidebar({
           </Button>
         ) : (
           <>
-            <PipecatLogo height={16} className="shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-              {t("app.title")}
-            </span>
+            {/* 和首页同款字标，高度对齐原来的标题文字。 */}
+            <Wordmark fit className="h-4 min-w-0 flex-1" />
+            <span className="sr-only">{t("app.title")}</span>
             <Button
               variant="ghost"
               size="icon-sm"

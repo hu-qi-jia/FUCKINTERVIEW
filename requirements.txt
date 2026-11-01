@@ -1,0 +1,17 @@
+# 后端运行时依赖（Python 3.11+）
+# pipecat 用仓库里的源码做 editable 安装，它自己的依赖由 pipecat/pyproject.toml 声明。
+-e ./pipecat
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+aiohttp>=3.9,<4
+loguru>=0.7,<1
+python-multipart>=0.0.9
+numpy>=1.26,<3
+onnxruntime>=1.18
+fastembed>=0.4
+openpyxl>=3.1
+soundfile>=0.12
+soxr>=0.3
+
+# 跑测试还要：pytest>=8
