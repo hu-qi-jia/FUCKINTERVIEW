@@ -20,18 +20,21 @@ DEFAULT_SYSTEM_PROMPT = (
 # 设置页也就不再暴露 system_prompt 这一项。
 
 DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
+    # 模型相关的输入框一律不预填：base_url / model / voice 默认留空，
+    # 由用户在设置页自己填。真正构建服务时，providers.py 里还有一层兜底默认值，
+    # 所以留空也能跑，只是界面上不再替用户做主。
     "asr": {
         "provider": "qwen",
         "api_key": "",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model": "qwen3-asr-flash",
+        "base_url": "",
+        "model": "",
         "language": "zh",
     },
     "llm": {
         "provider": "openai_compatible",
         "api_key": "",
-        "base_url": "https://api.openai.com/v1",
-        "model": "gpt-4o-mini",
+        "base_url": "",
+        "model": "",
         # 关掉推理模型的思考：面试回答不需要链式推理。DeepSeek 实测能削掉
         # 0.7s 以上的首字延迟。换到不认这个参数的供应商时，这里改成 false。
         "disable_thinking": True,
@@ -40,8 +43,8 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "provider": "minimax",
         "api_key": "",
         "base_url": "",
-        "model": "speech-2.8-turbo",
-        "voice": "Calm_Woman",
+        "model": "",
+        "voice": "",
         "group_id": "",
         "language": "zh",
     },

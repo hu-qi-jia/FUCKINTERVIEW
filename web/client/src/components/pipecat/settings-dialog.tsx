@@ -301,49 +301,37 @@ export function SettingsDialog({
     setMessage("");
   }, []);
 
+  // 换供应商时把模型相关字段清空：不替用户预填，让他按选中的供应商自己填。
   const changeAsrProvider = useCallback((provider: string) => {
-    const meta = findProvider(ASR_PROVIDERS, provider);
-    if (!meta) return;
+    if (!findProvider(ASR_PROVIDERS, provider)) return;
     setSettings((current) =>
       current
         ? {
             ...current,
-            asr: {
-              ...current.asr,
-              provider,
-              model: meta.defaultModel,
-              base_url: meta.defaultBaseUrl,
-            },
+            asr: { ...current.asr, provider, model: "", base_url: "" },
           }
-        : current,
+        : current
     );
     setStatus("idle");
     setMessage("");
   }, []);
 
   const changeLlmProvider = useCallback((provider: string) => {
-    const meta = findProvider(LLM_PROVIDERS, provider);
-    if (!meta) return;
+    if (!findProvider(LLM_PROVIDERS, provider)) return;
     setSettings((current) =>
       current
         ? {
             ...current,
-            llm: {
-              ...current.llm,
-              provider,
-              model: meta.defaultModel,
-              base_url: meta.defaultBaseUrl,
-            },
+            llm: { ...current.llm, provider, model: "", base_url: "" },
           }
-        : current,
+        : current
     );
     setStatus("idle");
     setMessage("");
   }, []);
 
   const changeTtsProvider = useCallback((provider: string) => {
-    const meta = findProvider<TtsProviderMeta>(TTS_PROVIDERS, provider);
-    if (!meta) return;
+    if (!findProvider<TtsProviderMeta>(TTS_PROVIDERS, provider)) return;
     setSettings((current) =>
       current
         ? {
@@ -351,12 +339,12 @@ export function SettingsDialog({
             tts: {
               ...current.tts,
               provider,
-              model: meta.defaultModel,
-              base_url: meta.defaultBaseUrl,
-              voice: meta.defaultVoice,
+              model: "",
+              base_url: "",
+              voice: "",
             },
           }
-        : current,
+        : current
     );
     setStatus("idle");
     setMessage("");

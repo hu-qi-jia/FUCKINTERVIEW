@@ -164,20 +164,23 @@ export function SessionDetailView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <Button size="sm" variant="ghost" className="h-8 px-2" onClick={onBack}>
-          <ArrowLeftIcon />
-          {t("history.backToList")}
-        </Button>
-        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-          {detail
-            ? formatDateTime(detail.startedAt, i18n.language)
-            : t("history.detail.loading")}
-        </span>
-      </header>
+      {/* 返回按钮和下面的内容用同一条内容列对齐，这里不画分隔线。 */}
+      <div className="shrink-0 pt-4">
+        <div className="mx-auto flex w-full max-w-7xl items-center px-4">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-2 h-8 px-2"
+            onClick={onBack}
+          >
+            <ArrowLeftIcon />
+            {t("history.backToList")}
+          </Button>
+        </div>
+      </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-5">
+        <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 pt-3 pb-5">
           {!detail && !error && (
             <div className="text-muted-foreground flex h-64 items-center justify-center gap-2 text-sm">
               <Spinner className="size-4" />

@@ -46,13 +46,10 @@ export interface AppSettings {
 export interface ProviderMeta {
   value: string;
   label: string;
-  defaultModel: string;
-  defaultBaseUrl: string;
   models: string[];
 }
 
 export interface TtsProviderMeta extends ProviderMeta {
-  defaultVoice: string;
   needsGroupId?: boolean;
 }
 
@@ -60,30 +57,21 @@ export const ASR_PROVIDERS: ProviderMeta[] = [
   {
     value: "qwen",
     label: "Qwen（百炼 DashScope）",
-    defaultModel: "qwen3-asr-flash",
-    defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     models: ["qwen3-asr-flash"],
   },
   {
     value: "minimax",
     label: "MiniMax",
-    defaultModel: "asr-1.0",
-    // 国内平台；国际站是 api.minimax.io，国内 Key 在那边会 401。
-    defaultBaseUrl: "https://api.minimax.cn/v1",
     models: ["asr-1.0"],
   },
   {
     value: "deepgram",
     label: "Deepgram",
-    defaultModel: "nova-3",
-    defaultBaseUrl: "",
     models: ["nova-3", "nova-2", "enhanced"],
   },
   {
     value: "openai",
     label: "OpenAI Whisper（兼容接口）",
-    defaultModel: "whisper-1",
-    defaultBaseUrl: "https://api.openai.com/v1",
     models: ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
   },
 ];
@@ -92,22 +80,16 @@ export const LLM_PROVIDERS: ProviderMeta[] = [
   {
     value: "openai_compatible",
     label: "OpenAI 兼容接口",
-    defaultModel: "gpt-4o-mini",
-    defaultBaseUrl: "https://api.openai.com/v1",
     models: ["gpt-4o-mini", "gpt-4o", "deepseek-chat", "qwen-plus"],
   },
   {
     value: "qwen",
     label: "Qwen（百炼 DashScope）",
-    defaultModel: "qwen-plus",
-    defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     models: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen3-max"],
   },
   {
     value: "anthropic",
     label: "Anthropic Claude",
-    defaultModel: "claude-sonnet-5-5",
-    defaultBaseUrl: "",
     models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
   },
 ];
@@ -116,42 +98,27 @@ export const TTS_PROVIDERS: TtsProviderMeta[] = [
   {
     value: "minimax",
     label: "MiniMax",
-    defaultModel: "speech-2.8-turbo",
-    defaultBaseUrl: "",
-    defaultVoice: "Calm_Woman",
     models: ["speech-2.8-turbo", "speech-2.6-turbo", "speech-02-turbo"],
     needsGroupId: true,
   },
   {
     value: "qwen",
     label: "Qwen（百炼 DashScope）",
-    defaultModel: "qwen3-tts-flash",
-    defaultBaseUrl: "https://dashscope.aliyuncs.com/api/v1",
-    defaultVoice: "Cherry",
     models: ["qwen3-tts-flash", "qwen-tts"],
   },
   {
     value: "openai",
     label: "OpenAI TTS",
-    defaultModel: "gpt-4o-mini-tts",
-    defaultBaseUrl: "https://api.openai.com/v1",
-    defaultVoice: "alloy",
     models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
   },
   {
     value: "elevenlabs",
     label: "ElevenLabs",
-    defaultModel: "eleven_flash_v2_5",
-    defaultBaseUrl: "",
-    defaultVoice: "21m00Tcm4TlvDq8ikWAM",
     models: ["eleven_flash_v2_5", "eleven_multilingual_v2"],
   },
   {
     value: "cartesia",
     label: "Cartesia",
-    defaultModel: "sonic-2",
-    defaultBaseUrl: "",
-    defaultVoice: "86e30c1d-714b-4074-a1f2-1cb6b552fb49",
     models: ["sonic-2", "sonic"],
   },
 ];

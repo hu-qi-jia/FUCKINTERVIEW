@@ -258,7 +258,8 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 
 ## 设置页
 
-点击右上角齿轮 ⚙ 打开，分三个标签页：
+点击右上角齿轮 ⚙ 打开，分两个标签页：「通用设置」（界面语言、主题、采集麦克风、数据目录）与
+「模型配置」（ASR / LLM / TTS 三段，同页滚动）：
 
 | 能力 | 支持的供应商 |
 | --- | --- |
@@ -267,6 +268,8 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 | TTS | MiniMax、Qwen、OpenAI、ElevenLabs、Cartesia |
 
 配置保存到 `config/settings.json`，**下一次点击 Connect 时生效**。密钥只保存在本机。
+「模型配置」里的 Base URL / 模型 / 音色都**不预填**：新建配置或切换供应商时留空，由用户自己填；
+只有后端构建服务时才用各供应商的兜底默认值。
 
 「通用设置」里的 **采集麦克风（面试者）** 只影响实时面试的第二路会话：关闭后不再建立麦克风会话，
 面试者的语音不转写、也不产生 ASR 费用；连接中修改需要重连才生效。设备选择保存在浏览器本地，两个页面共用。
