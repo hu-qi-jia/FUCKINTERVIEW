@@ -18,7 +18,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.tests.utils import run_test
 
 import app.terms as terms
-from server import GlossaryPrompt, TermCorrector, _apply_system_prompt
+from server import GlossaryPrompt, TermCorrector, TextOnlyOutput, _apply_system_prompt
 
 
 @pytest.fixture()
@@ -137,3 +137,63 @@ def test_apply_system_prompt_keeps_composed_instructions():
     llm = _LLM()
     _apply_system_prompt(llm, "新提示词")
     assert llm._settings.system_instruction == "新提示词\n\n附加指令"
+
+
+# --------------------------------------------------------------------------
+# 流式输出
+# --------------------------------------------------------------------------
+def _live_text_chain():
+    """实时面试那一段：标记不朗读 + 按 token 聚合。"""
+    from pipecat.pipeline.pipeline import Pipeline
+    from pipecat.processors.aggregators.llm_text_processor import LLMTextProcessor
+    from pipecat.utils.text.base_text_aggregator import TextType
+    from pipecat.utils.text.simple_text_aggregator import SimpleTextAggregator
+
+    return Pipeline(
+        [
+            TextOnlyOutput(),
+            LLMTextProcessor(
+                text_aggregator=SimpleTextAggregator(aggregation_type=TextType.TOKEN)
+            ),
+        ]
+    )
+
+
+def test_live_mode_emits_one_aggregation_per_token():
+    """每个 LLM token 都会立刻变成一条 BotOutput，前端才能逐字显示。"""
+    from pipecat.frames.frames import AggregatedTextFrame, LLMTextFrame
+
+    down, _ = asyncio.run(
+        run_test(
+            _live_text_chain(),
+            frames_to_send=[
+                LLMTextFrame(text="你"),
+                LLMTextFrame(text="好"),
+                LLMTextFrame(text="，"),
+                LLMTextFrame(text="我"),
+            ],
+        )
+    )
+
+    aggregated = [frame for frame in down if isinstance(frame, AggregatedTextFrame)]
+    assert [frame.text for frame in aggregated] == ["你", "好", "，", "我"]
+    assert all(frame.skip_tts for frame in aggregated)
+
+
+def test_mock_mode_still_aggregates_by_sentence():
+    """模拟面试要朗读，仍然按句输出，不能拆成一字一条。"""
+    from pipecat.frames.frames import AggregatedTextFrame, LLMTextFrame
+    from pipecat.processors.aggregators.llm_text_processor import LLMTextProcessor
+
+    down, _ = asyncio.run(
+        run_test(
+            LLMTextProcessor(),
+            frames_to_send=[
+                LLMTextFrame(text="第一句。"),
+                LLMTextFrame(text="第二句。"),
+            ],
+        )
+    )
+
+    aggregated = [frame.text for frame in down if isinstance(frame, AggregatedTextFrame)]
+    assert aggregated == ["第一句。", "第二句。"]

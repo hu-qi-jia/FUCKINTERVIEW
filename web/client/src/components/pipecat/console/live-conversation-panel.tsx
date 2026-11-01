@@ -4,7 +4,9 @@ import type { ConversationMessage } from "@pipecat-ai/client-react";
 import {
   usePipecatClientTransportState,
   usePipecatConversation,
+  useRTVIClientEvent,
 } from "@pipecat-ai/client-react";
+import { RTVIEvent } from "@pipecat-ai/client-js";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
@@ -59,6 +61,13 @@ export function LiveConversationPanel({
   const { t } = useTranslation();
   const transportState = usePipecatClientTransportState();
   const { messages } = usePipecatConversation();
+  // 面试官那一路的转写：STT 的中间结果在说话过程中就会到，先按半透明气泡显示，
+  // 最终稿到了再换成正式消息。
+  const [interviewerInterim, setInterviewerInterim] = React.useState("");
+  useRTVIClientEvent(RTVIEvent.UserTranscript, (data) => {
+    const text = (data?.text ?? "").trim();
+    setInterviewerInterim(data?.final ? "" : text);
+  });
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const stickToBottom = React.useRef(true);
 
@@ -82,13 +91,26 @@ export function LiveConversationPanel({
     );
   }, [messages, extraMessages]);
 
-  const hasContent = lines.length > 0 || Boolean(interimText);
+  const hasContent =
+    lines.length > 0 || Boolean(interimText) || Boolean(interviewerInterim);
+  // 最终稿（或 SDK 已经渲染出来的同一段）进了正式消息就不再重复显示中间结果。
+  const showInterviewerInterim =
+    interviewerInterim.length > 0 &&
+    !lines.some((line) => {
+      if (line.from !== "interviewer") return false;
+      const text = line.text.trim();
+      return (
+        text.length > 0 &&
+        (text.includes(interviewerInterim) ||
+          interviewerInterim.includes(text))
+      );
+    });
 
   React.useEffect(() => {
     const element = scrollRef.current;
     if (!element || !stickToBottom.current) return;
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-  }, [lines, interimText]);
+  }, [lines, interimText, interviewerInterim]);
 
   // 拖动栏宽或缩放窗口后重新排版，只要还贴着底部就继续跟住最新消息。
   React.useEffect(() => {
@@ -166,6 +188,13 @@ export function LiveConversationPanel({
               <div className="flex flex-col items-end gap-1">
                 <div className="bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-tr-sm px-3 py-2 text-right text-sm whitespace-pre-wrap opacity-70">
                   {interimText}
+                </div>
+              </div>
+            )}
+            {showInterviewerInterim && (
+              <div className="flex flex-col items-start gap-1">
+                <div className="bg-muted max-w-[85%] rounded-2xl rounded-tl-sm px-3 py-2 text-sm whitespace-pre-wrap opacity-70">
+                  {interviewerInterim}
                 </div>
               </div>
             )}

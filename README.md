@@ -283,7 +283,12 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 - **MiniMax ASR** 走 `POST {base_url}/speech_to_text`（multipart，模型 `asr-1.0`）：
   默认带 `stream=true`，接口按 SSE 逐段推 `delta`，服务边收边推中间结果、`finish` 后出最终转写；
   国内 Base URL 用 `https://api.minimax.cn/v1`。国内 Key 打到国际站 `api.minimax.io` 会报
-  `401 invalid api key`
+  `401 invalid api key`。注意官方接口只收带容器的音频、**不支持裸 PCM 流式输入**，
+  所以识别仍是「VAD 切段 → 每段流式返回」，不是边说边出字
+- **流式显示**：实时面试没有 TTS，LLM 输出按 token 聚合（`TextType.TOKEN`），
+  RTVIObserver 一个 token 发一条 BotOutput，「回答」面板逐字写出来；模拟面试要朗读，
+  仍按句聚合。识别侧的中间结果（`InterimTranscriptionFrame`）在「对话」面板里
+  先以半透明气泡显示，最终转写到了再换成正式消息
 - **Qwen ASR / TTS / LLM** 都使用阿里云百炼的 `DASHSCOPE_API_KEY`，ASR 走 OpenAI 兼容的
   `/chat/completions`（音频以 base64 Data URL 传入），因此是 VAD 分段后整段识别，
   不是逐字流式输出
