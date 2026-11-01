@@ -91,6 +91,20 @@ const zh = {
       profileMeta: "更新于 {{time}} · {{count}} 张经历卡",
       hint: "面试会按这份档案的事实回答，开始后不再更换。",
       confirm: "开始面试",
+      audioTitle: "音频",
+      mic: "麦克风",
+      speaker: "扬声器",
+      systemDefault: "系统默认",
+      micLevel: "麦克风电平",
+      testSpeaker: "试听",
+      audioHint:
+        "说话时右侧电平条会跳动；点「试听」确认声音从选中的扬声器出来。",
+      micBlocked:
+        "麦克风没有授权，电平条不会动；允许后刷新页面就能看到设备名称。",
+      micFailed: "麦克风打不开，换一个设备再试。",
+      micUnsupported: "当前浏览器不支持选择音频设备。",
+      speakerFailed:
+        "试听失败，可能不支持切换输出设备；可以在系统里换一个扬声器。",
     },
   },
   history: {
@@ -805,6 +819,20 @@ const en = {
       profileMeta: "Updated {{time}} · {{count}} cards",
       hint: "Answers follow this profile; it cannot be switched once the interview starts.",
       confirm: "Start interview",
+      audioTitle: "Audio",
+      mic: "Microphone",
+      speaker: "Speaker",
+      systemDefault: "System default",
+      micLevel: "Microphone level",
+      testSpeaker: "Test",
+      audioHint:
+        "Speak — the level bar should move; press Test to hear a tone from the selected speaker.",
+      micBlocked:
+        "The microphone is blocked, so the level bar stays flat. Allow it and reload to see device names.",
+      micFailed: "Could not open the microphone. Try another device.",
+      micUnsupported: "This browser cannot pick audio devices.",
+      speakerFailed:
+        "Test failed — switching output devices may be unsupported. Pick another speaker in the OS.",
     },
   },
   history: {

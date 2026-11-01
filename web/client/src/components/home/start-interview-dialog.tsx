@@ -4,6 +4,7 @@ import { CheckIcon, FileTextIcon, MicIcon, XIcon } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
+import { InterviewAudioCheck } from "@/components/home/interview-audio-check";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
@@ -116,7 +117,7 @@ export function StartInterviewDialog({
           )}
 
           {!loading && !error && !empty && (
-            <ScrollArea className="max-h-[48vh]">
+            <ScrollArea className="max-h-[36vh]">
               <div className="grid gap-1 p-2">
                 {(profiles ?? []).map((profile) => {
                   const selected = profile.id === selectedId;
@@ -164,6 +165,13 @@ export function StartInterviewDialog({
             </ScrollArea>
           )}
         </div>
+
+        {/* 音频检查：开始前确认麦克风进得去、扬声器出得来。 */}
+        {!loading && !error && !empty && (
+          <div className="border-border shrink-0 border-t px-4 py-3">
+            <InterviewAudioCheck />
+          </div>
+        )}
 
         {!empty && (
           <div className="border-border flex shrink-0 items-center gap-3 border-t px-4 py-3">
