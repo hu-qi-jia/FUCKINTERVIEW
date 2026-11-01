@@ -3,6 +3,7 @@
 import {
   BookOpenIcon,
   ClipboardListIcon,
+  FilesIcon,
   HistoryIcon,
   HomeIcon,
   PanelLeftCloseIcon,
@@ -22,7 +23,13 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Top-level pages. Each renders its own Console and connection. */
-export type AppPage = "home" | "history" | "interview" | "mock" | "materials";
+export type AppPage =
+  | "home"
+  | "history"
+  | "interview"
+  | "mock"
+  | "materials"
+  | "documents";
 
 interface NavItem {
   id: AppPage;
@@ -47,6 +54,11 @@ function navItems(t: (key: string) => string): NavItem[] {
       id: "materials",
       label: t("nav.materials"),
       icon: <BookOpenIcon className="size-4 shrink-0" />,
+    },
+    {
+      id: "documents",
+      label: t("nav.documents"),
+      icon: <FilesIcon className="size-4 shrink-0" />,
     },
     {
       id: "history",

@@ -18,6 +18,7 @@ import type { createStore } from "jotai/vanilla";
 import {
   BotIcon,
   ChevronsLeftRightEllipsisIcon,
+  FilesIcon,
   GaugeIcon,
   InfoIcon,
   MessagesSquareIcon,
@@ -41,6 +42,7 @@ import { ConsoleBotAudioPanel } from "@/components/pipecat/console/bot-audio-pan
 import { ConsoleBotVideoPanel } from "@/components/pipecat/console/bot-video-panel";
 import { SmallWebRTCCodecSetter } from "@/components/pipecat/console/codec-setter";
 import { ConsoleConversationPanel } from "@/components/pipecat/console/conversation-panel";
+import { ConsoleDocumentsPanel } from "@/components/pipecat/console/documents-panel";
 import { ConsoleEventsPanel } from "@/components/pipecat/console/events-panel";
 import { ConsoleInfoPanel } from "@/components/pipecat/console/info-panel";
 import { ConsoleKeypadToggle } from "@/components/pipecat/console/keypad-toggle";
@@ -599,6 +601,12 @@ function ConsoleShell({
       <ConsoleEventsPanel collapsed={collapsed} className="h-full" />
     );
 
+  // 实时面试的底部条换成资料展示；事件日志只留给模拟面试的默认布局。
+  const documentsPanel = (collapsed: boolean) =>
+    noEvents ? null : (
+      <ConsoleDocumentsPanel collapsed={collapsed} className="h-full" />
+    );
+
   const toggleInfoPanel = () => {
     const handle = infoPanelRef.current;
     if (!handle) return;
@@ -744,7 +752,8 @@ function ConsoleShell({
               onLayoutChanged={verticalLayout.onLayoutChanged}
               className="gap-2"
             >
-              <ResizablePanel id="main" defaultSize="70%" minSize="50%">
+              {/* 主区域最低压到 28%，下面「其他资料」可以拉到七成高度看 PDF。 */}
+              <ResizablePanel id="main" defaultSize="70%" minSize="28%">
                 <ResizablePanelGroup
                   orientation="horizontal"
                   defaultLayout={horizontalLayout.defaultLayout}
@@ -787,7 +796,7 @@ function ConsoleShell({
               {!noEvents && <ResizableHandle withHandle />}
               {!noEvents && (
                 <ResizablePanel
-                  id="events"
+                  id="documents"
                   defaultSize={collapseEventsPanel ? "6%" : "30%"}
                   minSize="7%"
                   collapsible
@@ -800,7 +809,7 @@ function ConsoleShell({
                   }
                 >
                   <div className="h-full p-px">
-                    {eventsPanel(isEventsCollapsed)}
+                    {documentsPanel(isEventsCollapsed)}
                   </div>
                 </ResizablePanel>
               )}
@@ -828,8 +837,8 @@ function ConsoleShell({
                 {metricsPanel(false)}
               </TabsContent>
               {!noEvents && (
-                <TabsContent value="events" className="min-h-0 flex-1">
-                  {eventsPanel(false)}
+                <TabsContent value="documents" className="min-h-0 flex-1">
+                  {documentsPanel(false)}
                 </TabsContent>
               )}
               <TabsList className="mt-2 w-full">
@@ -853,10 +862,10 @@ function ConsoleShell({
                 </TabsTrigger>
                 {!noEvents && (
                   <TabsTrigger
-                    value="events"
-                    aria-label={t("console.tabs.events")}
+                    value="documents"
+                    aria-label={t("console.tabs.documents")}
                   >
-                    <ChevronsLeftRightEllipsisIcon />
+                    <FilesIcon />
                   </TabsTrigger>
                 )}
               </TabsList>

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import aiohttp
 from fastapi import File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from loguru import logger
 from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
@@ -49,6 +49,7 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_model_dir, save_settings
+from app import documents as documents_store
 from app import qa as qa_store
 from app import qa_import, qa_index
 from app import sessions as sessions_store
@@ -350,6 +351,64 @@ async def api_coach_apply(profile_id: str, request: Request):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
 
+# --------------------------------------------------------------------------
+# 其他资料：面试时展示用的 md / pdf
+#
+# 只做展示，不进 prompt、不进检索——上传的内容不会影响模型回答。
+# --------------------------------------------------------------------------
+@app.get("/api/documents")
+async def api_list_documents():
+    return {"documents": documents_store.list_documents()}
+
+
+@app.post("/api/documents")
+async def api_upload_document(file: UploadFile = File(...)):
+    data = await file.read()
+    try:
+        return documents_store.add_document(file.filename or "", data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        await file.close()
+
+
+@app.patch("/api/documents/{document_id}")
+async def api_rename_document(document_id: str, request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    title = str(payload.get("title") or "") if isinstance(payload, dict) else ""
+    try:
+        return documents_store.rename_document(document_id, title)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/documents/{document_id}")
+async def api_delete_document(document_id: str):
+    try:
+        documents_store.delete_document(document_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    return {"ok": True}
+
+
+@app.get("/api/documents/{document_id}/file")
+async def api_document_file(document_id: str):
+    """原件直出；FileResponse 自带 Range 支持，PDF 按需分片读取。"""
+    try:
+        path, entry = documents_store.document_file(document_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    media_type = (
+        "application/pdf" if entry["ext"] == "pdf" else "text/markdown; charset=utf-8"
+    )
+    return FileResponse(path, media_type=media_type)
+
+
 def _storage_payload() -> dict:
     return {**storage_info(), "modelDir": str(qa_index.model_dir())}
 
@@ -375,6 +434,7 @@ async def api_set_storage(request: Request):
         old_db = qa_store.db_path()
         old_terms = terms_store.db_path()
         old_sessions = sessions_store.db_path()
+        old_data_dir = Path(storage_info()["dataDir"])
         new_dir = set_data_dir(data_dir_value, migrate=bool(payload.get("migrate", True)))
         try:
             qa_store.migrate_db(old_db, Path(new_dir["dataDir"]) / qa_store.QA_FILENAME)
@@ -400,6 +460,12 @@ async def api_set_storage(request: Request):
             raise HTTPException(status_code=400, detail=str(e))
         except OSError as e:
             raise HTTPException(status_code=400, detail=f"迁移面试历史失败：{e}")
+        try:
+            documents_store.migrate_to(old_data_dir, Path(new_dir["dataDir"]))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise HTTPException(status_code=400, detail=f"迁移其他资料失败：{e}")
 
     return _storage_payload()
 

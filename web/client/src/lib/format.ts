@@ -56,3 +56,11 @@ export function formatPercent(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "–";
   return `${Math.round(value * 100)}%`;
 }
+
+/** 文件大小：B / KB / MB，资料列表用。 */
+export function formatBytes(value: number): string {
+  const bytes = Math.max(0, value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

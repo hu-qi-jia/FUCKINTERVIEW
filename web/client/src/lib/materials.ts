@@ -1,6 +1,6 @@
 /** 面试材料（面试档案）的前端数据模型与接口。 */
 
-import i18n from "@/i18n";
+import { json, request } from "@/lib/http";
 
 export type InterviewLanguage = "zh" | "en";
 export type CardStatus = "pending" | "generating" | "ready" | "failed";
@@ -112,39 +112,6 @@ export interface ProfilePatch {
   jobDescription?: Partial<MaterialSection>;
   cards?: ExperienceCard[];
   coachSlots?: CoachSlots;
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(url, init);
-  } catch (error) {
-    throw new Error(
-      i18n.t("materials.errors.network", {
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  }
-
-  if (!response.ok) {
-    const detail = await response
-      .json()
-      .then((data: { detail?: string }) => data.detail)
-      .catch(() => undefined);
-    throw new Error(
-      detail ||
-        i18n.t("materials.errors.http", { status: response.status }),
-    );
-  }
-  return (await response.json()) as T;
-}
-
-function json(method: string, body: unknown): RequestInit {
-  return {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  };
 }
 
 export async function listProfiles(): Promise<ProfileSummary[]> {

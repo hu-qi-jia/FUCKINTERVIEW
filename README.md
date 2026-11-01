@@ -14,6 +14,7 @@
 │   ├── providers.py             # 按配置构建 STT / LLM / TTS
 │   ├── materials.py             # 面试档案的本地 JSON 存储与数据目录
 │   ├── materials_ai.py          # 简历整合 / 经历单元 / 经历卡的提示词
+│   ├── documents.py             # 其他资料（md / pdf）的本地存储与目录迁移
 │   ├── qa.py                    # 问答库的 SQLite 存储、全文索引、去重
 │   ├── qa_index.py              # 向量模型、后台索引线程、混合检索
 │   ├── qa_import.py             # xlsx / csv / md 的解析、预览与导入
@@ -26,6 +27,8 @@
 │       └── qwen_tts.py          # Qwen TTS（DashScope 多模态生成接口）
 ├── config/settings.json         # 运行时配置（含密钥，勿提交）
 ├── config/profiles.json         # 面试档案（含个人简历，勿提交）
+├── config/documents.json        # 其他资料索引（勿提交）
+├── config/documents/            # 其他资料原件（md / pdf，勿提交）
 ├── config/qa.db                 # 问答库（SQLite，勿提交）
 ├── config/terms.db              # 术语库（SQLite，勿提交）
 ├── config/sessions.db           # 面试历史与转写（SQLite，勿提交）
@@ -51,7 +54,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 ## 界面与语言
 
-- 左侧导航：**首页**、**模拟面试**、**面试材料**、**历史记录** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（顶栏左侧按顺序摆四个页面图标，不再有下拉选择框）
+- 左侧导航：**首页**、**模拟面试**、**面试材料**、**其他资料**、**历史记录** 与 **设置**；桌面端展开、平板折叠为图标栏（悬停显示名称）、手机端隐藏（顶栏左侧按顺序摆五个页面图标，不再有下拉选择框）
 - **实时面试**：点「连接」先弹出系统音频选择器（选「整个屏幕」并勾选「分享系统音频」），
   采集面试官的系统声音；对话 / 回答 / 指标 三栏，栏间可拖拽改宽，指标栏拖窄到阈值后折叠成图标条
 - 实时面试建立两条会话：系统音频跑「STT + LLM」生成答案，麦克风只跑 STT 做复盘转写；
@@ -263,6 +266,24 @@ ASR 供应商侧的热词参数（`keywords` / `context`）**没有接**：默�
 PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 ```
 
+## 其他资料
+
+侧栏第四项「其他资料」：上传**逐字稿、作品集**这类面试时要摆在眼前的东西，支持 `.md` 与 `.pdf`，
+单个文件不超过 100MB。列表按上传时间倒序（最新的在最上面），点条目进入全宽预览，
+「…」菜单里可以重命名（只改显示名）或删除。上传支持拖拽到页面，也支持右上角按钮选择文件；
+同名文件自动加序号，不会覆盖。
+
+这份资料是**全局的、纯展示的**：不挂在任何一份面试档案下，也不进提示词、不进检索、
+不参与任何模型调用——上传什么都不会改变 AI 的回答。
+
+实时面试页的底部条就是这份列表：左边选资料，右边预览。PDF 单页渲染，可以翻页、按档位缩放
+（50%–300%，默认适应宽度）、放大后按住左键拖拽平移，`Ctrl + 滚轮` 以光标为中心缩放，
+`←`/`→`、`PageUp`/`PageDown` 翻页；Markdown 直接上下滚动阅读。预览器不做文字层
+（不能框选 PDF 文字），md 里的相对路径图片也解析不了，只支持外链图片。
+
+原件存在数据目录下的 `documents/`，索引是同目录的 `documents.json`；切换数据目录时会一起复制，
+目标目录已有 `documents.json` 则拒绝。
+
 ## 设置页
 
 点击右上角齿轮 ⚙ 打开，分两个标签页：「通用设置」（界面语言、主题、采集麦克风、数据目录）与
@@ -319,6 +340,11 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 | POST | `/api/profiles/{id}/coach/questions` | 取一张卡的补全清单（首次会生成 6 个问题） |
 | POST | `/api/profiles/{id}/coach/answer` | 保存一格回答（纯本地写盘） |
 | POST | `/api/profiles/{id}/coach/apply` | 把没写回的回答合并进经历卡 |
+| GET | `/api/documents` | 其他资料列表（新 → 旧） |
+| POST | `/api/documents` | 上传一份资料（multipart，字段 `file`） |
+| PATCH | `/api/documents/{id}` | 重命名（只改显示名） |
+| DELETE | `/api/documents/{id}` | 删除资料与原件 |
+| GET | `/api/documents/{id}/file` | 原件直出（支持 Range，PDF 按需分片） |
 | GET | `/api/storage` | 数据目录信息 |
 | PUT | `/api/storage` | 切换数据目录（默认迁移现有文件） |
 | POST | `/api/storage/open` | 在资源管理器中打开数据目录 |

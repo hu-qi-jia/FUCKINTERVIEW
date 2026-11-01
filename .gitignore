@@ -14,6 +14,9 @@ web/client/dist/
 config/settings.json
 # 面试档案（含个人简历，勿提交）
 config/profiles.json
+# 其他资料（含个人逐字稿与作品集，勿提交）
+config/documents.json
+config/documents/
 .env
 
 # 本地启动配置（含本机绝对路径）

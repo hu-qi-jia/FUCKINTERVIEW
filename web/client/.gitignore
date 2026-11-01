@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# pdf.js 运行时资源，由 npm run pdfjs-assets 从 node_modules 复制
+public/pdfjs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

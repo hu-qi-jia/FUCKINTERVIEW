@@ -18,6 +18,8 @@ import {
 import { HistoryPage } from "@/components/history/history-page";
 import { HomePage } from "@/components/home/home-page";
 import type { MaterialsSegment } from "@/components/home/interview-prep-card";
+import { DocumentsPage } from "@/components/documents/documents-page";
+import { InterviewTimer } from "@/components/interview-timer";
 import { MaterialsPage } from "@/components/materials/materials-page";
 import {
   Console,
@@ -139,7 +141,10 @@ function Home() {
   const [page, setPage] = useState<AppPage>(() => {
     const stored = localStorage.getItem(PAGE_KEY);
     // 面试页现在由首页「开始面试」进入；旧版本存的 interview 一律回到首页。
-    return stored === "history" || stored === "mock" || stored === "materials"
+    return stored === "history" ||
+      stored === "mock" ||
+      stored === "materials" ||
+      stored === "documents"
       ? stored
       : "home";
   });
@@ -388,6 +393,14 @@ function Home() {
     </>
   );
 
+  // 顶栏最左侧的面试计时器；每场面试换一个 key，重新从 00:00 开始。
+  const liveLeadingSlot = (
+    <>
+      <InterviewTimer key={interviewId} />
+      {mobileNav}
+    </>
+  );
+
   return (
     <TooltipProvider>
       <div
@@ -511,12 +524,12 @@ function Home() {
                   }}
                   onConnectionStateChange={handleLiveStateChange}
                   layout="interview"
-                  layoutPersistenceKey="live-interview-v2"
+                  layoutPersistenceKey="live-interview-v3"
                   collapseMetricsPanel
                   noLogo
                   titleText=""
                   noDTMF
-                  leadingSlot={mobileNav}
+                  leadingSlot={liveLeadingSlot}
                   headerSlot={liveHeaderSlot}
                   onClient={(client) => {
                     onClient(client);
@@ -543,6 +556,12 @@ function Home() {
               leadingSlot={mobileNav}
               headerSlot={mockHeaderSlot}
               onClient={onClient}
+            />
+          ) : page === "documents" ? (
+            <DocumentsPage
+              dataVersion={dataVersion}
+              leadingExtras={mobileNav}
+              headerExtras={pageHeaderExtras}
             />
           ) : (
             <MaterialsPage

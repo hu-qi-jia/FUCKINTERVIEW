@@ -3,6 +3,12 @@ import { initReactI18next } from "react-i18next";
 
 const zh = {
   app: { title: "面试语音助手" },
+  common: {
+    request: {
+      network: "网络请求失败：{{message}}",
+      http: "请求失败（HTTP {{status}}）",
+    },
+  },
   nav: {
     home: "首页",
     history: "历史记录",
@@ -13,6 +19,7 @@ const zh = {
     expand: "展开导航",
     resize: "调整导航栏宽度",
     materials: "面试材料",
+    documents: "其他资料",
   },
   home: {
     title: "控制台",
@@ -317,6 +324,7 @@ const zh = {
       botMedia: "机器人媒体",
       info: "信息",
       events: "事件",
+      documents: "其他资料",
     },
   },
   connect: {
@@ -441,6 +449,48 @@ const zh = {
     totalTokens: "总 token",
     cacheReadTokens: "缓存读取 token",
     reasoningTokens: "推理 token",
+  },
+  documents: {
+    title: "其他资料",
+    upload: "上传资料",
+    count: "{{count}} 份资料",
+    uploadedAt: "上传于 {{time}}",
+    retry: "重试",
+    remove: "移除该文件",
+    actions: "更多操作",
+    rename: "重命名",
+    delete: "删除",
+    deleteConfirm: "删除「{{name}}」？文件会从磁盘移除。",
+    confirmDelete: "删除",
+    cancel: "取消",
+    back: "返回列表",
+    loading: "加载中…",
+    loadFailed: "加载失败：{{message}}",
+    invalidType: "只支持 .md 和 .pdf 文件",
+    tooLarge: "文件超过 100MB",
+    dropHint: "松开即可上传",
+    empty: {
+      title: "还没有其他资料",
+      hint: "把逐字稿或作品集拖进来，支持 Markdown 与 PDF，单个文件不超过 100MB。",
+    },
+    viewer: {
+      previousPage: "上一页",
+      nextPage: "下一页",
+      pageInput: "页码",
+      zoomIn: "放大",
+      zoomOut: "缩小",
+      fitWidth: "适应宽度",
+      canvas: "PDF 页面",
+      error: "无法预览此 PDF",
+      password: "该 PDF 已加密，无法预览",
+      decodeFailed: "无法解析该文件（请确认是 UTF-8 编码的 Markdown）",
+      empty: "文件是空的",
+    },
+    panel: {
+      list: "资料列表",
+      empty: "还没有资料，可在面试前到「其他资料」上传",
+      loadFailed: "资料加载失败",
+    },
   },
   events: {
     title: "事件",
@@ -719,6 +769,12 @@ const zh = {
 
 const en = {
   app: { title: "Interview Voice Assistant" },
+  common: {
+    request: {
+      network: "Request failed: {{message}}",
+      http: "Request failed (HTTP {{status}})",
+    },
+  },
   nav: {
     home: "Home",
     history: "History",
@@ -729,6 +785,7 @@ const en = {
     expand: "Expand sidebar",
     resize: "Resize sidebar",
     materials: "Interview materials",
+    documents: "Other materials",
   },
   home: {
     title: "Dashboard",
@@ -1039,6 +1096,7 @@ const en = {
       botMedia: "Bot media",
       info: "Info",
       events: "Events",
+      documents: "Other materials",
     },
   },
   connect: {
@@ -1160,6 +1218,49 @@ const en = {
     totalTokens: "Total tokens",
     cacheReadTokens: "Cache read tokens",
     reasoningTokens: "Reasoning tokens",
+  },
+  documents: {
+    title: "Other materials",
+    upload: "Upload",
+    count: "{{count}} files",
+    uploadedAt: "Uploaded {{time}}",
+    retry: "Retry",
+    remove: "Remove file",
+    actions: "More actions",
+    rename: "Rename",
+    delete: "Delete",
+    deleteConfirm: "Delete “{{name}}”? The file is removed from disk.",
+    confirmDelete: "Delete",
+    cancel: "Cancel",
+    back: "Back to list",
+    loading: "Loading…",
+    loadFailed: "Could not load: {{message}}",
+    invalidType: "Only .md and .pdf files are supported",
+    tooLarge: "File is larger than 100MB",
+    dropHint: "Drop to upload",
+    empty: {
+      title: "No other materials yet",
+      hint: "Drop a transcript or portfolio here. Markdown and PDF, up to 100MB each.",
+    },
+    viewer: {
+      previousPage: "Previous page",
+      nextPage: "Next page",
+      pageInput: "Page number",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      fitWidth: "Fit width",
+      canvas: "PDF page",
+      error: "Could not display this PDF",
+      password: "This PDF is password-protected",
+      decodeFailed: "Could not read this file (expected UTF-8 Markdown)",
+      empty: "This file is empty",
+    },
+    panel: {
+      list: "Documents",
+      empty:
+        "No documents yet. Upload them under Other materials before the interview.",
+      loadFailed: "Could not load documents",
+    },
   },
   events: {
     title: "Events",
