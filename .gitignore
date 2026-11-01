@@ -52,3 +52,6 @@ config/sessions.db-wal
 config/sessions.db-shm
 config/models/
 config/imports/
+
+# pipecat 清理前的完整源码备份（见 README「pipecat 精简」）
+/backups/

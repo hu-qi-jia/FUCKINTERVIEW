@@ -36,7 +36,7 @@
 ├── docs/qa-library-design.md    # 问答库的设计说明
 ├── web/client/                  # 前端源码（pipecat-prebuilt 的 React 应用）
 │   └── dist/                    # npm run build 产物，server.py 托管在 /client
-├── pipecat/                     # Pipecat 源码（editable 安装）
+├── pipecat/                     # Pipecat 源码（editable 安装，已按本项目用到的部分精简）
 └── .venv/                       # Python 3.12 虚拟环境
 ```
 
@@ -404,3 +404,24 @@ npm --prefix web/client run dev
 浮层滚动条，不占内容宽度）；新增页面也用它，别再写 `overflow-y-auto`。多选框统一用
 `components/ui/checkbox.tsx`。`textarea`、下拉/选择器浮层这类包不到的原生滚动区由 `index.css` 里的
 `scrollbar-width: thin` 兜底，文本框右下角的拖拽手柄也在那里换成了细斜线。
+
+## pipecat 精简
+
+`pipecat/` 原本是上游仓库的完整克隆（250MB，其中 197MB 是 git 历史），实际用到的只是很小一部分。
+清理以「本项目 import 得到的模块」为准：从 `server.py`、`app/`、`tests/` 出发做静态可达性分析
+（含函数内的延迟导入），716 个模块里保留 273 个。
+
+- **删掉的**：没用到的厂商服务（Google / AWS / Azure / xAI / Groq / …）、`cli`、`flows`、
+  `classifiers`、`extensions`、没被 runner 引用的 transports（websocket client 等）、
+  `workers` 里的 llm / ui / proxy 子包，以及仓库级的 `examples/`、`docs/`、`tests/`、`evals/`、
+  `scripts/`、CI 配置等。工作区从 54MB 降到 19MB
+- **保留的**：正文用到的服务与基类（OpenAI / Anthropic / Qwen / MiniMax / Deepgram / Cartesia /
+  ElevenLabs）、smallwebrtc 传输、runner、`pipecat.tests.utils`（项目测试在用），
+  以及 `audio/vad/data`、`audio/turn/smart_turn/data` 里的 Silero VAD / Smart Turn v3 ONNX 模型——
+  这两个目录是按路径加载的运行时资源，没有 import 引用，不能按可达性删
+- **备份**：`backups/pipecat-before-cleanup-20261101.zip`（29MB，已在 `.gitignore` 里）；
+  `pipecat/` 自己的仓库也留了标签 `pipecat-before-cleanup-20261101`，精简本身提在本地分支
+  `local/cleanup-20261101` 上（这个克隆指向上游，推不上去）
+- **还原**：`git -C pipecat checkout pipecat-before-cleanup-20261101 -- .`，或者解压备份覆盖
+- **换机器**：仍按原方式 `pip install -e pipecat`；以后要 `git pull` 上游更新，
+  先切回 `main` 再合并，别把这条本地分支推上去
