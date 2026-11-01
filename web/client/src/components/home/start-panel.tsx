@@ -56,12 +56,12 @@ export function StartPanel({
     >
       <div className="flex min-w-0 flex-col gap-3 px-1 py-2 lg:col-span-3">
         <Wordmark />
-        {/* 主操作：整栏宽的品牌绿按钮。上亮下暗的渐变当受光面，顶部一道内高光；
+        {/* 主操作：和字标同宽（占这一栏的 75%）。上亮下暗的渐变当受光面，顶部一道内高光；
             hover 抬起来并划过一道亮光，按下再压回去。 */}
         <Button
           onClick={onStart}
           className={cn(
-            "text-background group/button relative h-14 w-full overflow-hidden",
+            "text-background group/button relative h-14 w-[75%] overflow-hidden",
             "rounded-[0.6rem] px-6 text-base font-semibold tracking-wide",
             "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
             "shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_12px_30px_-14px_var(--heat-3)]",
