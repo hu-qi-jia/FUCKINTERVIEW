@@ -1,5 +1,6 @@
 "use client";
 
+import type { PipecatClient } from "@pipecat-ai/client-js";
 import { CheckIcon, FileTextIcon, MicIcon, XIcon } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,13 +15,15 @@ import { cn } from "@/lib/utils";
 
 /**
  * 开始面试前先选档案。选中的档案会写进实时面试的连接参数，
- * AI 只按这份档案里的事实回答。
+ * AI 只按这份档案里的事实回答；档案下面是音频检查，
+ * 底部才是「开始面试」。
  */
 export function StartInterviewDialog({
   open,
   profiles,
   error,
   selectedId,
+  audioClient,
   onSelect,
   onConfirm,
   onClose,
@@ -32,6 +35,8 @@ export function StartInterviewDialog({
   profiles: ProfileSummary[] | null;
   error: string | null;
   selectedId: string | null;
+  /** 设备选择复用的客户端（侧栏那一路），null 时显示加载中。 */
+  audioClient?: PipecatClient | null;
   onSelect: (id: string) => void;
   onConfirm: () => void;
   onClose: () => void;
@@ -53,6 +58,7 @@ export function StartInterviewDialog({
 
   const loading = profiles === null && !error;
   const empty = (profiles?.length ?? 0) === 0;
+  const showContent = !loading && !error && !empty;
 
   return (
     <div
@@ -80,45 +86,47 @@ export function StartInterviewDialog({
           </Button>
         </div>
 
-        <div className="min-h-0 flex-1">
-          {loading && (
-            <div className="text-muted-foreground flex h-48 items-center justify-center gap-2 text-sm">
-              <Spinner className="size-4" />
-              {t("home.start.loading")}
-            </div>
-          )}
-
-          {error && (
-            <div className="flex h-48 flex-col items-center justify-center gap-3 px-6 text-center">
-              <p className="text-destructive text-sm">
-                {t("home.start.loadFailed", { message: error })}
-              </p>
-              <Button size="sm" variant="outline" onClick={onRetry}>
-                {t("materials.retry")}
-              </Button>
-            </div>
-          )}
-
-          {!loading && !error && empty && (
-            <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-              <FileTextIcon className="text-muted-foreground size-8" />
-              <div className="grid gap-1">
-                <p className="text-sm font-medium">
-                  {t("home.start.emptyTitle")}
-                </p>
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  {t("home.start.emptyHint")}
-                </p>
+        {/* 档案列表和音频模块一起滚：列表本身不再单独截断。
+            高度上限留给页头（3.5rem）和页脚（3.5rem），凑不满就不出滚动条。 */}
+        <ScrollArea className="max-h-[calc(86vh-7rem)]">
+          <div className="grid gap-3 p-3">
+            {loading && (
+              <div className="text-muted-foreground flex h-40 items-center justify-center gap-2 text-sm">
+                <Spinner className="size-4" />
+                {t("home.start.loading")}
               </div>
-              <Button size="sm" onClick={onCreate}>
-                {t("home.start.create")}
-              </Button>
-            </div>
-          )}
+            )}
 
-          {!loading && !error && !empty && (
-            <ScrollArea className="max-h-[36vh]">
-              <div className="grid gap-1 p-2">
+            {error && (
+              <div className="flex h-40 flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="text-destructive text-sm">
+                  {t("home.start.loadFailed", { message: error })}
+                </p>
+                <Button size="sm" variant="outline" onClick={onRetry}>
+                  {t("materials.retry")}
+                </Button>
+              </div>
+            )}
+
+            {!loading && !error && empty && (
+              <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+                <FileTextIcon className="text-muted-foreground size-8" />
+                <div className="grid gap-1">
+                  <p className="text-sm font-medium">
+                    {t("home.start.emptyTitle")}
+                  </p>
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    {t("home.start.emptyHint")}
+                  </p>
+                </div>
+                <Button size="sm" onClick={onCreate}>
+                  {t("home.start.create")}
+                </Button>
+              </div>
+            )}
+
+            {showContent && (
+              <div className="grid gap-1">
                 {(profiles ?? []).map((profile) => {
                   const selected = profile.id === selectedId;
                   return (
@@ -162,16 +170,11 @@ export function StartInterviewDialog({
                   );
                 })}
               </div>
-            </ScrollArea>
-          )}
-        </div>
+            )}
 
-        {/* 音频检查：开始前确认麦克风进得去、扬声器出得来。 */}
-        {!loading && !error && !empty && (
-          <div className="border-border shrink-0 border-t px-4 py-3">
-            <InterviewAudioCheck />
+            {showContent && <InterviewAudioCheck client={audioClient} />}
           </div>
-        )}
+        </ScrollArea>
 
         {!empty && (
           <div className="border-border flex shrink-0 items-center gap-3 border-t px-4 py-3">

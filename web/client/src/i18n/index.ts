@@ -94,17 +94,8 @@ const zh = {
       audioTitle: "音频",
       mic: "麦克风",
       speaker: "扬声器",
-      systemDefault: "系统默认",
-      micLevel: "麦克风电平",
-      testSpeaker: "试听",
       audioHint:
-        "说话时右侧电平条会跳动；点「试听」确认声音从选中的扬声器出来。",
-      micBlocked:
-        "麦克风没有授权，电平条不会动；允许后刷新页面就能看到设备名称。",
-      micFailed: "麦克风打不开，换一个设备再试。",
-      micUnsupported: "当前浏览器不支持选择音频设备。",
-      speakerFailed:
-        "试听失败，可能不支持切换输出设备；可以在系统里换一个扬声器。",
+        "面试官的声音靠「共享系统音频」采集；这里选的是你的麦克风和播放设备。",
     },
   },
   history: {
@@ -822,17 +813,8 @@ const en = {
       audioTitle: "Audio",
       mic: "Microphone",
       speaker: "Speaker",
-      systemDefault: "System default",
-      micLevel: "Microphone level",
-      testSpeaker: "Test",
       audioHint:
-        "Speak — the level bar should move; press Test to hear a tone from the selected speaker.",
-      micBlocked:
-        "The microphone is blocked, so the level bar stays flat. Allow it and reload to see device names.",
-      micFailed: "Could not open the microphone. Try another device.",
-      micUnsupported: "This browser cannot pick audio devices.",
-      speakerFailed:
-        "Test failed — switching output devices may be unsupported. Pick another speaker in the OS.",
+        "The interviewer's audio comes from system-audio sharing; these pick your microphone and playback device.",
     },
   },
   history: {

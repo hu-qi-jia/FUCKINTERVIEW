@@ -1,5 +1,6 @@
 "use client";
 
+import type { PipecatClient } from "@pipecat-ai/client-js";
 import { CalendarDaysIcon } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -43,6 +44,7 @@ export function HomePage({
   leadingExtras,
   headerExtras,
   defaultProfileId,
+  audioClient,
   onStartInterview,
   onOpenMaterials,
   onOpenSession,
@@ -54,6 +56,8 @@ export function HomePage({
   leadingExtras?: ReactNode;
   headerExtras?: ReactNode;
   defaultProfileId?: string | null;
+  /** 开始面试弹窗里的音频设备选择复用这路客户端。 */
+  audioClient?: PipecatClient | null;
   onStartInterview: (profileId: string) => void;
   onOpenMaterials: (segment: MaterialsSegment) => void;
   onOpenSession: (id: number) => void;
@@ -250,6 +254,7 @@ export function HomePage({
         profiles={profiles}
         error={profileError}
         selectedId={selectedId}
+        audioClient={audioClient}
         onSelect={setSelectedId}
         onConfirm={confirmStart}
         onClose={() => setDialogOpen(false)}

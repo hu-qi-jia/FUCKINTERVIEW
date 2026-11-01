@@ -436,6 +436,7 @@ function Home() {
               leadingExtras={mobileNav}
               headerExtras={pageHeaderExtras}
               defaultProfileId={liveProfileId}
+              audioClient={live.micClient}
               onStartInterview={startInterview}
               onOpenMaterials={openMaterials}
               onOpenSession={openSession}
