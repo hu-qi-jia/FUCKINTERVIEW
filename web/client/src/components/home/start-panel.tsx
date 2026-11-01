@@ -1,6 +1,5 @@
 "use client";
 
-import { MicIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Wordmark } from "@/components/home/wordmark";
@@ -66,20 +65,16 @@ export function StartPanel({
             unit={t("home.stats.sessionsUnit")}
           />
         </div>
-        {/* 主操作：品牌绿实心按钮，麦克风放在一枚小圆片里，避免和处处都是的
-            黑白按钮混在一起。圆形圆角 + 一点绿色投影，像一颗实体按键。 */}
+        {/* 主操作：品牌绿实心按钮，用常规圆角，避免和处处都是的黑白按钮混在一起。 */}
         <Button
           onClick={onStart}
           className={cn(
             "bg-heat-4 text-background hover:bg-heat-3",
-            "h-12 w-full gap-2.5 rounded-full px-5 text-sm font-semibold",
+            "h-12 w-full rounded-xl px-5 text-sm font-semibold",
             "shadow-[0_10px_24px_-12px_var(--heat-3)]",
             "xl:w-auto xl:shrink-0"
           )}
         >
-          <span className="bg-background/15 grid size-7 place-items-center rounded-full">
-            <MicIcon className="size-4" />
-          </span>
           {t("home.startButton")}
         </Button>
       </div>
