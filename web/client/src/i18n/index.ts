@@ -94,8 +94,6 @@ const zh = {
       audioTitle: "音频",
       mic: "麦克风",
       speaker: "扬声器",
-      audioHint:
-        "面试官的声音靠「共享系统音频」采集；这里选的是你的麦克风和播放设备。",
     },
   },
   history: {
@@ -813,8 +811,6 @@ const en = {
       audioTitle: "Audio",
       mic: "Microphone",
       speaker: "Speaker",
-      audioHint:
-        "The interviewer's audio comes from system-audio sharing; these pick your microphone and playback device.",
     },
   },
   history: {

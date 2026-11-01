@@ -9,9 +9,11 @@ import { DeviceSelect } from "@/components/pipecat/device-select";
 import { Spinner } from "@/components/ui/spinner";
 
 /**
- * 开始面试前的音频检查。设备选择直接用侧栏那套（同一个 Pipecat 客户端、
- * 同一份设备名和「被禁止 / 被占用」状态），选定即生效，
- * 也会照常记进浏览器偏好，供接下来的两路会话使用。
+ * 开始面试前的音频检查：麦克风 / 扬声器直接用侧栏那套设备选择
+ * （同一个 Pipecat 客户端、同一份设备名和「被禁止 / 被占用」状态），
+ * 选定即生效，也会照常记进浏览器偏好。
+ *
+ * 只出内容，边框和位置由外层的音频弹窗负责。
  */
 export function InterviewAudioCheck({
   client,
@@ -28,18 +30,8 @@ export function InterviewAudioCheck({
   }, [client]);
 
   return (
-    <section
-      aria-label={t("home.start.audioTitle")}
-      className="border-border grid gap-2.5 rounded-xl border p-3"
-    >
-      <div className="grid gap-0.5">
-        <span className="text-xs font-medium">
-          {t("home.start.audioTitle")}
-        </span>
-        <span className="text-muted-foreground text-[11px] leading-relaxed">
-          {t("home.start.audioHint")}
-        </span>
-      </div>
+    <div className="grid gap-2 p-3">
+      <span className="text-xs font-medium">{t("home.start.audioTitle")}</span>
 
       {client ? (
         <PipecatClientProvider client={client}>
@@ -48,19 +40,13 @@ export function InterviewAudioCheck({
               <span className="text-muted-foreground w-12 shrink-0 text-xs">
                 {t("home.start.mic")}
               </span>
-              <DeviceSelect
-                kind="audioinput"
-                className="h-8 min-w-0 flex-1"
-              />
+              <DeviceSelect kind="audioinput" className="h-8 min-w-0 flex-1" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground w-12 shrink-0 text-xs">
                 {t("home.start.speaker")}
               </span>
-              <DeviceSelect
-                kind="audiooutput"
-                className="h-8 min-w-0 flex-1"
-              />
+              <DeviceSelect kind="audiooutput" className="h-8 min-w-0 flex-1" />
             </div>
           </div>
         </PipecatClientProvider>
@@ -70,6 +56,6 @@ export function InterviewAudioCheck({
           {t("devices.loading")}
         </div>
       )}
-    </section>
+    </div>
   );
 }
