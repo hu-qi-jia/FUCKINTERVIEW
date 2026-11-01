@@ -215,12 +215,12 @@ export function MaterialsPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 与其他页面一致的顶栏：左边是页面标题，小屏放页面切换和设置入口。 */}
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+      <header className="app-drag app-page-header flex h-12 shrink-0 items-center gap-2 border-b px-3">
         {leadingExtras}
         <h1 className="hidden min-w-0 truncate text-sm font-semibold md:block">
           {t("nav.materials")}
         </h1>
-        <div className="ml-auto flex min-w-0 items-center gap-1.5">
+        <div className="app-no-drag ml-auto flex min-w-0 items-center gap-1.5">
           {headerExtras}
         </div>
       </header>

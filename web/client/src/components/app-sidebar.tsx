@@ -193,7 +193,7 @@ export function AppSidebar({
     <aside className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div
         className={cn(
-          "flex h-12 shrink-0 items-center border-b border-sidebar-border",
+          "app-drag flex h-12 shrink-0 items-center border-b border-sidebar-border",
           collapsed ? "justify-center px-2" : "gap-2 px-3",
         )}
       >
@@ -204,6 +204,7 @@ export function AppSidebar({
             aria-label={t("nav.expand")}
             disabled={locked}
             onClick={onToggle}
+            className="app-no-drag"
           >
             <PanelLeftOpenIcon />
           </Button>
@@ -218,6 +219,7 @@ export function AppSidebar({
               aria-label={t("nav.collapse")}
               disabled={locked}
               onClick={onToggle}
+              className="app-no-drag"
             >
               <PanelLeftCloseIcon />
             </Button>

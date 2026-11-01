@@ -209,3 +209,17 @@ body,
   scrollbar-gutter: stable;
 }
 
+
+/* 桌面端（Electron）：窗口没有原生边框，页头本身就是拖拽区，
+   右端让出位置给自绘的最小化 / 最大化 / 关闭按钮。 */
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+html[data-desktop] .app-page-header {
+  padding-right: 7.5rem;
+}

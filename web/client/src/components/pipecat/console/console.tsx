@@ -667,7 +667,7 @@ function ConsoleShell({
     >
       <header
         data-slot="console-header"
-        className="flex items-center gap-2 border-b px-3 py-2"
+        className="app-drag app-page-header flex h-12 items-center gap-2 border-b px-3"
       >
         {leadingSlot && (
           <div className="flex shrink-0 items-center gap-1">{leadingSlot}</div>
@@ -682,7 +682,7 @@ function ConsoleShell({
             {titleText}
           </strong>
         )}
-        <div className="ml-auto flex min-w-0 items-center justify-end gap-1">
+        <div className="app-no-drag ml-auto flex min-w-0 items-center justify-end gap-1">
           {/* Slot content may shrink; the console's own controls never do. */}
           {headerSlot && (
             <div className="flex min-w-0 items-center gap-1">{headerSlot}</div>
