@@ -18,12 +18,12 @@ function StatBlock({
 }) {
   return (
     <div className="min-w-0">
-      <span className="text-muted-foreground block truncate text-sm">
+      <span className="text-muted-foreground block truncate text-base">
         {label}
       </span>
-      <span className="mt-1.5 flex items-baseline gap-1 text-3xl leading-none font-semibold tabular-nums">
+      <span className="mt-1.5 flex items-baseline gap-1 text-4xl leading-none font-semibold tabular-nums">
         {value}
-        <span className="text-muted-foreground text-sm font-normal">
+        <span className="text-muted-foreground text-base font-normal">
           {unit}
         </span>
       </span>
@@ -77,7 +77,7 @@ export function StartPanel({
 
       <div className="flex items-center py-2 pl-1 lg:col-span-2">
         {/* 宽屏下两个指标靠在一起，右边缘和下面一行卡片对齐。 */}
-        <div className="grid w-full grid-cols-2 gap-2.5 lg:flex lg:justify-end lg:gap-14">
+        <div className="grid w-full grid-cols-2 gap-2.5 lg:flex lg:justify-end lg:gap-18">
           <StatBlock
             label={t("home.stats.totalSessions")}
             value={String(summary?.totalSessions ?? "–")}
