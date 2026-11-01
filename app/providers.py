@@ -15,6 +15,7 @@ from pipecat.services.qwen.llm import QwenLLMService
 from pipecat.transcriptions.language import Language
 
 from app.config import DEFAULT_SYSTEM_PROMPT
+from app.services.minimax_stt import DEFAULT_BASE_URL as MINIMAX_ASR_BASE_URL
 from app.services.minimax_stt import MiniMaxSTTService
 from app.services.qwen_stt import QwenSTTService
 from app.services.qwen_tts import QwenTTSService
@@ -67,7 +68,8 @@ def build_stt(section: dict[str, Any]):
     if provider == "minimax":
         return MiniMaxSTTService(
             api_key=_require_key(section, "ASR (MiniMax)", "MINIMAX_API_KEY"),
-            base_url=base_url or "https://api.minimax.io/v1",
+            # 国内平台是 api.minimax.cn；api.minimax.io 是国际站，国内 Key 在那边会 401。
+            base_url=base_url or MINIMAX_ASR_BASE_URL,
             model=model or "asr-1.0",
             language=language,
         )

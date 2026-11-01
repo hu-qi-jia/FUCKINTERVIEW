@@ -275,9 +275,12 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 
 几个易错点：
 
-- **MiniMax** 需要额外的 `Group ID`；国内域名把 Base URL 填成 `https://api.minimaxi.chat/v1/t2a_v2`
-- **MiniMax ASR** 走 `POST {base_url}/speech_to_text`（multipart，模型 `asr-1.0`），
-  国内 Base URL 用 `https://api.minimax.cn/v1`
+- **MiniMax** 需要额外的 `Group ID`；国内域名 Base URL 填 `https://api.minimax.cn/v1`
+  （代码会补成 `/t2a_v2`）
+- **MiniMax ASR** 走 `POST {base_url}/speech_to_text`（multipart，模型 `asr-1.0`）：
+  默认带 `stream=true`，接口按 SSE 逐段推 `delta`，服务边收边推中间结果、`finish` 后出最终转写；
+  国内 Base URL 用 `https://api.minimax.cn/v1`。国内 Key 打到国际站 `api.minimax.io` 会报
+  `401 invalid api key`
 - **Qwen ASR / TTS / LLM** 都使用阿里云百炼的 `DASHSCOPE_API_KEY`，ASR 走 OpenAI 兼容的
   `/chat/completions`（音频以 base64 Data URL 传入），因此是 VAD 分段后整段识别，
   不是逐字流式输出

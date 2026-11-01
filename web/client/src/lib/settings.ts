@@ -68,7 +68,8 @@ export const ASR_PROVIDERS: ProviderMeta[] = [
     value: "minimax",
     label: "MiniMax",
     defaultModel: "asr-1.0",
-    defaultBaseUrl: "https://api.minimax.io/v1",
+    // 国内平台；国际站是 api.minimax.io，国内 Key 在那边会 401。
+    defaultBaseUrl: "https://api.minimax.cn/v1",
     models: ["asr-1.0"],
   },
   {
