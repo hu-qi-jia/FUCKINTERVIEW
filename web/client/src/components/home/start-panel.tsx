@@ -47,13 +47,13 @@ export function StartPanel({
   const { t } = useTranslation();
 
   return (
-    <div className={cn("grid gap-4 lg:grid-cols-5", className)}>
+    <div className={cn("grid gap-4 lg:grid-cols-5 lg:gap-14", className)}>
       <div className="flex min-w-0 items-center px-1 py-2 lg:col-span-3">
         <Wordmark />
       </div>
 
       <div className="flex flex-col gap-4 px-1 py-2 lg:col-span-2 xl:flex-row xl:items-center">
-        <div className="grid flex-1 grid-cols-2 gap-4">
+        <div className="grid flex-1 grid-cols-2 gap-2.5">
           <StatBlock
             label={t("home.stats.totalSessions")}
             value={String(summary?.totalSessions ?? "–")}
@@ -65,13 +65,19 @@ export function StartPanel({
             unit={t("home.stats.sessionsUnit")}
           />
         </div>
-        {/* 主操作：品牌绿实心按钮，用常规圆角，避免和处处都是的黑白按钮混在一起。 */}
+        {/* 主操作：品牌绿实心按钮。顶上一道内高光当受光面，底下垫一层绿光，
+            hover 抬一下、按下压回去，做出实体按键的手感。 */}
         <Button
           onClick={onStart}
           className={cn(
-            "bg-heat-4 text-background hover:bg-heat-3",
-            "h-12 w-full rounded-xl px-5 text-sm font-semibold",
-            "shadow-[0_10px_24px_-12px_var(--heat-3)]",
+            "text-background",
+            "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
+            "h-12 w-full min-w-28 rounded-xl px-7 text-sm font-semibold tracking-wide",
+            "shadow-[inset_0_1px_0_oklch(1_0_0/25%),0_10px_26px_-14px_var(--heat-3)]",
+            "transition-[transform,box-shadow,filter] duration-200 ease-out",
+            "hover:-translate-y-0.5 hover:brightness-110",
+            "hover:shadow-[inset_0_1px_0_oklch(1_0_0/30%),0_16px_32px_-14px_var(--heat-3)]",
+            "active:translate-y-0 active:brightness-95",
             "xl:w-auto xl:shrink-0"
           )}
         >
