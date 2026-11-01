@@ -48,7 +48,8 @@ export function StartPanel({
 
   return (
     <div className={cn("grid gap-4 lg:grid-cols-5 lg:gap-14", className)}>
-      <div className="flex min-w-0 items-center px-1 py-2 lg:col-span-3">
+      {/* 字标和右侧的「累计场次」顶端对齐，所以这一栏用 items-start。 */}
+      <div className="flex min-w-0 items-start px-1 py-2 lg:col-span-3">
         <Wordmark />
       </div>
 
@@ -65,34 +66,28 @@ export function StartPanel({
             unit={t("home.stats.sessionsUnit")}
           />
         </div>
-        {/* 主操作：整栏宽的品牌绿按钮。上亮下暗的渐变当受光面，顶部一道内高光，
-            外面一圈会呼吸的绿色光晕；hover 抬起来并划过一道亮光，按下再压回去。 */}
-        <span className="relative block">
+        {/* 主操作：整栏宽的品牌绿按钮。上亮下暗的渐变当受光面，顶部一道内高光；
+            hover 抬起来并划过一道亮光，按下再压回去。 */}
+        <Button
+          onClick={onStart}
+          className={cn(
+            "text-background group/button relative h-14 w-full overflow-hidden",
+            "rounded-[0.6rem] px-6 text-base font-semibold tracking-wide",
+            "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
+            "shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_12px_30px_-14px_var(--heat-3)]",
+            "transition-[transform,box-shadow,filter] duration-200 ease-out",
+            "hover:-translate-y-0.5 hover:brightness-110",
+            "hover:shadow-[inset_0_1px_0_oklch(1_0_0/34%),0_18px_38px_-14px_var(--heat-3)]",
+            "active:translate-y-0 active:brightness-95"
+          )}
+        >
+          {/* hover 时从左划到右的一道高光。 */}
           <span
             aria-hidden
-            className="cta-halo bg-heat-4/35 pointer-events-none absolute -inset-[3px] rounded-[0.7rem] blur-[10px]"
+            className="pointer-events-none absolute inset-0 -translate-x-[130%] bg-[linear-gradient(100deg,transparent_40%,oklch(1_0_0/22%)_50%,transparent_60%)] transition-transform duration-700 ease-out group-hover/button:translate-x-[130%]"
           />
-          <Button
-            onClick={onStart}
-            className={cn(
-              "text-background group/button relative h-14 w-full overflow-hidden",
-              "rounded-[0.6rem] px-6 text-base font-semibold tracking-wide",
-              "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
-              "shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_12px_30px_-14px_var(--heat-3)]",
-              "transition-[transform,box-shadow,filter] duration-200 ease-out",
-              "hover:-translate-y-0.5 hover:brightness-110",
-              "hover:shadow-[inset_0_1px_0_oklch(1_0_0/34%),0_18px_38px_-14px_var(--heat-3)]",
-              "active:translate-y-0 active:brightness-95"
-            )}
-          >
-            {/* hover 时从左划到右的一道高光。 */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-0 -translate-x-[130%] bg-[linear-gradient(100deg,transparent_40%,oklch(1_0_0/22%)_50%,transparent_60%)] transition-transform duration-700 ease-out group-hover/button:translate-x-[130%]"
-            />
-            <span className="relative">{t("home.startButton")}</span>
-          </Button>
-        </span>
+          <span className="relative">{t("home.startButton")}</span>
+        </Button>
       </div>
     </div>
   );
