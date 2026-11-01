@@ -32,8 +32,9 @@ function StatBlock({
 }
 
 /**
- * 首页第一行：左边是字标主视觉，右边是统计数字 + 开始面试按钮。
- * 右侧不套卡片，直接落在页面底色上，只留数字和按钮本身。
+ * 首页第一行：左边是字标主视觉 + 开始面试，右边是统计数字。
+ * 右侧不套卡片，直接落在页面底色上，只留数字本身；
+ * 统计块与左侧「字标 + 按钮」整块垂直居中。
  */
 export function StartPanel({
   summary,
@@ -47,25 +48,14 @@ export function StartPanel({
   const { t } = useTranslation();
 
   return (
-    <div className={cn("grid gap-4 lg:grid-cols-5 lg:gap-14", className)}>
-      {/* 字标和右侧的「累计场次」顶端对齐，所以这一栏用 items-start。 */}
-      <div className="flex min-w-0 items-start px-1 py-2 lg:col-span-3">
+    <div
+      className={cn(
+        "grid items-center gap-4 lg:grid-cols-5 lg:gap-14",
+        className
+      )}
+    >
+      <div className="flex min-w-0 flex-col gap-3 px-1 py-2 lg:col-span-3">
         <Wordmark />
-      </div>
-
-      <div className="flex flex-col gap-3 px-1 py-2 lg:col-span-2">
-        <div className="grid grid-cols-2 gap-2.5">
-          <StatBlock
-            label={t("home.stats.totalSessions")}
-            value={String(summary?.totalSessions ?? "–")}
-            unit={t("home.stats.sessionsUnit")}
-          />
-          <StatBlock
-            label={t("home.stats.weekSessions")}
-            value={String(summary?.weekSessions ?? "–")}
-            unit={t("home.stats.sessionsUnit")}
-          />
-        </div>
         {/* 主操作：整栏宽的品牌绿按钮。上亮下暗的渐变当受光面，顶部一道内高光；
             hover 抬起来并划过一道亮光，按下再压回去。 */}
         <Button
@@ -88,6 +78,21 @@ export function StartPanel({
           />
           <span className="relative">{t("home.startButton")}</span>
         </Button>
+      </div>
+
+      <div className="flex items-center px-1 py-2 lg:col-span-2">
+        <div className="grid w-full grid-cols-2 gap-2.5">
+          <StatBlock
+            label={t("home.stats.totalSessions")}
+            value={String(summary?.totalSessions ?? "–")}
+            unit={t("home.stats.sessionsUnit")}
+          />
+          <StatBlock
+            label={t("home.stats.weekSessions")}
+            value={String(summary?.weekSessions ?? "–")}
+            unit={t("home.stats.sessionsUnit")}
+          />
+        </div>
       </div>
     </div>
   );
