@@ -59,3 +59,9 @@ config/imports/
 # 桌面端
 desktop/node_modules/
 desktop/dist/
+
+# 打包产物（后端运行时 + 安装包）
+desktop/resources/
+desktop/dist/
+desktop/.eb-cache/
+desktop/.tmp/

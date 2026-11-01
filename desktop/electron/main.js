@@ -278,9 +278,29 @@ function openLog() {
   }
 }
 
+/** 安装包里的后端与数据目录；开发模式下返回空对象，走项目本身的 .venv。 */
+function packagedBackendOptions() {
+  if (!app.isPackaged) return {};
+  const base = path.join(process.resourcesPath, "backend");
+  const dataDir = path.join(app.getPath("userData"), "data");
+  fs.mkdirSync(dataDir, { recursive: true });
+  return {
+    python: path.join(
+      base,
+      "python",
+      process.platform === "win32" ? "python.exe" : "python3"
+    ),
+    script: path.join(base, "server.py"),
+    // 配置、档案、问答库、历史都相对工作目录，安装目录是只读的，所以放 userData。
+    cwd: dataDir,
+  };
+}
+
 /** 前端没构建过就别拉后端了，直接给一句人话。 */
 function missingFrontend() {
-  const dist = path.join(ROOT, "web", "client", "dist", "index.html");
+  const dist = app.isPackaged
+    ? path.join(process.resourcesPath, "backend", "web", "client", "dist", "index.html")
+    : path.join(ROOT, "web", "client", "dist", "index.html");
   if (fs.existsSync(dist)) return false;
   dialog.showErrorBox(
     "前端还没构建",
@@ -304,7 +324,7 @@ async function boot() {
   mainWindow = createWindow();
 
   try {
-    backend = await startBackend({ onLog });
+    backend = await startBackend({ onLog, ...packagedBackendOptions() });
   } catch (error) {
     log?.end();
     const logPath = backendLogPath();

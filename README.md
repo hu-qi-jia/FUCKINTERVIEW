@@ -80,7 +80,11 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 - 站外链接交给系统浏览器打开；后端日志写在 `%APPDATA%\interview-desktop\backend.log`
 - 首次安装如果卡在下载 Electron 二进制，用国内镜像：
   `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix desktop install`
-- 打包成安装包（把 Python 运行时一起分发）还没做，第一版是「本机源码 + 虚拟环境」直接运行
+- **打包**：先 `npm --prefix desktop run backend` 把 Python 运行时装进 `desktop/resources/backend`
+  （便携 CPython + 依赖 + 精简版 Pipecat + 前端产物，约 460MB），再
+  `npm --prefix desktop run dist` 用 electron-builder 出 NSIS 安装包
+  （`desktop/dist/FUCKINTERVIEW-Setup-<版本>.exe`，约 100MB）。
+  安装版的后端跑在 `%APPDATA%\面试语音助手\data`，配置、档案、问答库、历史都写在那儿，和安装目录分开
 
 ### 换一台机器
 

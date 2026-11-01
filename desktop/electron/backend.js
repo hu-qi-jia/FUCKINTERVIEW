@@ -78,19 +78,24 @@ let currentChild = null;
  * @param {object} options
  * @param {number} [options.port] 期望端口
  * @param {(line: string) => void} [options.onLog] 每行输出
+ * @param {string} [options.python] 指定解释器（安装包用 resources 里的便携 Python）
+ * @param {string} [options.script] 指定 server.py 路径
+ * @param {string} [options.cwd] 工作目录（数据目录；配置和数据库都写在这里）
  * @returns {Promise<{port: number, url: string, child: import("node:child_process").ChildProcess, stop: () => Promise<void>}>}
  */
-async function startBackend({ port, onLog } = {}) {
+async function startBackend({ port, onLog, python, script, cwd } = {}) {
   const preferred = port ?? process.env.INTERVIEW_PORT ?? 7860;
   const chosen = await pickPort(preferred);
-  const python = resolvePython();
-  const script = path.join(ROOT, "server.py");
+  const interpreter = python || resolvePython();
+  const serverScript = script || path.join(ROOT, "server.py");
+  const workdir = cwd || ROOT;
+  fs.mkdirSync(workdir, { recursive: true });
 
   const child = spawn(
-    python,
-    ["-u", script, "--host", HOST, "--port", String(chosen)],
+    interpreter,
+    ["-u", serverScript, "--host", HOST, "--port", String(chosen)],
     {
-      cwd: ROOT,
+      cwd: workdir,
       env: {
         ...process.env,
         PYTHONUTF8: "1",

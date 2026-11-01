@@ -1,15 +1,61 @@
 {
   "name": "interview-desktop",
   "productName": "面试语音助手",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "面试语音助手桌面端：Electron 外壳 + 本地 Python 服务",
+  "author": "hu-qi-jia",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "backend": "python scripts/build-backend.py",
+    "dist": "electron-builder --win nsis"
   },
   "devDependencies": {
-    "electron": "44.8.0"
+    "electron": "44.8.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.fuckinterview.desktop",
+    "productName": "面试语音助手",
+    "copyright": "FUCKINTERVIEW",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "FUCKINTERVIEW-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "面试语音助手",
+      "artifactName": "FUCKINTERVIEW-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
