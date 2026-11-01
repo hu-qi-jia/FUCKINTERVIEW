@@ -58,7 +58,8 @@ export function StartPanel({
 
   return (
     <div className={cn("grid gap-4 lg:grid-cols-5", className)}>
-      <div className="flex min-w-0 items-center px-1 py-2 lg:col-span-3">
+      {/* @container：字标的字号按这一栏的宽度算（cqw），换窗口宽度也放得下一行。 */}
+      <div className="@container flex min-w-0 items-center px-1 py-2 lg:col-span-3">
         <AsciiWordmark />
       </div>
 
