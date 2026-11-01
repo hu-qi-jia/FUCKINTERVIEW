@@ -66,7 +66,6 @@ export function StartInterviewDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="border-border flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <MicIcon className="text-muted-foreground size-4" />
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
             {t("home.start.title")}
           </h2>

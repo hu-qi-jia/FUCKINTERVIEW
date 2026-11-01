@@ -19,7 +19,6 @@ import { HistoryPage } from "@/components/history/history-page";
 import { HomePage } from "@/components/home/home-page";
 import type { MaterialsSegment } from "@/components/home/interview-prep-card";
 import { MaterialsPage } from "@/components/materials/materials-page";
-import { LiveProfileSelect } from "@/components/materials/live-profile-select";
 import {
   Console,
   type ConsoleProps,
@@ -223,6 +222,15 @@ function Home() {
     navigate(next);
   };
 
+  /**
+   * 面试页点「断开」并真的断开后回首页。
+   * 会话记录是后端在连接断掉时收尾写库的，这里稍等一下再走，
+   * 免得刚落地首页时列表里还看不到这一场。
+   */
+  const handleInterviewDisconnected = () => {
+    window.setTimeout(() => navigate("home"), 400);
+  };
+
   const startInterview = (profileId: string) => {
     handleLiveProfileChange(profileId);
     // 新的一场：新的 join key，两路连接都会带上它。
@@ -336,15 +344,10 @@ function Home() {
     </>
   );
 
+  // 面试页顶栏不再放档案选择器：档案在开始前的弹窗里定下，面试中不换。
   const liveHeaderSlot = (
     <>
       <div id={HEADER_SLOT} />
-      <LiveProfileSelect
-        className="hidden md:flex"
-        dataVersion={dataVersion}
-        value={liveProfileId}
-        onChange={handleLiveProfileChange}
-      />
       {settingsButton}
     </>
   );
@@ -462,6 +465,7 @@ function Home() {
                   disconnectSignal={live.disconnectSignal}
                   autoConnectSignal={autoStartToken}
                   onEnd={() => void markSessionEnded(interviewId)}
+                  onDisconnected={handleInterviewDisconnected}
                   liveConversation={{
                     messages: live.extraMessages,
                     interimText: live.interimText,

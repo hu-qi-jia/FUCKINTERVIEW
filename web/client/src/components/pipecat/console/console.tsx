@@ -226,6 +226,11 @@ export interface ConsoleProps {
    * e.g. the app's narrow-screen page switcher.
    */
   leadingSlot?: React.ReactNode;
+  /**
+   * 用户点「断开」并且连接真的收掉之后触发——比如面试页用它回首页。
+   * 系统音频被外部结束（disconnectSignal）走的不是这条路。
+   */
+  onDisconnected?: () => void;
 
   // -- Region toggles (all default false unless noted) -----------------------
   noUserAudio?: boolean;
@@ -385,6 +390,7 @@ function ConsoleShell({
   noLogo = false,
   headerSlot,
   leadingSlot,
+  onDisconnected,
   noUserAudio = false,
   noUserVideo = false,
   noScreenControl = false,
@@ -639,7 +645,9 @@ function ConsoleShell({
       onConnect={handleConnect}
       onDisconnect={() => {
         onEnd?.();
-        void app.disconnect();
+        void Promise.resolve(app.disconnect()).finally(() =>
+          onDisconnected?.()
+        );
       }}
     />
   );
