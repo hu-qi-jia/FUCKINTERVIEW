@@ -19,6 +19,19 @@ import i18n from "@/i18n";
 /** Client states from which a new connection attempt may start. */
 const CONNECTABLE_STATES: string[] = ["initialized", "disconnected", "error"];
 
+/** 本机回环：不需要 STUN，等它只会拖慢首连。 */
+function isLoopbackLocation(): boolean {
+  if (typeof window === "undefined") return false;
+  return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(
+    window.location.hostname,
+  );
+}
+
+function isStunServer(server: RTCIceServer): boolean {
+  const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+  return urls.length > 0 && urls.every((url) => url.startsWith("stun:"));
+}
+
 export interface UsePipecatAppOptions {
   /** Defaults to smallwebrtc; changing this rebuilds the client. */
   transportType?: TransportType;
@@ -133,9 +146,12 @@ export function usePipecatApp(
             iceConfig: { iceServers: RTCIceServer[] };
           };
           // Avoid a type import from an optional transport package.
+          const servers = iceConfig.iceServers ?? [];
           (
             activeClient.transport as { iceServers?: RTCIceServer[] }
-          ).iceServers = iceConfig.iceServers;
+          ).iceServers = isLoopbackLocation()
+            ? servers.filter((server) => !isStunServer(server))
+            : servers;
         }
         const transformed = startBotResponseTransformer
           ? await startBotResponseTransformer(response)

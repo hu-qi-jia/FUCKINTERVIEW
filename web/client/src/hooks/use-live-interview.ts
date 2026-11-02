@@ -55,7 +55,11 @@ export function useLiveInterview({
 
   const micApp = usePipecatApp({
     transportType: "smallwebrtc",
-    transportFactory: async () => new SmallWebRTCTransport({ waitForICEGathering: true }),
+    transportFactory: async () =>
+      new SmallWebRTCTransport({
+        waitForICEGathering: false,
+        iceServers: [],
+      }),
     initDevicesOnMount: false,
     startBotParams: buildStartBotParams(
       "listen",
@@ -101,7 +105,10 @@ export function useLiveInterview({
   const transportFactory = useCallback(
     async () =>
       new SmallWebRTCTransport({
-        waitForICEGathering: true,
+        // 本地回环只要 host candidate 就够了；等 STUN 完成会让首连慢 10 秒，
+        // 还可能撞上服务端的连接超时。
+        waitForICEGathering: false,
+        iceServers: [],
         mediaManager: manager,
       } as unknown as ConstructorParameters<typeof SmallWebRTCTransport>[0]),
     [manager],

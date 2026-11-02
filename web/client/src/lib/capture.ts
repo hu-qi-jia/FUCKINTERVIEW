@@ -59,11 +59,10 @@ export async function captureSystemAudio(): Promise<MediaStream> {
     throw error;
   }
 
-  for (const track of stream.getVideoTracks()) {
-    track.stop();
-    stream.removeTrack(track);
-  }
-
+  // 不要在这里 stop() 视频轨：Electron 的系统环回音轨挂在同一次屏幕采集
+  // 会话上，视频轨一停，音频轨过一会儿也会变成 ended（表现为服务端一直
+  // "No audio frame received"）。视频轨不交给 transport（SystemAudioMediaManager
+  // 只返回音频），等整场结束再和音频一起停。
   const audioTracks = stream.getAudioTracks();
   if (audioTracks.length === 0) {
     for (const track of stream.getTracks()) track.stop();

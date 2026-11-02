@@ -66,7 +66,10 @@ const SMALL_WEBRTC_PROPS: TransportProps = {
   transportFactory: async () => {
     const { SmallWebRTCTransport } =
       await import("@pipecat-ai/small-webrtc-transport");
-    return new SmallWebRTCTransport({ waitForICEGathering: true });
+    return new SmallWebRTCTransport({
+      waitForICEGathering: false,
+      iceServers: [],
+    });
   },
   startBotParams: startBotParams(),
 };

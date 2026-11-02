@@ -6,7 +6,8 @@ export type SessionMode = "live" | "listen" | "mock";
 /** Shared /start request data for the SmallWebRTC sessions. */
 export const WEBRTC_REQUEST_DATA = {
   createDailyRoom: false,
-  enableDefaultIceServers: true,
+  // 本机回环不需要 STUN；服务端默认会塞 Google STUN，反而让首连等 10 秒。
+  enableDefaultIceServers: false,
   transport: "webrtc",
 } as const;
 

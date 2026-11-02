@@ -94,7 +94,17 @@ async function startBackend({ port, onLog, python, script, cwd, env } = {}) {
 
   const child = spawn(
     interpreter,
-    ["-u", serverScript, "--host", HOST, "--port", String(chosen)],
+    [
+      "-u",
+      serverScript,
+      "--host",
+      HOST,
+      "--port",
+      String(chosen),
+      // 只启用 SmallWebRTC，少注册一堆用不到的传输路由，启动更快。
+      "--transport",
+      "webrtc",
+    ],
     {
       cwd: workdir,
       env: {
