@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import ROOT, data_root, load_settings
+from app.fsutil import atomic_replace
 
 SCHEMA_VERSION = 1
 PROFILES_FILENAME = "profiles.json"
@@ -116,7 +117,7 @@ def _write_store(store: dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(store, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, path)
+        atomic_replace(tmp_path, path)
         stat = path.stat()
         _remember_store(path, stat.st_mtime_ns, stat.st_size, store)
     finally:

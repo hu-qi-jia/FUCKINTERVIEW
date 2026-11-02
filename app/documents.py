@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.fsutil import atomic_replace
 from app.materials import data_dir
 
 SCHEMA_VERSION = 1
@@ -78,7 +79,7 @@ def _write_store(store: dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(store, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, path)
+        atomic_replace(tmp_path, path)
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -191,7 +192,7 @@ def add_document(filename: str, data: bytes) -> dict[str, Any]:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-        os.replace(tmp_path, path)
+        atomic_replace(tmp_path, path)
     except OSError:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

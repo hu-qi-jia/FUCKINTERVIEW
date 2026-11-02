@@ -64,3 +64,48 @@ def test_dev_environment_does_not_migrate(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ROOT", repo)
 
     assert config.migrate_legacy_data() == []
+
+
+def test_userdata_config_is_copied_and_detached_from_dev(tmp_path, monkeypatch):
+    """旧版把配置写在 userData/data/config，还把数据目录指到开发仓库。"""
+    repo = tmp_path / "repo"
+    dev_data = repo / "config"
+    dev_data.mkdir(parents=True)
+    (dev_data / "profiles.json").write_text(
+        json.dumps({"schemaVersion": 1, "profiles": []}), encoding="utf-8"
+    )
+    (dev_data / "qa.db").write_bytes(b"db")
+    (dev_data / "models").mkdir()
+    (dev_data / "models" / "model.onnx").write_bytes(b"onnx")
+
+    home = tmp_path / "userdata"
+    old_config = home / "config"
+    old_config.mkdir(parents=True)
+    (old_config / "settings.json").write_text(
+        json.dumps(
+            {
+                "storage": {
+                    "data_dir": str(dev_data),
+                    "model_dir": "config/models",
+                },
+                "llm": {"api_key": "sk-test"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv(config.ENV_DATA_DIR, str(home))
+    monkeypatch.setattr(config, "ROOT", repo)
+
+    copied = config.migrate_legacy_data()
+
+    assert "settings.json" in copied
+    assert (home / "profiles.json").is_file()
+    assert (home / "qa.db").is_file()
+    assert (home / "models" / "model.onnx").is_file()
+    saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+    assert saved["storage"]["data_dir"] == ""
+    assert saved["storage"]["model_dir"] == ""
+    assert saved["llm"]["api_key"] == "sk-test"
+    # 开发数据原样保留，安装版从此读写自己的副本。
+    assert (dev_data / "profiles.json").is_file()

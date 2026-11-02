@@ -9,6 +9,8 @@ from typing import Any
 
 from loguru import logger
 
+from app.fsutil import atomic_replace
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # 数据根目录（settings.json、档案、问答库、术语库、历史、资料与模型缓存）。
@@ -129,7 +131,7 @@ def _write_settings(settings: dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, config_path())
+        atomic_replace(tmp_path, config_path())
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -197,86 +199,141 @@ _LEGACY_DBS = ("qa.db", "terms.db", "sessions.db")
 _LEGACY_DB_SIDECARS = ("-wal", "-shm")
 
 
-def _resolve_legacy_path(raw: str, default_name: str) -> Path:
+def _read_settings_file(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_legacy_path(raw: str, default_name: str, bases: list[Path]) -> Path:
+    """相对路径按旧版本可能的几个根目录依次尝试，找到哪个用哪个。"""
     value = str(raw or "").strip() or default_name
     path = Path(value).expanduser()
-    return path if path.is_absolute() else (ROOT / path)
+    if path.is_absolute():
+        return path
+    for base in bases:
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    return (bases[0] if bases else ROOT) / path
+
+
+def _copy_artifacts(source: Path, target: Path) -> list[str]:
+    if source.resolve() == target.resolve() or not source.is_dir():
+        return []
+    copied: list[str] = []
+
+    def copy_file(name: str) -> None:
+        src = source / name
+        dest = target / name
+        if src.is_file() and not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            copied.append(dest.name)
+
+    for name in _LEGACY_FILES:
+        copy_file(name)
+    for name in _LEGACY_DBS:
+        copy_file(name)
+        for suffix in _LEGACY_DB_SIDECARS:
+            copy_file(f"{name}{suffix}")
+    source_docs = source / "documents"
+    dest_docs = target / "documents"
+    if source_docs.is_dir() and not dest_docs.exists():
+        shutil.copytree(source_docs, dest_docs)
+        copied.append("documents/")
+    return copied
 
 
 def migrate_legacy_data() -> list[str]:
-    """把安装目录里的旧数据搬到当前数据根目录；返回搬过来的文件名。
+    """把旧版本留在安装目录 / userData 里的数据搬到当前数据根目录。
 
-    只在当前根目录还没有同名文件时复制。settings.json 也只在目标不存在时
-    写入一份归一化后的副本，避免覆盖用户已经在新目录里改过的配置。
+    历史上有两种落点：
+
+    - ``<安装目录>/resources/backend/config``：最老的安装版；
+    - ``<userData>/data/config``：工作目录在 data、配置仍按旧逻辑写进
+      子目录 config 的版本（这一版的数据目录还可能被指到开发仓库）。
+
+    两种情况都只补目标里缺失的文件；``settings.json`` 只在目标不存在时写入
+    一份归一化副本。后者迁移时会把旧数据整体复制到新根目录，并把
+    ``data_dir`` / ``model_dir`` 重置为空，避免安装版继续读写开发目录。
     """
-    target = data_root()
-    legacy = ROOT / DEFAULT_DATA_DIRNAME
-    if target.resolve() == legacy.resolve() or not legacy.is_dir():
+    target = data_root().expanduser()
+    try:
+        target_resolved = target.resolve()
+    except OSError:
+        target_resolved = target
+
+    candidates: list[Path] = []
+    for root in (target / DEFAULT_DATA_DIRNAME, ROOT / DEFAULT_DATA_DIRNAME):
+        try:
+            resolved = root.resolve()
+        except OSError:
+            resolved = root
+        if resolved == target_resolved or not root.is_dir():
+            continue
+        if all(resolved != item.resolve() for item in candidates):
+            candidates.append(root)
+    if not candidates:
         return []
 
     target.mkdir(parents=True, exist_ok=True)
-    legacy_settings: dict[str, Any] = {}
-    settings_file = legacy / "settings.json"
-    if settings_file.is_file():
-        try:
-            raw = json.loads(settings_file.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                legacy_settings = raw
-        except (OSError, json.JSONDecodeError):
-            legacy_settings = {}
 
+    settings_root = next(
+        (item for item in candidates if (item / "settings.json").is_file()), None
+    )
+    legacy_settings = (
+        _read_settings_file(settings_root / "settings.json") if settings_root else {}
+    )
     storage = legacy_settings.get("storage")
     storage = storage if isinstance(storage, dict) else {}
-    old_data = _resolve_legacy_path(str(storage.get("data_dir") or ""), DEFAULT_DATA_DIRNAME)
+
+    # userData/data/config 优先于安装目录：它更接近当前的数据根目录。
+    candidate = settings_root or candidates[0]
+    from_userdata = candidate.resolve() == (target / DEFAULT_DATA_DIRNAME).resolve()
+    data_bases = [candidate, target, ROOT] if from_userdata else [ROOT, candidate]
+
+    old_data = _resolve_legacy_path(
+        str(storage.get("data_dir") or ""), DEFAULT_DATA_DIRNAME, data_bases
+    )
     old_model = _resolve_legacy_path(
-        str(storage.get("model_dir") or ""), f"{DEFAULT_DATA_DIRNAME}/models"
+        str(storage.get("model_dir") or ""),
+        f"{DEFAULT_DATA_DIRNAME}/models",
+        [candidate.parent, candidate, old_data.parent, old_data, ROOT],
     )
 
+    # 数据以前放在旧位置（含「安装版指向开发仓库」）：复制一份到新根目录，
+    # 之后两边各自独立。用户自己设的、不在旧安装目录里的数据目录保持不动。
+    copy_into_target = from_userdata or old_data.resolve() == candidate.resolve()
     copied: list[str] = []
+    if copy_into_target:
+        copied += _copy_artifacts(old_data, target)
 
-    def copy_file(source: Path, dest: Path) -> None:
-        if not source.is_file() or dest.exists():
-            return
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, dest)
-        copied.append(dest.name)
-
-    # 数据仍然在安装目录里：档案 / 资料 / 三个数据库整体搬过来。
-    # 如果用户以前就把数据目录指到了别处，那些文件已经在别处，不用重复复制。
-    if old_data.resolve() == legacy.resolve():
-        for name in _LEGACY_FILES:
-            copy_file(old_data / name, target / name)
-        for name in _LEGACY_DBS:
-            copy_file(old_data / name, target / name)
-            for suffix in _LEGACY_DB_SIDECARS:
-                copy_file(old_data / f"{name}{suffix}", target / f"{name}{suffix}")
-        source_docs = old_data / "documents"
-        dest_docs = target / "documents"
-        if source_docs.is_dir() and not dest_docs.exists():
-            shutil.copytree(source_docs, dest_docs)
-            copied.append("documents/")
-
-    # 模型缓存是二进制资产，跟着旧的默认位置搬，不跟着用户数据目录迁移。
-    default_model = legacy / "models"
-    if old_model.resolve() == default_model.resolve() and old_model.is_dir():
+    default_model = candidate / "models"
+    copy_models = copy_into_target or old_model.resolve() == default_model.resolve()
+    if copy_models and old_model.is_dir():
         dest_model = target / "models"
         if not dest_model.exists():
             shutil.copytree(old_model, dest_model)
             copied.append("models/")
 
-    # 配置里的相对路径按安装目录解析，搬到新根目录后会指错，统一改成
-    # 「空串 = 新根目录默认值」；用户自己设的绝对路径原样保留。
     normalized = dict(legacy_settings)
     if storage:
         new_storage = dict(storage)
-        if old_data.resolve() == legacy.resolve():
+        if copy_into_target:
             new_storage["data_dir"] = ""
-        elif not Path(str(storage.get("data_dir") or "")).expanduser().is_absolute():
-            new_storage["data_dir"] = str(old_data)
-        if old_model.resolve() == default_model.resolve():
             new_storage["model_dir"] = ""
-        elif not Path(str(storage.get("model_dir") or "")).expanduser().is_absolute():
-            new_storage["model_dir"] = str(old_model)
+        else:
+            if old_data.resolve() == candidate.resolve():
+                new_storage["data_dir"] = ""
+            elif not Path(str(storage.get("data_dir") or "")).expanduser().is_absolute():
+                new_storage["data_dir"] = str(old_data)
+            if old_model.resolve() == default_model.resolve():
+                new_storage["model_dir"] = ""
+            elif not Path(str(storage.get("model_dir") or "")).expanduser().is_absolute():
+                new_storage["model_dir"] = str(old_model)
         normalized["storage"] = new_storage
 
     target_settings = target / "settings.json"
@@ -285,7 +342,7 @@ def migrate_legacy_data() -> list[str]:
         copied.append("settings.json")
 
     if copied:
-        logger.info(f"已把安装目录里的旧数据迁移到 {target}：{', '.join(copied)}")
+        logger.info(f"已把旧数据迁移到 {target}：{', '.join(copied)}")
     return copied
 
 
@@ -295,7 +352,7 @@ def _write_settings_at(directory: Path, settings: dict[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, directory / "settings.json")
+        atomic_replace(tmp_path, directory / "settings.json")
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

@@ -23,6 +23,7 @@ from pathlib import Path
 
 from app import documents, materials, qa, qa_index, sessions, terms
 from app.config import save_storage_paths
+from app.fsutil import atomic_replace
 
 MARKER = ".interview-migration.json"
 
@@ -189,7 +190,7 @@ def migrate_data_dir(raw_target: str, *, migrate: bool = True) -> dict:
         _stage(source, staging, items)
         for name, _kind in items:
             destination = target / name
-            os.replace(staging / name, destination)
+            atomic_replace(staging / name, destination)
             moved.append(destination)
         save_storage_paths(data_dir=str(target))
     except Exception:
