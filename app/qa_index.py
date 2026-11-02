@@ -13,13 +13,14 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from app import qa as store
-from app.config import ROOT, load_settings
+from app.config import ROOT, data_root, load_settings
 
 # HuggingFace 直连不通，默认走镜像；用户自己设了就尊重用户的。
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -32,6 +33,11 @@ ANSWER_PREVIEW_CHARS = 1200
 _model_lock = threading.Lock()
 _model: Any = None
 _model_name: str | None = None
+# 模型加载失败后记住原因，冷却期内直接失败，不再每次检索都走一遍
+# fastembed 的 3 + 9 + 27 秒下载退避。冷却期结束或用户改配置后可重试。
+_model_error: str | None = None
+_model_failed_at = 0.0
+MODEL_RETRY_COOLDOWN_SECS = 600.0
 
 _worker_started = False
 _worker_lock = threading.Lock()
@@ -48,32 +54,60 @@ def model_name() -> str:
 
 
 def model_dir() -> Path:
-    raw = str(load_settings().get("storage", {}).get("model_dir") or "config/models").strip()
-    path = Path(raw or "config/models").expanduser()
+    raw = str(load_settings().get("storage", {}).get("model_dir") or "").strip()
+    if not raw:
+        # 默认放在数据根目录下的 models/：开发版是 config/models，
+        # 安装版是 userData/data/models，都可写、都不在安装目录里。
+        return data_root() / "models"
+    path = Path(raw).expanduser()
     return path if path.is_absolute() else (ROOT / path)
 
 
-def get_model():
-    """懒加载单例；模型常驻内存（约 200MB），用完不卸载。"""
-    global _model, _model_name
+def get_model(*, force: bool = False):
+    """懒加载单例；模型常驻内存（约 200MB），用完不卸载。
+
+    加载失败会缓存错误，``MODEL_RETRY_COOLDOWN_SECS`` 内不再重试——
+    检索会立刻降级为关键词召回，而不是让每个请求都卡 39 秒。
+    """
+    global _model, _model_name, _model_error, _model_failed_at
     name = model_name()
     if _model is not None and _model_name == name:
         return _model
     with _model_lock:
         if _model is not None and _model_name == name:
             return _model
+        if (
+            not force
+            and _model_error is not None
+            and time.monotonic() - _model_failed_at < MODEL_RETRY_COOLDOWN_SECS
+        ):
+            raise RuntimeError(_model_error)
         from fastembed import TextEmbedding
 
         try:
             loaded = TextEmbedding(model_name=name, cache_dir=str(model_dir()))
         except Exception as error:  # 下载失败 / 目录不可写 / 模型名不认识
-            raise RuntimeError(
+            _model_error = (
                 f"加载向量模型 {name} 失败：{error}。"
                 f"模型缓存在 {model_dir()}，首次使用需要联网下载（当前走 {os.environ.get('HF_ENDPOINT')}）。"
-            ) from error
+            )
+            _model_failed_at = time.monotonic()
+            raise RuntimeError(_model_error) from error
         _model = loaded
         _model_name = name
+        _model_error = None
         return _model
+
+
+def reset_model_failure() -> None:
+    """清掉失败缓存（用户改了模型目录 / 模型名，或主动重试后调用）。"""
+    global _model_error
+    with _model_lock:
+        _model_error = None
+
+
+def model_available() -> bool:
+    return _model is not None and _model_name == model_name()
 
 
 def embed(texts: list[str]) -> np.ndarray:
@@ -203,6 +237,8 @@ def status() -> dict[str, Any]:
         "failed": by_status.get("failed", 0),
         "queue": _queue.qsize(),
         "lastError": _last_error,
+        "modelReady": _model is not None,
+        "modelError": _model_error,
     }
 
 
@@ -343,15 +379,28 @@ def search(
 ) -> dict[str, Any]:
     text = (query or "").strip()
     if not text:
-        return {"results": [], "mode": "empty"}
+        return {"results": [], "mode": "empty", "vectorAvailable": model_available()}
 
     limit = max(1, min(100, int(limit or 20)))
-    vector_hits = _vector_hits(text, 50)
+    vector_error: str | None = None
+    try:
+        vector_hits = _vector_hits(text, 50)
+    except Exception as error:
+        # 模型没下载 / 目录不可写时不能把检索整体打死：退回关键词召回，
+        # 界面上给一条明确的提示。
+        vector_error = str(error)
+        vector_hits = []
     keyword_hits = _keyword_hits(text, 50)
     merged = _rrf([("vector", vector_hits), ("keyword", keyword_hits)])
 
+    vector_ok = vector_error is None
     if not merged:
-        return {"results": [], "mode": "empty"}
+        return {
+            "results": [],
+            "mode": "empty",
+            "vectorAvailable": vector_ok,
+            "vectorError": vector_error,
+        }
 
     rows = store.load_qa_many(list(merged.keys()))
     types = {t for t in (types or []) if t}
@@ -376,7 +425,18 @@ def search(
         )
 
     results.sort(key=lambda item: (-item["rrf"], item["id"]))
+    if not vector_ok:
+        mode = "keyword"
+    elif len(results) and {m for r in results for m in r["matchedBy"]} == {
+        "vector",
+        "keyword",
+    }:
+        mode = "hybrid"
+    else:
+        mode = "search"
     return {
         "results": results[:limit],
-        "mode": "hybrid" if len(results) and {m for r in results for m in r["matchedBy"]} == {"vector", "keyword"} else "search",
+        "mode": mode,
+        "vectorAvailable": vector_ok,
+        "vectorError": vector_error,
     }

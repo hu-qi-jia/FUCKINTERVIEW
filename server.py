@@ -11,14 +11,11 @@ from pathlib import Path
 
 import aiohttp
 from fastapi import File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from loguru import logger
 from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
 
-from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
-from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
-from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     LLMContextFrame,
     LLMFullResponseEndFrame,
@@ -48,16 +45,26 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
-from app.config import DEFAULT_SYSTEM_PROMPT, load_settings, save_model_dir, save_settings
+from app.config import (
+    DEFAULT_SYSTEM_PROMPT,
+    load_settings,
+    migrate_legacy_data,
+    save_model_dir,
+    save_settings,
+)
 from app import documents as documents_store
 from app import qa as qa_store
 from app import qa_import, qa_index
+from app import security
 from app import sessions as sessions_store
+from app import storage_migration
 from app import terms as terms_store
 from app.session_recorder import SessionRecorder
 from app.materials import (
+    CardChanged,
     apply_coach_result,
     apply_plan,
+    card_version,
     create_profile,
     delete_profile,
     find_card,
@@ -66,7 +73,6 @@ from app.materials import (
     list_profiles,
     open_folder,
     pick_folder,
-    set_data_dir,
     storage_info,
     update_card,
     update_coach_slots,
@@ -86,6 +92,13 @@ from app.providers import build_llm, build_stt, build_tts
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "web" / "client" / "dist"
+
+# 安装版从旧版本升级时，数据可能还在安装目录里；这里一次性搬到
+# INTERVIEW_DATA_DIR 指向的位置。开发环境两者相同，是空操作。
+migrate_legacy_data()
+
+# 只允许本机回环来源访问，并给 /api/* 加本次启动的随机令牌。
+security.install(app)
 
 
 # --------------------------------------------------------------------------
@@ -334,19 +347,27 @@ async def api_coach_apply(profile_id: str, request: Request):
     if not pending:
         raise HTTPException(status_code=400, detail="没有新的回答可以写入")
 
+    # 模型调用可能持续好几秒；期间用户可能继续编辑同一格回答或卡片正文。
+    # 记下发车时的回答和卡片指纹，写回时只提交仍然有效的那部分。
+    expected_answers = {item["dimension"]: item["answer"] for item in pending}
+    expected_card = card_version(card)
+
     try:
         fields = await coach_merge(load_settings(), profile, card, pending)
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    fields["sourceRevision"] = int(profile.get("materialsRevision") or 0)
     try:
         return apply_coach_result(
             profile_id,
             slug,
             fields,
             [item["dimension"] for item in pending],
+            expected_answers=expected_answers,
+            expected_card_version=expected_card,
         )
+    except CardChanged as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
@@ -424,48 +445,28 @@ async def api_set_storage(request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
 
-    model_dir = payload.get("modelDir")
-    if isinstance(model_dir, str) and model_dir.strip():
-        save_model_dir(model_dir.strip())
-        qa_index.invalidate()
-
     data_dir_value = str(payload.get("dataDir") or "").strip()
+    model_dir = payload.get("modelDir")
+    model_dir_value = model_dir.strip() if isinstance(model_dir, str) else ""
+
     if data_dir_value:
-        old_db = qa_store.db_path()
-        old_terms = terms_store.db_path()
-        old_sessions = sessions_store.db_path()
-        old_data_dir = Path(storage_info()["dataDir"])
-        new_dir = set_data_dir(data_dir_value, migrate=bool(payload.get("migrate", True)))
         try:
-            qa_store.migrate_db(old_db, Path(new_dir["dataDir"]) / qa_store.QA_FILENAME)
+            await run_in_threadpool(
+                storage_migration.migrate_data_dir,
+                data_dir_value,
+                migrate=bool(payload.get("migrate", True)),
+            )
+        except storage_migration.StorageConflict as e:
+            raise HTTPException(status_code=409, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except OSError as e:
-            raise HTTPException(status_code=400, detail=f"迁移问答库失败：{e}")
+            raise HTTPException(status_code=400, detail=f"迁移数据目录失败：{e}")
+
+    if model_dir_value:
+        save_model_dir(model_dir_value)
         qa_index.invalidate()
-        try:
-            terms_store.migrate_db(
-                old_terms, Path(new_dir["dataDir"]) / terms_store.TERMS_FILENAME
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except OSError as e:
-            raise HTTPException(status_code=400, detail=f"迁移术语库失败：{e}")
-        try:
-            sessions_store.migrate_db(
-                old_sessions,
-                Path(new_dir["dataDir"]) / sessions_store.SESSION_FILENAME,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except OSError as e:
-            raise HTTPException(status_code=400, detail=f"迁移面试历史失败：{e}")
-        try:
-            documents_store.migrate_to(old_data_dir, Path(new_dir["dataDir"]))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except OSError as e:
-            raise HTTPException(status_code=400, detail=f"迁移其他资料失败：{e}")
+        qa_index.reset_model_failure()
 
     return _storage_payload()
 
@@ -568,6 +569,8 @@ async def api_qa_reindex(request: Request):
     scope = str((payload or {}).get("scope") or "stale")
     if scope not in ("all", "failed", "stale"):
         raise HTTPException(status_code=400, detail="scope 必须是 all / failed / stale")
+    # 用户主动重建索引，允许再试一次模型下载。
+    qa_index.reset_model_failure()
     return {"queued": qa_index.reindex(scope)}
 
 
@@ -580,11 +583,14 @@ async def api_qa_search(request: Request):
     if not isinstance(payload, dict):
         payload = {}
     try:
-        return qa_index.search(
+        # ONNX 推理 / 模型加载都是同步阻塞的，必须放线程池，否则会卡住
+        # /status、/start 和正在进行的实时面试。
+        return await run_in_threadpool(
+            qa_index.search,
             str(payload.get("q") or ""),
-            limit=int(payload.get("limit") or 20),
-            types=[str(v) for v in payload.get("types") or []],
-            profile_id=str(payload.get("profileId") or "") or None,
+            int(payload.get("limit") or 20),
+            [str(v) for v in payload.get("types") or []],
+            str(payload.get("profileId") or "") or None,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -667,7 +673,8 @@ async def api_qa_bulk_delete(request: Request):
 async def api_qa_import_preview(file: UploadFile = File(...)):
     raw = await file.read()
     try:
-        return qa_import.preview(raw, file.filename or "")
+        # 预览里会做向量相似度计算，放线程池，别卡住事件循环。
+        return await run_in_threadpool(qa_import.preview, raw, file.filename or "")
     except qa_import.ImportError_ as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
@@ -680,9 +687,10 @@ async def api_qa_import_commit(request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
     try:
-        return qa_import.commit(
+        return await run_in_threadpool(
+            qa_import.commit,
             str(payload.get("token") or ""),
-            mode=str(payload.get("mode") or "merge"),
+            str(payload.get("mode") or "merge"),
         )
     except qa_import.ImportError_ as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -839,6 +847,19 @@ def _setup_project_frontend(fastapi_app):
         _original_setup_frontend(fastapi_app)
         return
 
+    index_html = DIST / "index.html"
+
+    @fastapi_app.get("/client/", include_in_schema=False)
+    @fastapi_app.get("/client/index.html", include_in_schema=False)
+    async def client_index():
+        # 只把本次启动的访问令牌交给本应用页面；跨源页面拿不到这份 HTML。
+        # 令牌每次启动都会变，HTML 不能让浏览器缓存。
+        html = index_html.read_text(encoding="utf-8")
+        return HTMLResponse(
+            security.inject_token(html),
+            headers={"Cache-Control": "no-store"},
+        )
+
     fastapi_app.mount(
         "/client", StaticFiles(directory=str(DIST), html=True), name="interview-ui"
     )
@@ -867,18 +888,45 @@ transport_params = {
 # 多等 1.5 秒。1.2 秒对正常提问足够长，也不会把句中的停顿当成说完了。
 TURN_STOP_SECS = 1.2
 
+# 两路实时面试会同时建两条 pipeline，每场都重新加载 2.2MB / 8.3MB 的 ONNX
+# 模型；模型文件本身是无状态的，把底层 InferenceSession 复用，分析器仍然
+# 每场新建（VAD / 断句的流内状态不能跨会话共享）。
+_vad_session = None
+_smart_turn_session = None
+
+
+def _shared_vad_analyzer():
+    global _vad_session
+    from pipecat.audio.vad.silero import SileroVADAnalyzer
+
+    analyzer = SileroVADAnalyzer()
+    if _vad_session is None:
+        _vad_session = analyzer._model.session
+    else:
+        analyzer._model.session = _vad_session
+    return analyzer
+
+
+def _shared_smart_turn_analyzer():
+    global _smart_turn_session
+    from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+    from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
+
+    analyzer = LocalSmartTurnAnalyzerV3(
+        params=SmartTurnParams(stop_secs=TURN_STOP_SECS)
+    )
+    if _smart_turn_session is None:
+        _smart_turn_session = analyzer._session
+    else:
+        analyzer._session = _smart_turn_session
+    return analyzer
+
 
 def _user_turn_params() -> LLMUserAggregatorParams:
     return LLMUserAggregatorParams(
-        vad_analyzer=SileroVADAnalyzer(),
+        vad_analyzer=_shared_vad_analyzer(),
         user_turn_strategies=UserTurnStrategies(
-            stop=[
-                TurnAnalyzerUserTurnStopStrategy(
-                    turn_analyzer=LocalSmartTurnAnalyzerV3(
-                        params=SmartTurnParams(stop_secs=TURN_STOP_SECS)
-                    )
-                )
-            ]
+            stop=[TurnAnalyzerUserTurnStopStrategy(turn_analyzer=_shared_smart_turn_analyzer())]
         ),
     )
 
@@ -1063,16 +1111,25 @@ class QaAnswer(FrameProcessor):
             logger.warning(f"问答库检索失败，这一轮交给 LLM：{error}")
             return None
 
+        # 结果是按 RRF 排的，不是按余弦分数；纯关键词命中的 score 还是 0。
+        # 不能遇到第一个低分就 break——后面可能还有高相似度的向量命中。
+        best: tuple[float, str, str] | None = None
         for item in result.get("results") or []:
-            score = float(item.get("score") or 0)
+            try:
+                score = float(item.get("score") or 0)
+            except (TypeError, ValueError):
+                continue
             if score < self._threshold:
-                break
+                continue
             answer = str(item.get("answer") or "").strip()
-            if answer:
-                logger.info(
-                    f"问答库命中「{item.get('question')}」score={score:.2f}，直接贴原文"
-                )
-                return answer
+            if not answer:
+                continue
+            if best is None or score > best[0]:
+                best = (score, answer, str(item.get("question") or ""))
+        if best is not None:
+            score, answer, question = best
+            logger.info(f"问答库命中「{question}」score={score:.2f}，直接贴原文")
+            return answer
         return None
 
 
@@ -1136,7 +1193,14 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     )
 
     async with aiohttp.ClientSession() as session:
-        stt = build_stt(settings["asr"])
+        try:
+            stt = build_stt(settings["asr"])
+        except Exception as error:
+            logger.error(
+                f"ASR 初始化失败（{settings['asr'].get('provider')}/"
+                f"{settings['asr'].get('model')}）：{error}"
+            )
+            raise
 
         # live 模式用不到 TTS：答案只以文本形式推给前端。
         # listen 是实时面试的第二路（麦克风），只做转写。
@@ -1156,7 +1220,16 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             logger.info(
                 f"Live interview profile={(profile or {}).get('name') or '(none)'}"
             )
-            llm = build_llm(llm_settings)
+            try:
+                llm = build_llm(llm_settings)
+            except Exception as error:
+                # 安装版最常见的原因是配置没写到可写目录 / 新装还没填 LLM。
+                # 明确记下来，接线日志时不用再猜。
+                logger.error(
+                    f"实时面试 LLM 初始化失败（{settings['llm'].get('provider')}/"
+                    f"{settings['llm'].get('model')}）：{error}"
+                )
+                raise
             prompt_builder = lambda glossary: build_live_system_prompt(profile, glossary)
             # 问答库检索要用向量模型，提前在后台加载。
             warm_task = asyncio.create_task(_warm_qa_model())
@@ -1272,4 +1345,6 @@ async def bot(runner_args: RunnerArguments):
 
 
 if __name__ == "__main__":
+    # runner 默认给 CORS 配 *；在解析参数前换成当前端口的两条精确 Origin。
+    security.prepare_runner_argv()
     main()

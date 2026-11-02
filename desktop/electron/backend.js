@@ -81,9 +81,10 @@ let currentChild = null;
  * @param {string} [options.python] 指定解释器（安装包用 resources 里的便携 Python）
  * @param {string} [options.script] 指定 server.py 路径
  * @param {string} [options.cwd] 工作目录（数据目录；配置和数据库都写在这里）
+ * @param {Record<string, string>} [options.env] 追加给 Python 进程的环境变量
  * @returns {Promise<{port: number, url: string, child: import("node:child_process").ChildProcess, stop: () => Promise<void>}>}
  */
-async function startBackend({ port, onLog, python, script, cwd } = {}) {
+async function startBackend({ port, onLog, python, script, cwd, env } = {}) {
   const preferred = port ?? process.env.INTERVIEW_PORT ?? 7860;
   const chosen = await pickPort(preferred);
   const interpreter = python || resolvePython();
@@ -98,6 +99,7 @@ async function startBackend({ port, onLog, python, script, cwd } = {}) {
       cwd: workdir,
       env: {
         ...process.env,
+        ...(env || {}),
         PYTHONUTF8: "1",
         PYTHONIOENCODING: "utf-8",
         PYTHONUNBUFFERED: "1",

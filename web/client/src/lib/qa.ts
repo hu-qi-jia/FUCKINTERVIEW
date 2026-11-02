@@ -61,6 +61,7 @@ export interface QaPreviewRow {
   proficiency: number;
   decision: QaDecision;
   existingId?: number | null;
+  duplicateOfLine?: number | null;
   nearDuplicateOf?: number | null;
   nearDuplicateScore?: number | null;
 }
@@ -185,9 +186,12 @@ export async function bulkDeleteQa(ids: number[]): Promise<number> {
   return data.deleted;
 }
 
-export interface QaSearchResult {
-  results: QaItem[];
+export interface QaSearchResponse {
+  items: QaItem[];
   mode: string;
+  /** 向量模型可用时为 true；false 表示本次只按关键词召回。 */
+  vectorAvailable: boolean;
+  vectorError: string | null;
 }
 
 export async function searchQa(
@@ -196,12 +200,19 @@ export async function searchQa(
     limit?: number;
     types?: string[];
   } = {},
-): Promise<QaItem[]> {
-  const data = await request<{ results: Record<string, unknown>[] }>(
-    "/api/qa/search",
-    json("POST", { q, ...options }),
-  );
-  return data.results.map(toItem);
+): Promise<QaSearchResponse> {
+  const data = await request<{
+    results: Record<string, unknown>[];
+    mode?: string;
+    vectorAvailable?: boolean;
+    vectorError?: string | null;
+  }>("/api/qa/search", json("POST", { q, ...options }));
+  return {
+    items: data.results.map(toItem),
+    mode: data.mode ?? "search",
+    vectorAvailable: data.vectorAvailable !== false,
+    vectorError: data.vectorError ?? null,
+  };
 }
 
 export async function qaStats(): Promise<QaStats> {

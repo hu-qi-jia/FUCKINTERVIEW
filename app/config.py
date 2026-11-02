@@ -2,13 +2,39 @@
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = ROOT / "config"
-CONFIG_PATH = CONFIG_DIR / "settings.json"
+
+# 数据根目录（settings.json、档案、问答库、术语库、历史、资料与模型缓存）。
+#
+# 开发环境：默认仓库里的 config/，和安装版完全分开。
+# 安装版：Electron 通过 INTERVIEW_DATA_DIR 指到 %APPDATA%/面试语音助手/data，
+# 安装目录只读、升级会被覆盖，不能往里写用户数据。
+ENV_DATA_DIR = "INTERVIEW_DATA_DIR"
+DEFAULT_DATA_DIRNAME = "config"
+
+
+def data_root() -> Path:
+    """数据根目录：环境变量优先，否则回落到仓库里的 config/。"""
+    raw = os.environ.get(ENV_DATA_DIR, "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return ROOT / DEFAULT_DATA_DIRNAME
+
+
+def config_dir() -> Path:
+    """settings.json 所在目录，和档案 / 数据库同一个根。"""
+    return data_root()
+
+
+def config_path() -> Path:
+    return config_dir() / "settings.json"
 
 DEFAULT_SYSTEM_PROMPT = (
     "你是一名资深的中文技术面试官，正在进行一场模拟面试。"
@@ -53,11 +79,14 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "model": "BAAI/bge-small-zh-v1.5",
         "relevance_threshold": 0.75,
     },
-    # 面试档案（以及以后的问答库、热词库）存放的目录；相对路径按项目根目录解析。
-    # model_dir 单独放：模型是二进制资产，不该跟着用户数据迁移。
+    # 面试档案（以及以后的问答库、热词库）存放的目录。
+    # 空串 = 使用数据根目录（开发版是 config/，安装版是 userData/data）；
+    # 相对路径按项目根目录解析，兼容旧版配置里的 "config"。
+    # model_dir 单独放：模型是二进制资产，默认落在数据根目录下的 models/，
+    # 不跟着用户选择的档案目录迁移。
     "storage": {
-        "data_dir": "config",
-        "model_dir": "config/models",
+        "data_dir": "",
+        "model_dir": "",
     },
 }
 
@@ -77,9 +106,10 @@ def _merge(defaults: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]
 def load_settings() -> dict[str, Any]:
     """读取配置；文件不存在时返回默认值。"""
     settings = json.loads(json.dumps(DEFAULT_SETTINGS))
-    if CONFIG_PATH.exists():
+    path = config_path()
+    if path.exists():
         try:
-            with CONFIG_PATH.open("r", encoding="utf-8") as f:
+            with path.open("r", encoding="utf-8") as f:
                 stored = json.load(f)
             settings = _merge(settings, stored)
         except (OSError, json.JSONDecodeError):
@@ -93,12 +123,13 @@ def load_settings() -> dict[str, Any]:
 
 
 def _write_settings(settings: dict[str, Any]) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=CONFIG_DIR, suffix=".json")
+    target = config_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=target, suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, CONFIG_PATH)
+        os.replace(tmp_path, config_path())
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -138,3 +169,133 @@ def save_model_dir(model_dir: str) -> dict[str, Any]:
     settings["storage"] = {**settings.get("storage", {}), "model_dir": model_dir}
     _write_settings(settings)
     return settings
+
+
+def save_storage_paths(data_dir: str | None = None, model_dir: str | None = None) -> dict[str, Any]:
+    """一次写盘更新数据目录和 / 或模型目录，避免两次写盘留下半套配置。"""
+    settings = load_settings()
+    storage = dict(settings.get("storage") or {})
+    if data_dir is not None:
+        storage["data_dir"] = data_dir
+    if model_dir is not None:
+        storage["model_dir"] = model_dir
+    settings["storage"] = storage
+    _write_settings(settings)
+    return settings
+
+
+# --------------------------------------------------------------------------
+# 旧版安装目录数据迁移
+#
+# 安装版早期版本把配置和数据写进了 <安装目录>/resources/backend/config。
+# 安装目录只读、升级会被覆盖，现在统一放 INTERVIEW_DATA_DIR。这里在启动时
+# 把旧目录里的文件补到新目录，并把配置里的相对路径归一化；开发环境
+# （没有设置 INTERVIEW_DATA_DIR）新旧目录相同，直接跳过。
+# --------------------------------------------------------------------------
+_LEGACY_FILES = ("profiles.json", "documents.json")
+_LEGACY_DBS = ("qa.db", "terms.db", "sessions.db")
+_LEGACY_DB_SIDECARS = ("-wal", "-shm")
+
+
+def _resolve_legacy_path(raw: str, default_name: str) -> Path:
+    value = str(raw or "").strip() or default_name
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else (ROOT / path)
+
+
+def migrate_legacy_data() -> list[str]:
+    """把安装目录里的旧数据搬到当前数据根目录；返回搬过来的文件名。
+
+    只在当前根目录还没有同名文件时复制。settings.json 也只在目标不存在时
+    写入一份归一化后的副本，避免覆盖用户已经在新目录里改过的配置。
+    """
+    target = data_root()
+    legacy = ROOT / DEFAULT_DATA_DIRNAME
+    if target.resolve() == legacy.resolve() or not legacy.is_dir():
+        return []
+
+    target.mkdir(parents=True, exist_ok=True)
+    legacy_settings: dict[str, Any] = {}
+    settings_file = legacy / "settings.json"
+    if settings_file.is_file():
+        try:
+            raw = json.loads(settings_file.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                legacy_settings = raw
+        except (OSError, json.JSONDecodeError):
+            legacy_settings = {}
+
+    storage = legacy_settings.get("storage")
+    storage = storage if isinstance(storage, dict) else {}
+    old_data = _resolve_legacy_path(str(storage.get("data_dir") or ""), DEFAULT_DATA_DIRNAME)
+    old_model = _resolve_legacy_path(
+        str(storage.get("model_dir") or ""), f"{DEFAULT_DATA_DIRNAME}/models"
+    )
+
+    copied: list[str] = []
+
+    def copy_file(source: Path, dest: Path) -> None:
+        if not source.is_file() or dest.exists():
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+        copied.append(dest.name)
+
+    # 数据仍然在安装目录里：档案 / 资料 / 三个数据库整体搬过来。
+    # 如果用户以前就把数据目录指到了别处，那些文件已经在别处，不用重复复制。
+    if old_data.resolve() == legacy.resolve():
+        for name in _LEGACY_FILES:
+            copy_file(old_data / name, target / name)
+        for name in _LEGACY_DBS:
+            copy_file(old_data / name, target / name)
+            for suffix in _LEGACY_DB_SIDECARS:
+                copy_file(old_data / f"{name}{suffix}", target / f"{name}{suffix}")
+        source_docs = old_data / "documents"
+        dest_docs = target / "documents"
+        if source_docs.is_dir() and not dest_docs.exists():
+            shutil.copytree(source_docs, dest_docs)
+            copied.append("documents/")
+
+    # 模型缓存是二进制资产，跟着旧的默认位置搬，不跟着用户数据目录迁移。
+    default_model = legacy / "models"
+    if old_model.resolve() == default_model.resolve() and old_model.is_dir():
+        dest_model = target / "models"
+        if not dest_model.exists():
+            shutil.copytree(old_model, dest_model)
+            copied.append("models/")
+
+    # 配置里的相对路径按安装目录解析，搬到新根目录后会指错，统一改成
+    # 「空串 = 新根目录默认值」；用户自己设的绝对路径原样保留。
+    normalized = dict(legacy_settings)
+    if storage:
+        new_storage = dict(storage)
+        if old_data.resolve() == legacy.resolve():
+            new_storage["data_dir"] = ""
+        elif not Path(str(storage.get("data_dir") or "")).expanduser().is_absolute():
+            new_storage["data_dir"] = str(old_data)
+        if old_model.resolve() == default_model.resolve():
+            new_storage["model_dir"] = ""
+        elif not Path(str(storage.get("model_dir") or "")).expanduser().is_absolute():
+            new_storage["model_dir"] = str(old_model)
+        normalized["storage"] = new_storage
+
+    target_settings = target / "settings.json"
+    if legacy_settings and not target_settings.exists():
+        _write_settings_at(target, normalized)
+        copied.append("settings.json")
+
+    if copied:
+        logger.info(f"已把安装目录里的旧数据迁移到 {target}：{', '.join(copied)}")
+    return copied
+
+
+def _write_settings_at(directory: Path, settings: dict[str, Any]) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, directory / "settings.json")
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)

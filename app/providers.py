@@ -1,36 +1,38 @@
-"""根据配置构建 STT / LLM / TTS 服务实例。"""
+"""根据配置构建 STT / LLM / TTS 服务实例。
+
+供应商 SDK 只在真正用到时才导入：Anthropic SDK 单独就要 7 秒多（2395 个
+.py），而默认链路用的是 OpenAI 兼容接口。把 import 放进各分支后，
+``import server`` 不再顺带加载七家供应商的包，启动快很多。
+"""
 
 import os
 from typing import Any
 
-from pipecat.services.anthropic.llm import AnthropicLLMService
-from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
-from pipecat.services.minimax.tts import MiniMaxHttpTTSService
-from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.services.openai.stt import OpenAISTTService
-from pipecat.services.openai.tts import OpenAITTSService
-from pipecat.services.qwen.llm import QwenLLMService
 from pipecat.transcriptions.language import Language
 
 from app.config import DEFAULT_SYSTEM_PROMPT
-from app.services.minimax_stt import DEFAULT_BASE_URL as MINIMAX_ASR_BASE_URL
-from app.services.minimax_stt import MiniMaxSTTService
-from app.services.qwen_stt import QwenSTTService
-from app.services.qwen_tts import QwenTTSService
 
 QWEN_LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+MINIMAX_ASR_BASE_URL = "https://api.minimax.cn/v1"
+
+_compatible_openai_class: type | None = None
 
 
-class CompatibleOpenAILLMService(OpenAILLMService):
+def _compatible_openai_llm_service() -> type:
     """OpenAI 兼容服务：不使用 developer 角色。
 
     DeepSeek 等兼容服务只接受 system/user/assistant/tool，发送 developer
     会直接 422。设为 False 后由适配层把 developer 消息转成 user。
     """
+    global _compatible_openai_class
+    if _compatible_openai_class is None:
+        from pipecat.services.openai.llm import OpenAILLMService
 
-    supports_developer_role = False
+        class CompatibleOpenAILLMService(OpenAILLMService):
+            supports_developer_role = False
+
+        _compatible_openai_class = CompatibleOpenAILLMService
+    return _compatible_openai_class
 
 
 def _language(value: str | None) -> Language | None:
@@ -58,6 +60,8 @@ def build_stt(section: dict[str, Any]):
     base_url = (section.get("base_url") or "").strip()
 
     if provider == "qwen":
+        from app.services.qwen_stt import QwenSTTService
+
         return QwenSTTService(
             api_key=_require_key(section, "ASR (Qwen)", "DASHSCOPE_API_KEY"),
             base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -66,6 +70,8 @@ def build_stt(section: dict[str, Any]):
         )
 
     if provider == "minimax":
+        from app.services.minimax_stt import MiniMaxSTTService
+
         return MiniMaxSTTService(
             api_key=_require_key(section, "ASR (MiniMax)", "MINIMAX_API_KEY"),
             # 国内平台是 api.minimax.cn；api.minimax.io 是国际站，国内 Key 在那边会 401。
@@ -75,6 +81,8 @@ def build_stt(section: dict[str, Any]):
         )
 
     if provider == "deepgram":
+        from pipecat.services.deepgram.stt import DeepgramSTTService
+
         return DeepgramSTTService(
             api_key=_require_key(section, "ASR (Deepgram)", "DEEPGRAM_API_KEY"),
             settings=DeepgramSTTService.Settings(
@@ -84,6 +92,8 @@ def build_stt(section: dict[str, Any]):
         )
 
     if provider == "openai":
+        from pipecat.services.openai.stt import OpenAISTTService
+
         return OpenAISTTService(
             api_key=_require_key(section, "ASR (OpenAI)", "OPENAI_API_KEY"),
             base_url=base_url or None,
@@ -103,6 +113,8 @@ def build_llm(section: dict[str, Any]):
     system_prompt = (section.get("system_prompt") or "").strip() or DEFAULT_SYSTEM_PROMPT
 
     if provider == "anthropic":
+        from pipecat.services.anthropic.llm import AnthropicLLMService
+
         return AnthropicLLMService(
             api_key=_require_key(section, "LLM (Anthropic)", "ANTHROPIC_API_KEY"),
             settings=AnthropicLLMService.Settings(
@@ -112,6 +124,8 @@ def build_llm(section: dict[str, Any]):
         )
 
     if provider == "qwen":
+        from pipecat.services.qwen.llm import QwenLLMService
+
         return QwenLLMService(
             api_key=_require_key(section, "LLM (Qwen)", "DASHSCOPE_API_KEY"),
             base_url=base_url or QWEN_LLM_BASE_URL,
@@ -129,8 +143,10 @@ def build_llm(section: dict[str, Any]):
         {"reasoning_effort": "none"} if section.get("disable_thinking", True) else {}
     )
 
+    from pipecat.services.openai.llm import OpenAILLMService
+
     # 任意 OpenAI 兼容服务：OpenAI、DeepSeek、SiliconFlow、Ollama、vLLM 等
-    return CompatibleOpenAILLMService(
+    return _compatible_openai_llm_service()(
         api_key=_require_key(section, "LLM (OpenAI 兼容)", "OPENAI_API_KEY"),
         base_url=base_url or None,
         settings=OpenAILLMService.Settings(
@@ -161,6 +177,8 @@ def build_tts(section: dict[str, Any], session):
     language = section.get("language") or None
 
     if provider == "minimax":
+        from pipecat.services.minimax.tts import MiniMaxHttpTTSService
+
         kwargs: dict[str, Any] = {}
         tts_url = _minimax_tts_url(base_url)
         if tts_url:
@@ -178,6 +196,8 @@ def build_tts(section: dict[str, Any], session):
         )
 
     if provider == "qwen":
+        from app.services.qwen_tts import QwenTTSService
+
         return QwenTTSService(
             api_key=_require_key(section, "TTS (Qwen)", "DASHSCOPE_API_KEY"),
             base_url=base_url or "https://dashscope.aliyuncs.com/api/v1",
@@ -187,6 +207,8 @@ def build_tts(section: dict[str, Any], session):
         )
 
     if provider == "openai":
+        from pipecat.services.openai.tts import OpenAITTSService
+
         return OpenAITTSService(
             api_key=_require_key(section, "TTS (OpenAI)", "OPENAI_API_KEY"),
             base_url=base_url or None,
@@ -197,6 +219,8 @@ def build_tts(section: dict[str, Any], session):
         )
 
     if provider == "elevenlabs":
+        from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+
         return ElevenLabsTTSService(
             api_key=_require_key(section, "TTS (ElevenLabs)", "ELEVENLABS_API_KEY"),
             settings=ElevenLabsTTSService.Settings(
@@ -206,6 +230,8 @@ def build_tts(section: dict[str, Any], session):
         )
 
     if provider == "cartesia":
+        from pipecat.services.cartesia.tts import CartesiaTTSService
+
         return CartesiaTTSService(
             api_key=_require_key(section, "TTS (Cartesia)", "CARTESIA_API_KEY"),
             settings=CartesiaTTSService.Settings(

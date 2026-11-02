@@ -451,13 +451,14 @@ def upgrade_templates(conn: sqlite3.Connection) -> int:
 def reset_cache() -> None:
     """数据目录切换后调用：关掉旧连接，下次连接重新建表。"""
     global _shared, _shared_path
-    if _shared is not None:
-        _shared.close()
-    _shared, _shared_path = None, None
-    _initialised.clear()
-    _cache.clear()
-    _templates_cache.clear()
-    _touch()
+    with _lock:
+        if _shared is not None:
+            _shared.close()
+        _shared, _shared_path = None, None
+        _initialised.clear()
+        _cache.clear()
+        _templates_cache.clear()
+        _touch()
 
 
 def migrate_db(source: Path, target: Path) -> bool:

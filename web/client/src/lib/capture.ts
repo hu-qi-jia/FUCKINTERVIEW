@@ -64,9 +64,24 @@ export async function captureSystemAudio(): Promise<MediaStream> {
     stream.removeTrack(track);
   }
 
-  if (stream.getAudioTracks().length === 0) {
+  const audioTracks = stream.getAudioTracks();
+  if (audioTracks.length === 0) {
     for (const track of stream.getTracks()) track.stop();
     throw new CaptureError("no-audio");
+  }
+
+  // 桌面端环回音轨偶尔会「存在但已经结束」；继续连接只会得到永远静音的
+  // 会话，看起来像「识别不到声音」。这里直接当成没有系统音频。
+  const ended = audioTracks.find((track) => track.readyState === "ended");
+  if (ended || audioTracks.every((track) => track.readyState !== "live")) {
+    for (const track of stream.getTracks()) track.stop();
+    throw new CaptureError("no-audio");
+  }
+
+  // muted 在刚拿到环回音轨时可能短暂为 true（还没有声音播放），不阻断，
+  // 但写进控制台方便排查「音轨在、始终静音」的问题。
+  if (audioTracks.every((track) => track.muted)) {
+    console.warn("[capture] 系统音频轨当前为 muted，可能暂时收不到声音");
   }
 
   return stream;

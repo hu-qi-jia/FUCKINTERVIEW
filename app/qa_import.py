@@ -330,21 +330,32 @@ def preview(raw: bytes, filename: str) -> dict[str, Any]:
         row["questionKey"] = store.normalize_question(row["question"])
         valid.append(row)
 
-    # 与库里已有条目比对
+    # 与库里已有条目比对；同一文件里先出现的行也参与判重，
+    # 否则两行归一化后相同的问题都会被当成「新增」。
+    seen_in_file: dict[str, dict[str, Any]] = {}
     for row in valid:
-        existing = store.find_by_key(row["questionKey"])
+        key = row["questionKey"]
+        first = seen_in_file.get(key)
+        if first is not None:
+            row["duplicateOfLine"] = first.get("line")
+            same = _same_content(first, row)
+            row["decision"] = "skip" if same else "update"
+            row["existingQuestion"] = first["question"]
+            if not same and first.get("existingId"):
+                # 先出现的行更新了库里的记录，这一行也更新同一条。
+                row["existingId"] = first.get("existingId")
+            continue
+
+        existing = store.find_by_key(key)
         if not existing:
             row["decision"] = "insert"
-            continue
-        target = existing[0]
-        same = (
-            target["question"] == row["question"]
-            and target["answer"] == row["answer"]
-            and target["aliases"] == row["aliases"]
-        )
-        row["decision"] = "skip" if same else "update"
-        row["existingId"] = target["id"]
-        row["existingQuestion"] = target["question"]
+        else:
+            target = existing[0]
+            same = _same_content(target, row)
+            row["decision"] = "skip" if same else "update"
+            row["existingId"] = target["id"]
+            row["existingQuestion"] = target["question"]
+        seen_in_file[key] = row
 
     # 疑似重复：问法不同但语义很近。模型不可用时跳过这一项，不阻断导入。
     near_duplicates = 0
@@ -386,6 +397,17 @@ def preview(raw: bytes, filename: str) -> dict[str, Any]:
     }
 
 
+def _same_content(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    # 问题按归一化后比较：只差标点 / 大小写 / 空白视为同一条。
+    return (
+        store.normalize_question(left["question"]) == store.normalize_question(right["question"])
+        and left["answer"] == right["answer"]
+        and left["aliases"] == right["aliases"]
+        and left["type"] == right["type"]
+        and left["proficiency"] == right["proficiency"]
+    )
+
+
 def _public_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "line": row.get("line"),
@@ -396,6 +418,7 @@ def _public_row(row: dict[str, Any]) -> dict[str, Any]:
         "proficiency": row["proficiency"],
         "decision": row["decision"],
         "existingId": row.get("existingId"),
+        "duplicateOfLine": row.get("duplicateOfLine"),
         "nearDuplicateOf": row.get("nearDuplicateOf"),
         "nearDuplicateScore": row.get("nearDuplicateScore"),
     }
@@ -437,18 +460,14 @@ def commit(token: str, mode: str = "merge") -> dict[str, Any]:
     inserted: list[int] = []
     updated: list[int] = []
     skipped = 0
+    # 本批里「源行号 -> 已写入的 qa id」：文件内部重复的行要落在同一条记录上。
+    line_ids: dict[int, int] = {}
 
     import_id = store.record_import(
         entry["source"], entry["format"], entry["fileHash"], 0, 0, 0
     )
 
     for row in rows:
-        action = row["decision"]
-        if mode == "append":
-            action = "insert"
-        if action == "skip":
-            skipped += 1
-            continue
         fields = {
             "question": row["question"],
             "answer": row["answer"],
@@ -459,16 +478,54 @@ def commit(token: str, mode: str = "merge") -> dict[str, Any]:
             "import_id": import_id,
             "source_ref": f"{entry['source']}#{row.get('line')}",
         }
-        if action == "update" and row.get("existingId"):
-            try:
-                store.update_qa(int(row["existingId"]), fields)
-                updated.append(int(row["existingId"]))
-            except (KeyError, ValueError):
-                created = store.create_qa(fields)
-                inserted.append(created["id"])
-        else:
+
+        # 「追加」保持既有语义：文件里有多少行就建多少条。
+        if mode == "append":
             created = store.create_qa(fields)
             inserted.append(created["id"])
+            if row.get("line") is not None:
+                line_ids[int(row["line"])] = created["id"]
+            continue
+
+        key = row.get("questionKey") or store.normalize_question(row["question"])
+        target_id: int | None = None
+        duplicate_line = row.get("duplicateOfLine")
+        if duplicate_line is not None:
+            target_id = line_ids.get(int(duplicate_line))
+
+        # 提交时重新判重：预览之后数据库可能已被其他窗口或另一批导入改动。
+        if target_id is None:
+            existing = store.find_by_key(key)
+            if existing:
+                current = existing[0]
+                if _same_content(current, row):
+                    skipped += 1
+                    if row.get("line") is not None:
+                        line_ids[int(row["line"])] = current["id"]
+                    continue
+                target_id = current["id"]
+
+        if target_id is not None:
+            current = store.get_qa(int(target_id))
+            if current is not None and _same_content(current, row):
+                skipped += 1
+                if row.get("line") is not None:
+                    line_ids[int(row["line"])] = int(target_id)
+                continue
+            try:
+                store.update_qa(int(target_id), fields)
+                updated.append(int(target_id))
+                if row.get("line") is not None:
+                    line_ids[int(row["line"])] = int(target_id)
+                continue
+            except (KeyError, ValueError):
+                # 记录在预览和提交之间被删了：退回新增。
+                pass
+
+        created = store.create_qa(fields)
+        inserted.append(created["id"])
+        if row.get("line") is not None:
+            line_ids[int(row["line"])] = created["id"]
 
     _update_import_counts(import_id, len(inserted), len(updated), skipped)
     _previews.pop(token, None)

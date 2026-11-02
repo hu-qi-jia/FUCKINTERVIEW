@@ -3,8 +3,7 @@
 __pycache__/
 *.pyc
 
-# 上游源码（git clone，不属于本项目）
-/pipecat/
+# 上游源码：pipecat/ 已按实际用到的部分精简并随仓库提交（见 VENDORED.md）
 
 # 前端
 web/client/node_modules/

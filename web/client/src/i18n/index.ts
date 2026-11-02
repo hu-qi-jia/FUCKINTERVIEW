@@ -608,6 +608,7 @@ const zh = {
       updatedAt: "更新于 {{time}}",
     },
     searchPlaceholder: "搜索问题或答案…",
+    searchVectorUnavailable: "向量模型暂不可用，本次只按关键词检索。",
     clearSearch: "清空搜索",
     new: "新建问答",
     newQuestion: "新的问题",
@@ -655,6 +656,7 @@ const zh = {
         error: "错误",
       },
       previous: "这个文件在 {{time}} 导入过，本次会按当前内容更新。",
+      duplicateOf: "与第 {{line}} 行同题",
       nearDuplicateUnavailable:
         "向量模型未加载，本次跳过疑似重复检查，其余照常导入。",
       truncated: "只显示前 {{count}} 条，其余会在确认后一并导入。",
@@ -1378,6 +1380,8 @@ const en = {
       updatedAt: "Updated {{time}}",
     },
     searchPlaceholder: "Search questions or answers…",
+    searchVectorUnavailable:
+      "The embedding model is unavailable; searching by keyword only.",
     clearSearch: "Clear search",
     new: "New entry",
     newQuestion: "New question",
@@ -1426,6 +1430,7 @@ const en = {
       },
       previous:
         "This file was imported on {{time}}; existing entries will be updated.",
+      duplicateOf: "Same question as line {{line}}",
       nearDuplicateUnavailable:
         "The embedding model isn't loaded, so duplicate detection was skipped. Everything else still imports.",
       truncated:

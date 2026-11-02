@@ -280,6 +280,11 @@ export function QaImport({ onDone }: { onDone: () => void }) {
                       <div className="flex min-w-0 items-center gap-2">
                         <DecisionBadge row={row} />
                         <span className="min-w-0 flex-1 truncate text-sm">{row.question}</span>
+                        {row.duplicateOfLine != null && (
+                          <span className="text-muted-foreground shrink-0 text-[10px]">
+                            {t("qa.import.duplicateOf", { line: row.duplicateOfLine })}
+                          </span>
+                        )}
                         {row.line != null && (
                           <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">
                             #{row.line}

@@ -140,3 +140,27 @@ def test_listen_recorder_only_records_candidate(store):
     detail = store.get_session(session_id)
     assert [turn["role"] for turn in detail["turns"]] == ["candidate"]
     assert detail["turns"][0]["text"] == "我主要负责控制台优化。"
+
+
+def test_listen_recorder_still_collects_stt_metrics(store):
+    """listen 路不记 AI 文本，但候选人麦克风的 STT 用量必须进历史。"""
+    now = datetime.now(timezone.utc)
+    session_id = store.open_session("abc", "live", started_at=now - timedelta(minutes=3))
+    recorder = SessionRecorder(
+        session_id=session_id,
+        role="candidate",
+        record_assistant=False,
+    )
+
+    push(
+        recorder,
+        MetricsFrame(
+            data=[STTUsageMetricsData(processor="stt", value=STTUsage(audio_seconds=2.5))]
+        ),
+    )
+    push(recorder, LLMTextFrame(text="这段不应该被记录"))
+
+    store.add_metrics(session_id, **recorder.finish())
+    detail = store.get_session(session_id)
+    assert detail["sttSeconds"] == 2.5
+    assert detail["turns"] == []

@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.config import ROOT, load_settings, save_storage
+from app.config import ROOT, data_root, load_settings
 
 SCHEMA_VERSION = 1
 PROFILES_FILENAME = "profiles.json"
@@ -38,6 +39,16 @@ CARD_BODY_KEYS = (
 
 _lock = threading.RLock()
 
+# 档案 JSON 单文件可达数百 KB，接口一次调用里会被读好几遍
+# （list_profiles 自己就查两次）。按路径 + mtime + 大小缓存，
+# 文件被别的进程改动时也会自然失效。
+_store_cache: dict[str, Any] = {
+    "path": None,
+    "mtime_ns": None,
+    "size": None,
+    "store": None,
+}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -47,8 +58,15 @@ def _now() -> str:
 # 文件读写
 # --------------------------------------------------------------------------
 def data_dir() -> Path:
-    raw = str(load_settings().get("storage", {}).get("data_dir") or "config").strip()
-    path = Path(raw or "config").expanduser()
+    """档案 / 数据库所在目录。
+
+    配置里留空时用数据根目录（开发版 config/，安装版 userData/data）；
+    相对路径按项目根目录解析，兼容旧版的 "config"。
+    """
+    raw = str(load_settings().get("storage", {}).get("data_dir") or "").strip()
+    if not raw:
+        return data_root()
+    path = Path(raw).expanduser()
     return path if path.is_absolute() else (ROOT / path)
 
 
@@ -62,8 +80,18 @@ def _empty_store() -> dict[str, Any]:
 
 def _read_store() -> dict[str, Any]:
     path = profiles_path()
-    if not path.exists():
+    try:
+        stat = path.stat()
+    except OSError:
         return _empty_store()
+    if (
+        _store_cache["store"] is not None
+        and _store_cache["path"] == str(path)
+        and _store_cache["mtime_ns"] == stat.st_mtime_ns
+        and _store_cache["size"] == stat.st_size
+    ):
+        # 调用方可能修改返回值后再写盘，缓存里必须留一份干净的。
+        return copy.deepcopy(_store_cache["store"])
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -71,7 +99,14 @@ def _read_store() -> dict[str, Any]:
     if not isinstance(data, dict) or not isinstance(data.get("profiles"), list):
         return _empty_store()
     data.setdefault("schemaVersion", SCHEMA_VERSION)
-    return data
+    _remember_store(path, stat.st_mtime_ns, stat.st_size, data)
+    return copy.deepcopy(data)
+
+
+def _remember_store(path: Path, mtime_ns: int, size: int, store: dict[str, Any]) -> None:
+    _store_cache.update(
+        {"path": str(path), "mtime_ns": mtime_ns, "size": size, "store": store}
+    )
 
 
 def _write_store(store: dict[str, Any]) -> None:
@@ -82,6 +117,8 @@ def _write_store(store: dict[str, Any]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(store, f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, path)
+        stat = path.stat()
+        _remember_store(path, stat.st_mtime_ns, stat.st_size, store)
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -391,13 +428,38 @@ def update_coach_slots(profile_id: str, slug: str, slots: dict[str, Any]) -> dic
         return profile
 
 
+class CardChanged(ValueError):
+    """写回期间卡片正文被改过，旧快照不能覆盖新内容。"""
+
+
+def card_version(card: dict[str, Any]) -> str:
+    """卡片正文的稳定指纹；写回前后对比它就能发现并发编辑。"""
+    payload = {
+        "slug": card.get("slug"),
+        "name": card.get("name"),
+        "description": card.get("description"),
+        "body": card.get("body"),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def apply_coach_result(
     profile_id: str,
     slug: str,
     fields: dict[str, Any],
     applied_dimensions: list[str],
+    *,
+    expected_answers: dict[str, str] | None = None,
+    expected_card_version: str | None = None,
 ) -> dict[str, Any]:
-    """写回合并结果，并在同一次写盘里把这几格标成已写入（避免写一半）。"""
+    """写回合并结果，并在同一次写盘里把这几格标成已写入（避免写一半）。
+
+    - ``expected_card_version`` 与当前卡片不一致时抛 ``CardChanged``，
+      避免模型调用期间的手动编辑被旧快照覆盖；
+    - ``expected_answers`` 是发起写回时的回答快照：只有回答没变过的维度
+      才标成已写入，等待期间改成新内容的格子继续保持待写入，下次再合并。
+    """
     with _lock:
         store = _read_store()
         profile = _find(store, profile_id)
@@ -412,15 +474,26 @@ def apply_coach_result(
         if index is None:
             raise KeyError(slug)
 
-        merged = dict(profile["cards"][index])
+        card = profile["cards"][index]
+        if expected_card_version is not None and card_version(card) != expected_card_version:
+            raise CardChanged("经历卡在写回期间被修改，请重新写回")
+
+        merged = dict(card)
         merged.update(fields)
+        merged["sourceRevision"] = int(profile.get("materialsRevision") or 0)
         profile["cards"][index] = _sanitize_card(merged, index)
 
         all_slots = dict(profile.get("coachSlots") or {})
         slots = dict(all_slots.get(slug) or {})
         for dimension in applied_dimensions:
-            if dimension in slots:
-                slots[dimension] = {**slots[dimension], "applied": True}
+            if dimension not in slots:
+                continue
+            if expected_answers is not None:
+                current_answer = str(slots[dimension].get("a") or "")
+                if current_answer != expected_answers.get(dimension, ""):
+                    # 回答已经变了：保持待写入，下一次写回会带上新内容。
+                    continue
+            slots[dimension] = {**slots[dimension], "applied": True}
         all_slots[slug] = slots
         profile["coachSlots"] = all_slots
 
@@ -448,27 +521,6 @@ def resolve_dir(raw: str) -> Path:
         raise ValueError("数据目录不能为空")
     path = Path(value).expanduser()
     return path if path.is_absolute() else (ROOT / path)
-
-
-def set_data_dir(raw: str, *, migrate: bool = True) -> dict[str, Any]:
-    """切换数据目录；默认把现有档案文件复制过去，旧文件保留备份。"""
-    target = resolve_dir(raw)
-    if target.exists() and not target.is_dir():
-        raise ValueError(f"{target} 不是目录")
-
-    with _lock:
-        source = profiles_path()
-        target_file = target / PROFILES_FILENAME
-        if migrate and source.is_file() and target_file != source:
-            if target_file.exists():
-                raise ValueError(f"目标目录已存在 {PROFILES_FILENAME}，请先备份或换一个目录")
-            target.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target_file)
-        else:
-            target.mkdir(parents=True, exist_ok=True)
-
-        save_storage(str(target))
-        return storage_info()
 
 
 def open_folder() -> None:

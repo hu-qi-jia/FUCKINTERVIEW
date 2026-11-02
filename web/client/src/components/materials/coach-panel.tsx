@@ -185,7 +185,7 @@ export function CoachPanel({
 
   const save = async (dimension: CoachDimension) => {
     const text = draft.trim();
-    if (!text || saving) return;
+    if (!text || saving || writing) return;
     const profileId = profile.id;
     setSaving(dimension);
     setError(null);
@@ -413,7 +413,7 @@ export function CoachPanel({
                         <Textarea
                           autoFocus
                           value={draft}
-                          disabled={busy || saving !== null}
+                          disabled={busy || saving !== null || writing}
                           placeholder={t("materials.coach.placeholder")}
                           className="field-sizing-fixed h-20 resize-y text-sm"
                           onChange={(event) => setDraft(event.target.value)}
@@ -445,6 +445,7 @@ export function CoachPanel({
                             size="sm"
                             disabled={
                               busy ||
+                              writing ||
                               saving !== null ||
                               !draft.trim() ||
                               draft.trim() === (slot?.a ?? "")

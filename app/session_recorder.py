@@ -95,6 +95,12 @@ class SessionRecorder(BaseObserver):
             )
             return
 
+        # 指标和「是否记录 AI 文本」无关：候选人那路 record_assistant=False，
+        # 但它的 STT 用量同样要计入历史。
+        if isinstance(frame, MetricsFrame):
+            self._collect_metrics(frame)
+            return
+
         if not self._record_assistant:
             return
 
@@ -111,9 +117,6 @@ class SessionRecorder(BaseObserver):
             return
         if isinstance(frame, LLMFullResponseEndFrame):
             self._flush_reply()
-            return
-        if isinstance(frame, MetricsFrame):
-            self._collect_metrics(frame)
 
     def _flush_reply(self) -> None:
         text = "".join(self._reply).strip()

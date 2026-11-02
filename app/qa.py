@@ -225,10 +225,12 @@ def _migrate_to_v2(conn: sqlite3.Connection) -> None:
 def reset_cache() -> None:
     """数据目录切换后调用：关掉旧连接，下次连接重新建表。"""
     global _shared, _shared_path
-    if _shared is not None:
-        _shared.close()
-    _shared, _shared_path = None, None
-    _initialised.clear()
+    # 后台索引线程也在用这条共享连接；必须和 connect() 一样串行关闭。
+    with _lock:
+        if _shared is not None:
+            _shared.close()
+        _shared, _shared_path = None, None
+        _initialised.clear()
 
 
 def migrate_db(source: Path, target: Path) -> bool:

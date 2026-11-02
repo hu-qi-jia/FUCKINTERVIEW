@@ -30,6 +30,7 @@ import { AppSidebar, MobileNav, type AppPage } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLiveInterview } from "@/hooks/use-live-interview";
+import { installApiToken } from "@/lib/api-token";
 import { readLiveProfileId, saveLiveProfileId } from "@/lib/live-profile";
 import {
   readCaptureMic,
@@ -517,7 +518,13 @@ function Home() {
                   autoConnectSignal={autoStartToken}
                   onEnd={() => void markSessionEnded(interviewId)}
                   onDisconnected={handleInterviewDisconnected}
-                  onConnectError={() => setInterviewEnded(true)}
+                  onConnectError={() => {
+                    // 首次连接失败也要结束这次尝试：解锁导航，并停掉已经
+                    // 采集的系统音轨和候选人麦克风会话。
+                    liveWasLinked.current = false;
+                    setInterviewEnded(true);
+                    live.stopSession();
+                  }}
                   liveConversation={{
                     messages: live.extraMessages,
                     interimText: live.interimText,
@@ -602,6 +609,9 @@ function Home() {
     </TooltipProvider>
   );
 }
+
+// 必须在任何接口请求之前包好 fetch。
+installApiToken();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

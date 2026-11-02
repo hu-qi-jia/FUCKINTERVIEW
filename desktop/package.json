@@ -10,7 +10,8 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "backend": "python scripts/build-backend.py",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "test": "node --test electron/*.test.js"
   },
   "devDependencies": {
     "electron": "44.8.0",
@@ -26,6 +27,7 @@
     },
     "files": [
       "electron/**/*",
+      "!electron/*.test.js",
       "package.json"
     ],
     "extraResources": [

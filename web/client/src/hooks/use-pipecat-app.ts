@@ -165,6 +165,9 @@ export function usePipecatApp(
         }),
       );
       await activeClient.disconnect().catch(() => {});
+      // 交给调用方收尾（Console 的 onConnectError）：否则首次 /start 或
+      // WebRTC 协商失败时，页面不知道这次连接已经结束。
+      throw err;
     } finally {
       if (attemptRef.current === attempt) connectingRef.current = null;
     }

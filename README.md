@@ -10,8 +10,10 @@
 语音机器人2/
 ├── server.py                    # 后端入口：配置接口 + 语音 pipeline + 托管前端
 ├── app/
-│   ├── config.py                # 读写 config/settings.json
-│   ├── providers.py             # 按配置构建 STT / LLM / TTS
+│   ├── config.py                # 读写 settings.json；数据根目录（开发版 / 安装版）
+│   ├── security.py              # 本机访问边界：回环 Host、精确 Origin、本地令牌
+│   ├── storage_migration.py     # 数据目录整体迁移（预检 / 暂存 / 原子切换）
+│   ├── providers.py             # 按配置构建 STT / LLM / TTS（供应商 SDK 懒加载）
 │   ├── materials.py             # 面试档案的本地 JSON 存储与数据目录
 │   ├── materials_ai.py          # 简历整合 / 经历单元 / 经历卡的提示词
 │   ├── documents.py             # 其他资料（md / pdf）的本地存储与目录迁移
@@ -25,19 +27,20 @@
 │   └── services/
 │       ├── qwen_stt.py          # Qwen ASR（DashScope OpenAI 兼容接口）
 │       └── qwen_tts.py          # Qwen TTS（DashScope 多模态生成接口）
-├── config/settings.json         # 运行时配置（含密钥，勿提交）
-├── config/profiles.json         # 面试档案（含个人简历，勿提交）
-├── config/documents.json        # 其他资料索引（勿提交）
-├── config/documents/            # 其他资料原件（md / pdf，勿提交）
-├── config/qa.db                 # 问答库（SQLite，勿提交）
-├── config/terms.db              # 术语库（SQLite，勿提交）
-├── config/sessions.db           # 面试历史与转写（SQLite，勿提交）
-├── config/models/               # 向量模型缓存（约 90MB，勿提交）
-├── docs/qa-library-design.md    # 问答库的设计说明
+├── config/                      # 开发环境的数据目录（安装版在 userData/data）
+│   ├── settings.json            # 运行时配置（含密钥，勿提交）
+│   ├── profiles.json            # 面试档案（含个人简历，勿提交）
+│   ├── documents.json           # 其他资料索引（勿提交）
+│   ├── documents/               # 其他资料原件（md / pdf，勿提交）
+│   ├── qa.db                    # 问答库（SQLite，勿提交）
+│   ├── terms.db                 # 术语库（SQLite，勿提交）
+│   ├── sessions.db              # 面试历史与转写（SQLite，勿提交）
+│   └── models/                  # 向量模型缓存（约 90MB，勿提交）
+├── docs/qa-library-design.md     # 问答库的设计说明
 ├── web/client/                  # 前端源码（pipecat-prebuilt 的 React 应用）
 │   └── dist/                    # npm run build 产物，server.py 托管在 /client
 ├── desktop/                     # Electron 桌面端外壳（见「桌面端（Electron）」）
-├── pipecat/                     # Pipecat 源码（editable 安装，已按本项目用到的部分精简）
+├── pipecat/                     # Pipecat 源码（随仓库提交，见 pipecat/VENDORED.md）
 └── .venv/                       # Python 3.12 虚拟环境
 ```
 
@@ -53,6 +56,18 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 
 打开 <http://localhost:7860/>，会自动跳转到 `/client/`。
 
+开发环境的数据全部在仓库的 `config/` 下；安装版的数据在
+`%APPDATA%\面试语音助手\data`，两边用不同的目录、不同的模型缓存，互不覆盖。
+开着安装版时如果要同时跑浏览器开发端，换一个端口：
+
+```bash
+INTERVIEW_PORT=7870 PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
+```
+
+> 本机接口默认只接受回环地址、同源请求，并给 `/api/*` 加了每次启动随机生成的
+> 访问令牌（服务端渲染 `/client/` 时注入页面，前端自动带上）。跨源网页既读不到
+> 设置里的 API Key，也改不了本地数据。
+
 ## 桌面端（Electron）
 
 `desktop/` 是 Electron 外壳：主进程拉起本地 Python 服务（项目 `.venv` 里的解释器 + `server.py`），
@@ -65,6 +80,10 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 ```
 
 - 端口默认 7860，被占用时自动往后找空闲端口；单实例运行，重复启动会唤起已有窗口
+- **开发端与安装版隔离**：`npm --prefix desktop start` 用仓库自己的 `.venv` 和
+  `config/`，userData 指到 `interview-desktop-dev`，默认端口 7870；安装版用打包的
+  Python 运行时，数据在 `%APPDATA%\面试语音助手\data`，默认从 7860 起找端口。
+  两者可以同时运行，不会抢窗口、抢数据或抢端口
 - **无边框窗口**：不画单独的一条标题栏，最小化 / 最大化还原 / 关闭三个按钮直接排在页头的末尾
   （`web/client/src/components/window-controls.tsx`），和页面标题同一行；页头整行是窗口拖拽区，
   三个按钮标了 `no-drag` 才收得到点击（Electron 里拖拽区会吞掉鼠标事件，浮在上面的元素也不行）。
@@ -81,10 +100,16 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 - 首次安装如果卡在下载 Electron 二进制，用国内镜像：
   `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm --prefix desktop install`
 - **打包**：先 `npm --prefix desktop run backend` 把 Python 运行时装进 `desktop/resources/backend`
-  （便携 CPython + 依赖 + 精简版 Pipecat + 前端产物，约 460MB），再
+  （便携 CPython + 依赖 + 精简版 Pipecat + 前端产物）。脚本会先构建前端、剔除
+  运行时用不到的重包（OpenCV / pip / pygments 等）并预编译 `.pyc`，再
   `npm --prefix desktop run dist` 用 electron-builder 出 NSIS 安装包
-  （`desktop/dist/FUCKINTERVIEW-Setup-<版本>.exe`，约 100MB）。
-  安装版的后端跑在 `%APPDATA%\面试语音助手\data`，配置、档案、问答库、历史都写在那儿，和安装目录分开
+  （`desktop/dist/FUCKINTERVIEW-Setup-<版本>.exe`）。
+  安装版的后端跑在 `%APPDATA%\面试语音助手\data`，配置、档案、问答库、历史、
+  模型缓存都写在那儿，和安装目录分开；从旧版本升级时会自动把**同一个安装目录**
+  `resources/backend/config` 里的数据搬过来（只补缺失文件，不覆盖新数据）。
+  如果旧版装在另一个目录，把那个目录下 `resources/backend/config` 里的
+  `settings.json` / `profiles.json` / `*.db` / `documents*` / `models/` 手动拷到
+  `%APPDATA%\面试语音助手\data` 即可
 
 ### 换一台机器
 
@@ -99,6 +124,7 @@ npm --prefix desktop start
 ```
 
 - 需要 Node 20+、Python 3.11+；`requirements.txt` 里的 `-e ./pipecat` 会装仓库里这份精简版 Pipecat
+  （源码随仓库提交，干净克隆不需要再拉上游；版本信息见 `pipecat/VENDORED.md`）
 - Python 解释器按「`.venv` → PATH 里的 python」找，也可以用环境变量 `INTERVIEW_PYTHON` 指定
 - 数据（档案 / 问答库 / 术语库 / 历史 / 其他资料）都在 `config/` 下，跟着项目目录走；
   换机器时一起拷过去，或在「设置 → 通用设置 → 数据目录」指到同步盘

@@ -115,6 +115,8 @@ export function QaLibrary({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 向量模型不可用时后端会自动退回关键词召回，这里把提示显示出来。
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
 
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
@@ -144,13 +146,16 @@ export function QaLibrary({
       setError(null);
       try {
         if (query) {
-          const results = await searchQa(query, {
+          const result = await searchQa(query, {
             limit: PAGE_SIZE,
             types: type ? [type] : undefined,
           });
           if (ticket !== requestId.current) return;
-          setItems(results);
-          setTotal(results.length);
+          setItems(result.items);
+          setTotal(result.items.length);
+          setSearchNotice(
+            result.vectorAvailable ? null : t("qa.searchVectorUnavailable"),
+          );
         } else {
           const data = await listQa({
             type,
@@ -160,6 +165,7 @@ export function QaLibrary({
           if (ticket !== requestId.current) return;
           setItems((current) => (offset === 0 ? data.items : [...current, ...data.items]));
           setTotal(data.total);
+          setSearchNotice(null);
         }
       } catch (caught) {
         if (ticket !== requestId.current) return;
@@ -394,6 +400,11 @@ export function QaLibrary({
         </div>
       </div>
 
+      {searchNotice && (
+        <div className="shrink-0 border-b px-4 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+          {searchNotice}
+        </div>
+      )}
       {error && (
         <div className="text-destructive shrink-0 border-b px-4 py-1.5 text-xs">{error}</div>
       )}

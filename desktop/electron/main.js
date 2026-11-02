@@ -26,7 +26,8 @@ const {
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { startBackend, stopAll, ROOT, HOST } = require("./backend");
+const { startBackend, stopAll, ROOT } = require("./backend");
+const { createUrlPolicy, normalizeOrigin, safeExternalUrl } = require("./url-policy");
 
 const IS_DEV = process.argv.includes("--dev");
 const APP_TITLE = "面试语音助手";
@@ -34,6 +35,13 @@ const BUILD_DIR = path.join(__dirname, "..", "build");
 const ICON_PATH = path.join(BUILD_DIR, "icon.png");
 const TRAY_ICON_PATH = path.join(BUILD_DIR, "tray.png");
 const PRELOAD_PATH = path.join(__dirname, "preload.js");
+
+// 开发端和安装版彻底分开：不同的 userData（日志、单实例锁）和默认端口。
+// 否则开着安装版时 `npm start` 会把窗口交给安装版实例。
+if (!app.isPackaged) {
+  app.setPath("userData", path.join(app.getPath("appData"), "interview-desktop-dev"));
+}
+const DEV_PORT = 7870;
 
 /** 主进程允许网页申请的权限：只放行本地界面真正会用到的。 */
 const ALLOWED_PERMISSIONS = new Set([
@@ -73,9 +81,21 @@ let tray = null;
 let backend = null;
 let quitting = false; // 用户真的要退出（托盘菜单 / Ctrl+Q）
 let cleanedUp = false; // 后端已经收干净，可以放行退出
+// 本地服务的精确 Origin（端口是动态的），后端就绪后设置。
+const urlPolicy = createUrlPolicy(LOADING_PAGE);
 
 function isAppUrl(url) {
-  return url.startsWith(`http://${HOST}:`) || url.startsWith("data:");
+  return urlPolicy.isAppUrl(url);
+}
+
+function isAppOrigin(origin) {
+  return urlPolicy.isAppOrigin(origin);
+}
+
+/** 站外链接只交给系统浏览器打开 http/https，其他协议一律忽略。 */
+function openExternalSafely(raw) {
+  const target = safeExternalUrl(raw);
+  if (target) void shell.openExternal(target);
 }
 
 function createWindow() {
@@ -120,13 +140,13 @@ function createWindow() {
   // 站外链接交给系统浏览器，别把桌面窗口导航走。
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isAppUrl(url)) return { action: "allow" };
-    void shell.openExternal(url);
+    openExternalSafely(url);
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
     if (isAppUrl(url)) return;
     event.preventDefault();
-    void shell.openExternal(url);
+    openExternalSafely(url);
   });
 
   void window.loadURL(LOADING_PAGE);
@@ -187,7 +207,12 @@ function installWindowIpc() {
  */
 function installDisplayMediaHandler() {
   session.defaultSession.setDisplayMediaRequestHandler(
-    async (_request, callback) => {
+    async (request, callback) => {
+      // 只有本应用页面可以拿屏幕 + 系统环回音频，站外页面一律拒绝。
+      if (!isAppOrigin(request.securityOrigin)) {
+        callback({});
+        return;
+      }
       try {
         const sources = await desktopCapturer.getSources({
           types: ["screen"],
@@ -208,18 +233,29 @@ function installDisplayMediaHandler() {
 }
 
 function installPermissionHandlers() {
+  // 权限只给本应用 Origin；请求页的 securityOrigin / requestingUrl 是
+  // Electron 解析后的真实来源，不能再靠 webContents 当前 URL 猜。
   session.defaultSession.setPermissionRequestHandler(
-    (_webContents, permission, callback) => {
-      callback(ALLOWED_PERMISSIONS.has(permission));
+    (webContents, permission, callback, details) => {
+      const securityOrigin = details?.securityOrigin;
+      const requestingUrl = details?.requestingUrl;
+      const origin =
+        securityOrigin ||
+        (requestingUrl ? normalizeOrigin(requestingUrl) : null) ||
+        normalizeOrigin(webContents?.getURL() || "");
+      callback(isAppOrigin(origin) && ALLOWED_PERMISSIONS.has(permission));
     }
   );
   session.defaultSession.setPermissionCheckHandler(
-    (_webContents, permission) => ALLOWED_PERMISSIONS.has(permission)
+    (webContents, permission, requestingOrigin, details) => {
+      const origin =
+        requestingOrigin || normalizeOrigin(details?.requestingUrl || "") ||
+        normalizeOrigin(webContents?.getURL() || "");
+      return isAppOrigin(origin) && ALLOWED_PERMISSIONS.has(permission);
+    }
   );
-  // 不使用摄像头，但模拟面试页会初始化设备；直接拒掉定位、通知之类的杂项。
-  session.defaultSession.setDevicePermissionHandler((details) =>
-    ["microphone", "camera"].includes(details.deviceType)
-  );
+  // 本项目不用 HID / 串口 / USB；一律拒绝（麦克风和摄像头不走这个处理器）。
+  session.defaultSession.setDevicePermissionHandler(() => false);
 }
 
 function installMenu() {
@@ -278,10 +314,12 @@ function openLog() {
   }
 }
 
-/** 安装包里的后端与数据目录；开发模式下返回空对象，走项目本身的 .venv。 */
+/** 安装包里的后端与数据目录；开发模式下返回空对象，走项目本身的 .venv 和 config/。 */
 function packagedBackendOptions() {
   if (!app.isPackaged) return {};
   const base = path.join(process.resourcesPath, "backend");
+  // 开发环境用仓库里的 config/；安装版必须写 userData，安装目录是只读的。
+  // 两者用独立目录，互不覆盖。
   const dataDir = path.join(app.getPath("userData"), "data");
   fs.mkdirSync(dataDir, { recursive: true });
   return {
@@ -291,8 +329,9 @@ function packagedBackendOptions() {
       process.platform === "win32" ? "python.exe" : "python3"
     ),
     script: path.join(base, "server.py"),
-    // 配置、档案、问答库、历史都相对工作目录，安装目录是只读的，所以放 userData。
+    // 配置、档案、问答库、历史、模型缓存都放 userData（Python 通过这个变量定位）。
     cwd: dataDir,
+    env: { INTERVIEW_DATA_DIR: dataDir },
   };
 }
 
@@ -324,7 +363,12 @@ async function boot() {
   mainWindow = createWindow();
 
   try {
-    backend = await startBackend({ onLog, ...packagedBackendOptions() });
+    backend = await startBackend({
+      onLog,
+      // 开发端避开安装版默认的 7860；安装版仍从 7860 起找空闲端口。
+      port: app.isPackaged ? undefined : DEV_PORT,
+      ...packagedBackendOptions(),
+    });
   } catch (error) {
     log?.end();
     const logPath = backendLogPath();
@@ -343,6 +387,7 @@ async function boot() {
   }
 
   console.log(`[electron] 后端已就绪：${backend.url}`);
+  urlPolicy.setAppOrigin(backend.url);
   if (mainWindow && !mainWindow.isDestroyed()) {
     await mainWindow.loadURL(backend.url);
     if (IS_DEV) mainWindow.webContents.openDevTools({ mode: "detach" });
