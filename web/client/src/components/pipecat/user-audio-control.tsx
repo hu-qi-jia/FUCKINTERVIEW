@@ -5,8 +5,8 @@ import {
   type OptionalMediaDeviceInfo,
   PipecatClientMicToggle,
   useMediaState,
-  usePipecatClient,
   usePipecatClientMediaTrack,
+  usePipecatClientMicControl,
 } from "@pipecat-ai/client-react";
 import {
   ChevronDownIcon,
@@ -327,6 +327,22 @@ export function UserAudioControlView({
     else current.onToggleMic?.();
   }, []);
 
+  // 开关式麦克风入口，放在「按住说话」下面。和那项一样用 inert Switch，
+  // 由整个菜单项处理点击；不关闭菜单，方便直接看到开关变化。
+  const micSwitchItem = micToggleInMenu ? (
+    <DropdownMenuItem
+      closeOnClick={false}
+      onClick={() => setMic(!isMicEnabled)}
+    >
+      {t("audio.micSwitch")}
+      <Switch
+        checked={isMicEnabled}
+        tabIndex={-1}
+        className="pointer-events-none ml-auto"
+      />
+    </DropdownMenuItem>
+  ) : null;
+
   const holds = useRef({ key: false, pointer: false, focus: false });
   const engaged = useRef(false);
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -445,17 +461,6 @@ export function UserAudioControlView({
 
   const menuContent = (
     <>
-            {micToggleInMenu && (
-              <>
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => setMic(!isMicEnabled)}>
-                    {isMicEnabled ? <MicOffIcon /> : <MicIcon />}
-                    {isMicEnabled ? t("audio.closeMic") : t("audio.openMic")}
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-                {(hasMics || hasSpeakers) && <DropdownMenuSeparator />}
-              </>
-            )}
             {/* Base UI requires GroupLabel to live inside a Group. */}
             {hasMics && (
               <DropdownMenuGroup>
@@ -529,7 +534,14 @@ export function UserAudioControlView({
                       className="pointer-events-none ml-auto"
                     />
                   </DropdownMenuItem>
+                  {micSwitchItem}
                 </DropdownMenuGroup>
+              </>
+            )}
+            {!showModeSwitch && micSwitchItem && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>{micSwitchItem}</DropdownMenuGroup>
               </>
             )}
     </>
@@ -750,7 +762,9 @@ export function UserAudioControl({
   onModeChange,
   ...props
 }: UserAudioControlProps) {
-  const client = usePipecatClient();
+  // 走 provider 的 enableMic，而不是 client.enableMic：前者会同步更新
+  // context 里的 isMicEnabled，菜单里的开关和主按钮才会立刻反映新状态。
+  const { enableMic } = usePipecatClientMicControl();
   const {
     devices: mics,
     selectedDevice: selectedMic,
@@ -787,7 +801,7 @@ export function UserAudioControl({
         <UserAudioControlView
           isMicEnabled={isMicEnabled}
           onToggleMic={onClick}
-          onMicEnabledChange={(enabled) => client?.enableMic(enabled)}
+          onMicEnabledChange={enableMic}
           mode={mode}
           onModeChange={handleModeChange}
           isLoading={isLoading}

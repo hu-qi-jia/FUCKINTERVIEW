@@ -199,7 +199,7 @@ function Home() {
 
   // Each page gets its own Pipecat store: transcript, metrics and events
   // belong to that page's session and never leak into the other one.
-  const [liveStore] = useState(createStore);
+  const [liveStore, setLiveStore] = useState(createStore);
   const [mockStore] = useState(createStore);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -292,6 +292,10 @@ function Home() {
     setAutoStartToken(Date.now());
     setInterviewEnded(false);
     liveWasLinked.current = false;
+    // 上一场的转写、指标和 LLM 回答都在旧 store / hook 状态里；连接完成
+    // 前页面已经渲染，必须先清掉，否则会短暂看到上一场的记录。
+    live.reset();
+    setLiveStore(createStore());
     navigate("interview");
   };
 
@@ -546,7 +550,7 @@ function Home() {
               )}
               <div className="min-h-0 flex-1">
                 <Console
-                  key="interview"
+                  key={`interview-${interviewId}`}
                   jotaiStore={liveStore}
                   transportType="smallwebrtc"
                   transportFactory={live.transportFactory}

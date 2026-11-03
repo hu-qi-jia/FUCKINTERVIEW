@@ -186,6 +186,17 @@ export function useLiveInterview({
     void micApp.disconnect();
   }, [micApp, stopCapture]);
 
+  /**
+   * 清掉上一场留在界面上的转写和错误。新一场在真正连上之前也要先清，
+   * 否则首页点「开始面试」后、系统音频选择器还开着的那几秒里，会看到
+   * 上一场的候选人发言冒充这一场。
+   */
+  const reset = useCallback(() => {
+    setExtraMessages([]);
+    setInterimText("");
+    setMicError(null);
+  }, []);
+
   const handleTransportStateChange = useCallback(
     (state: TransportState) => {
       if (state !== "disconnected" && state !== "error") return;
@@ -199,6 +210,7 @@ export function useLiveInterview({
     startBotParams: liveStartBotParams,
     beforeConnect,
     stopSession,
+    reset,
     handleTransportStateChange,
     extraMessages,
     interimText,
