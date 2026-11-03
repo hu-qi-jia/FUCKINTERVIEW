@@ -10,7 +10,8 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "backend": "python scripts/build-backend.py",
-    "dist": "electron-builder --win nsis",
+    "clean": "node scripts/clean-build.js",
+    "dist": "npm run backend && node scripts/clean-build.js dist && electron-builder --win nsis",
     "test": "node --test electron/*.test.js"
   },
   "devDependencies": {

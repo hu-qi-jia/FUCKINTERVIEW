@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import json
 import uuid
 from pathlib import Path
 
@@ -99,6 +100,28 @@ migrate_legacy_data()
 
 # 只允许本机回环来源访问，并给 /api/* 加本次启动的随机令牌。
 security.install(app)
+
+
+def _log_build_info() -> None:
+    """安装版启动时把构建对应的 commit 写进 backend.log。"""
+    path = ROOT / "build-info.json"
+    if not path.is_file():
+        return
+    try:
+        info = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    logger.info(
+        "Build version={} commit={} dirty={} builtAt={}".format(
+            info.get("version") or "?",
+            str(info.get("commit") or "?")[:12],
+            info.get("dirty"),
+            info.get("builtAt") or "?",
+        )
+    )
+
+
+_log_build_info()
 
 
 # --------------------------------------------------------------------------

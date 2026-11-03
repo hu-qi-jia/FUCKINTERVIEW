@@ -84,6 +84,16 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
   `config/`，userData 指到 `interview-desktop-dev`，默认端口 7870；安装版用打包的
   Python 运行时，数据在 `%APPDATA%\面试语音助手\data`，默认从 7860 起找端口。
   两者可以同时运行，不会抢窗口、抢数据或抢端口
+- **构建产物也不碰安装版**：直接运行 `desktop/dist/win-unpacked` 时 userData 是
+  `interview-desktop-build`、端口 7871，不共享安装版的单实例锁和 `data/`。
+  不要把 `win-unpacked` 当客户端长期使用；它只是本次构建的输出
+- **打包前自动重建**：`npm --prefix desktop run dist` 会先重建便携后端和前端，再清掉
+  旧的 `desktop/dist`，避免历史 `win-unpacked`/安装包混进新产物。只想清干净时用
+  `npm --prefix desktop run clean`
+- **构建版本可核对**：打包时会把当前 `git commit`（含 `dirty` 标记）写进
+  `resources/backend/build-info.json`；安装版启动后在
+  `%APPDATA%\面试语音助手\backend.log` 第一行附近能看到
+  `Build version=... commit=... dirty=...`，用它对一下是不是当前代码
 - **无边框窗口**：不画单独的一条标题栏，最小化 / 最大化还原 / 关闭三个按钮直接排在页头的末尾
   （`web/client/src/components/window-controls.tsx`），和页面标题同一行；页头整行是窗口拖拽区，
   三个按钮标了 `no-drag` 才收得到点击（Electron 里拖拽区会吞掉鼠标事件，浮在上面的元素也不行）。

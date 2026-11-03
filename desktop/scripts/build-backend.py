@@ -9,10 +9,12 @@
 用法：python desktop/scripts/build-backend.py
 """
 
+import json
 import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "desktop", "resources", "backend")
@@ -129,6 +131,41 @@ def prune_site_packages(target):
         shutil.rmtree(os.path.join(target, *relative.split("/")), ignore_errors=True)
 
 
+def build_info() -> dict:
+    """这次构建对应的源码版本；写进包里，运行时日志能看到。"""
+    def git(*args: str) -> str | None:
+        try:
+            return subprocess.check_output(
+                ["git", *args], cwd=ROOT, text=True, encoding="utf-8"
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+
+    commit = git("rev-parse", "HEAD")
+    dirty = bool(git("status", "--porcelain"))
+    version = ""
+    package_json = os.path.join(ROOT, "desktop", "package.json")
+    try:
+        with open(package_json, encoding="utf-8") as handle:
+            version = str(json.load(handle).get("version") or "")
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {
+        "commit": commit,
+        "dirty": dirty,
+        "version": version,
+        "builtAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def write_build_info() -> None:
+    info = build_info()
+    path = os.path.join(OUT, "build-info.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(info, handle, ensure_ascii=False, indent=2)
+    print(f"构建信息：{info.get('commit') or '(no git)'} dirty={info['dirty']}")
+
+
 def build_frontend() -> None:
     """始终先构建前端，避免旧 dist 被静默打进安装包。"""
     npm = "npm.cmd" if os.name == "nt" else "npm"
@@ -207,6 +244,7 @@ def main():
         os.path.join(ROOT, "web", "client", "dist"),
         os.path.join(OUT, "web", "client", "dist"),
     )
+    write_build_info()
 
     compile_bytecode()
 

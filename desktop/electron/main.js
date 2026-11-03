@@ -38,10 +38,22 @@ const PRELOAD_PATH = path.join(__dirname, "preload.js");
 
 // 开发端和安装版彻底分开：不同的 userData（日志、单实例锁）和默认端口。
 // 否则开着安装版时 `npm start` 会把窗口交给安装版实例。
-if (!app.isPackaged) {
-  app.setPath("userData", path.join(app.getPath("appData"), "interview-desktop-dev"));
+//
+// desktop/dist/win-unpacked 里的是「构建产物」，不是安装版：它也是 packaged，
+// 但绝不能和安装版共用 userData，否则历史构建一运行就会读写安装版的数据、
+// 抢单实例锁。按路径识别后单独放 interview-desktop-build。
+const BUILD_TREE_RUN = /[\\/]dist[\\/]win-unpacked[\\/]/i.test(process.execPath);
+if (!app.isPackaged || BUILD_TREE_RUN) {
+  app.setPath(
+    "userData",
+    path.join(
+      app.getPath("appData"),
+      BUILD_TREE_RUN ? "interview-desktop-build" : "interview-desktop-dev"
+    )
+  );
 }
 const DEV_PORT = 7870;
+const BUILD_PORT = 7871;
 
 /** 主进程允许网页申请的权限：只放行本地界面真正会用到的。 */
 const ALLOWED_PERMISSIONS = new Set([
@@ -365,8 +377,8 @@ async function boot() {
   try {
     backend = await startBackend({
       onLog,
-      // 开发端避开安装版默认的 7860；安装版仍从 7860 起找空闲端口。
-      port: app.isPackaged ? undefined : DEV_PORT,
+      // 开发端 7870、构建产物 7871，安装版仍从 7860 起找空闲端口。
+      port: !app.isPackaged ? DEV_PORT : BUILD_TREE_RUN ? BUILD_PORT : undefined,
       ...packagedBackendOptions(),
     });
   } catch (error) {
