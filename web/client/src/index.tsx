@@ -21,16 +21,14 @@ import type { MaterialsSegment } from "@/components/home/interview-prep-card";
 import { DocumentsPage } from "@/components/documents/documents-page";
 import { InterviewTimer } from "@/components/interview-timer";
 import { MaterialsPage } from "@/components/materials/materials-page";
-import {
-  Console,
-  type ConsoleProps,
-} from "@/components/pipecat/console/console";
+import { Console } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
 import { AppSidebar, MobileNav, type AppPage } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLiveInterview } from "@/hooks/use-live-interview";
 import { installApiToken } from "@/lib/api-token";
+import { useContentProtection } from "@/lib/content-protection";
 import { readLiveProfileId, saveLiveProfileId } from "@/lib/live-profile";
 import {
   readCaptureMic,
@@ -40,7 +38,6 @@ import {
 } from "@/lib/preferences";
 import { markSessionEnded } from "@/lib/sessions";
 import { fetchSettings } from "@/lib/settings";
-import { startBotParams } from "@/lib/session-request";
 import type { TermCorrection } from "@/lib/terms";
 import { readTheme, resolveDark, saveTheme, type ThemeMode } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -54,26 +51,6 @@ const SIDEBAR_DEFAULT_WIDTH = 224;
 const SIDEBAR_MIN_WIDTH = 160;
 const SIDEBAR_MAX_WIDTH = 360;
 const SIDEBAR_COLLAPSED_WIDTH = 56;
-
-type TransportProps = Pick<
-  ConsoleProps,
-  "transportType" | "transportFactory" | "startBotParams"
->;
-
-// 只保留浏览器直连的 SmallWebRTC：Daily / LiveKit / Twilio / WebSocket / MoQ
-// 等调试用传输已从界面移除。
-const SMALL_WEBRTC_PROPS: TransportProps = {
-  transportType: "smallwebrtc",
-  transportFactory: async () => {
-    const { SmallWebRTCTransport } =
-      await import("@pipecat-ai/small-webrtc-transport");
-    return new SmallWebRTCTransport({
-      waitForICEGathering: false,
-      iceServers: [],
-    });
-  },
-  startBotParams: startBotParams(),
-};
 
 function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
@@ -100,6 +77,7 @@ function Home() {
   // 新用户第一次打开时应该先去设置里填 ASR / LLM / TTS 的 Key。
   const [needsSetup, setNeedsSetup] = useState(false);
   const [captureMic, setCaptureMic] = useState(readCaptureMic);
+  const contentProtection = useContentProtection();
   const [liveProfileId, setLiveProfileId] = useState<string | null>(
     readLiveProfileId
   );
@@ -124,8 +102,6 @@ function Home() {
   // 本场实时面试的 join key：面试官和候选人两路连接都带它，后端据此拼成一场。
   const [interviewId, setInterviewId] = useState(newInterviewId);
   const [autoStartToken, setAutoStartToken] = useState(0);
-  // 模拟面试没有档案，单独一个 id，离开页面时换新的，避免两场并进一条记录。
-  const [mockInterviewId, setMockInterviewId] = useState(newInterviewId);
   // 实时面试进行中锁住导航；连接失败、中途断开都算结束，放开导航。
   const [interviewEnded, setInterviewEnded] = useState(false);
   const liveWasLinked = useRef(false);
@@ -149,7 +125,6 @@ function Home() {
     const stored = localStorage.getItem(PAGE_KEY);
     // 面试页现在由首页「开始面试」进入；旧版本存的 interview 一律回到首页。
     return stored === "history" ||
-      stored === "mock" ||
       stored === "materials" ||
       stored === "documents"
       ? stored
@@ -197,10 +172,9 @@ function Home() {
     setLiveTerms([]);
   }, [page]);
 
-  // Each page gets its own Pipecat store: transcript, metrics and events
-  // belong to that page's session and never leak into the other one.
+  // 实时面试的 transcript / metrics / events 都放在这个 store 里；
+  // 每场开始前换新 store，上一场不会漏到下一场。
   const [liveStore, setLiveStore] = useState(createStore);
-  const [mockStore] = useState(createStore);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1"
@@ -240,10 +214,6 @@ function Home() {
     if (next === page) return;
     // 离开面试页就当作主动结束；没连上的话后端找不到记录，什么也不做。
     if (page === "interview") void markSessionEnded(interviewId);
-    if (page === "mock") {
-      void markSessionEnded(mockInterviewId);
-      setMockInterviewId(newInterviewId());
-    }
     if (next !== "history") setHistoryFocus(null);
     if (next !== "materials") setMaterialsProfileFocus(null);
     setPage(next);
@@ -405,17 +375,6 @@ function Home() {
   const pageHeaderExtras = settingsButton;
   const liveDevices = { cam: true, screen: true, mic: !captureMic };
 
-  // The mock page owns its client inside the Console, so the dock is portaled
-  // from its header slot. The live page's devices belong to the mic session,
-  // whose provider sits at this level.
-  const mockHeaderSlot = (
-    <>
-      <SidebarDevices collapsed={sidebarCollapsed} version={page} />
-      <HeaderDeviceButton />
-      {settingsButton}
-    </>
-  );
-
   // 面试页顶栏不再放档案选择器：档案在开始前的弹窗里定下，面试中不换。
   const liveHeaderSlot = (
     <>
@@ -497,7 +456,6 @@ function Home() {
               onOpenMaterials={openMaterials}
               onOpenSession={openSession}
               onOpenHistory={openHistory}
-              onOpenMock={() => navigate("mock")}
             />
           ) : page === "history" ? (
             <HistoryPage
@@ -587,25 +545,6 @@ function Home() {
                 />
               </div>
             </>
-          ) : page === "mock" ? (
-            <Console
-              key="mock"
-              jotaiStore={mockStore}
-              {...SMALL_WEBRTC_PROPS}
-              startBotParams={startBotParams("mock", {
-                interviewId: mockInterviewId,
-              })}
-              onEnd={() => void markSessionEnded(mockInterviewId)}
-              noLogo
-              titleText=""
-              noDTMF
-              noUserAudio
-              noUserVideo
-              noScreenControl
-              leadingSlot={mobileNav}
-              headerSlot={mockHeaderSlot}
-              onClient={onClient}
-            />
           ) : page === "documents" ? (
             <DocumentsPage
               dataVersion={dataVersion}
@@ -647,6 +586,9 @@ function Home() {
           onThemeChange={handleThemeChange}
           captureMic={captureMic}
           onCaptureMicChange={handleCaptureMicChange}
+          contentProtection={contentProtection.enabled}
+          onContentProtectionChange={contentProtection.setEnabled}
+          contentProtectionSupported={contentProtection.supported}
         />
       </div>
     </TooltipProvider>

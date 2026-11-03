@@ -25,7 +25,7 @@ function ModeDot({ mode }: { mode: SessionMode }) {
   return (
     <span
       className={cn(
-        "size-1.5 shrink-0 rounded-full",
+        "size-1.5 shrink-0 self-center rounded-full",
         mode === "live" ? "bg-heat-3" : "bg-muted-foreground/40",
       )}
       aria-hidden

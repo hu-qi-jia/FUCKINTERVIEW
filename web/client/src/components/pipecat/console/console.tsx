@@ -47,7 +47,7 @@ import { ConsoleEventsPanel } from "@/components/pipecat/console/events-panel";
 import { ConsoleInfoPanel } from "@/components/pipecat/console/info-panel";
 import { ConsoleKeypadToggle } from "@/components/pipecat/console/keypad-toggle";
 import { LiveConversationPanel } from "@/components/pipecat/console/live-conversation-panel";
-import { PipecatLogo } from "@/components/pipecat/console/logo";
+import { BrandLogo } from "@/components/brand-logo";
 import { ConsoleMetricsPanel } from "@/components/pipecat/console/metrics-panel";
 import { useMinWidth } from "@/components/pipecat/console/panel";
 import type { ConversationProps } from "@/components/pipecat/conversation";
@@ -214,7 +214,7 @@ export interface ConsoleProps {
   // -- Header ---------------------------------------------------------------
   /** Header title (default "Pipecat Console"); hidden on narrow viewports. */
   titleText?: string;
-  /** Replaces the Pipecat logo. */
+  /** Replaces the app logo. */
   logo?: React.ReactNode;
   /** Hides the logo entirely. Default false. */
   noLogo?: boolean;
@@ -685,7 +685,7 @@ function ConsoleShell({
         )}
         {!noLogo && (
           <div className="flex shrink-0 items-center">
-            {logo ?? <PipecatLogo height={20} />}
+            {logo ?? <BrandLogo size={20} />}
           </div>
         )}
         {titleText && (

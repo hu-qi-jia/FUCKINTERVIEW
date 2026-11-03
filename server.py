@@ -22,7 +22,6 @@ from pipecat.frames.frames import (
     LLMContextFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
-    LLMRunFrame,
     LLMTextFrame,
     OutputTransportMessageFrame,
     TranscriptionFrame,
@@ -48,7 +47,6 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from app.config import (
-    DEFAULT_SYSTEM_PROMPT,
     load_settings,
     migrate_legacy_data,
     save_model_dir,
@@ -90,7 +88,7 @@ from app.materials_ai import (
     plan_units,
 )
 from app.ai import LLMError
-from app.providers import build_llm, build_stt, build_tts
+from app.providers import build_llm, build_stt
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "web" / "client" / "dist"
@@ -1189,21 +1187,22 @@ def _model_snapshot(settings: dict, mode: str) -> dict[str, str | None]:
     return {
         "asr": label("asr"),
         "llm": None if mode == "listen" else label("llm"),
-        "tts": label("tts") if mode == "mock" else None,
+        # 模拟面试已从产品移除，后端不再合成语音；历史里仍保留这个字段。
+        "tts": None,
     }
 
 
 async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     settings = load_settings()
     body = runner_args.body if isinstance(runner_args.body, dict) else {}
-    mode = str(body.get("mode", "mock")).lower()
-    if mode not in ("live", "listen", "mock"):
-        mode = "mock"
+    mode = str(body.get("mode", "live")).lower()
+    if mode not in ("live", "listen"):
+        mode = "live"
 
     # 一场实时面试两条连接（面试官 + 候选人）靠 interviewId 拼成同一场；
     # 老客户端没带 id 时各连各的，至少不会丢记录。
     interview_id = str(body.get("interviewId") or "").strip() or uuid.uuid4().hex
-    session_mode = "mock" if mode == "mock" else "live"
+    session_mode = "live"
     try:
         session_id: int | None = sessions_store.open_session(
             interview_id, session_mode, models=_model_snapshot(settings, mode)
@@ -1214,7 +1213,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         session_id = None
     recorder = SessionRecorder(
         session_id=session_id,
-        role="candidate" if mode in ("listen", "mock") else "interviewer",
+        role="candidate" if mode == "listen" else "interviewer",
         record_assistant=mode != "listen",
         qa_source="QaAnswer" if mode == "live" else None,
     )
@@ -1248,12 +1247,11 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
         # live 模式用不到 TTS：答案只以文本形式推给前端。
         # listen 是实时面试的第二路（麦克风），只做转写。
-        # live 用「候选人视角」的提示词，并把绑定档案的事实塞进去；
-        # mock 仍然用设置页里那份面试官提示词。
+        # live 用「候选人视角」的提示词，并把绑定档案的事实塞进去。
         if mode == "listen":
             llm = None
             prompt_builder = None
-        elif mode == "live":
+        else:
             profile = _live_profile(body)
             if profile and session_id is not None:
                 sessions_store.set_profile(
@@ -1277,19 +1275,6 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             prompt_builder = lambda glossary: build_live_system_prompt(profile, glossary)
             # 问答库检索要用向量模型，提前在后台加载。
             warm_task = asyncio.create_task(_warm_qa_model())
-        else:
-            # 模拟面试：内置的面试官提示词，不读设置里的任何文案。
-            llm_settings = {
-                **settings["llm"],
-                "system_prompt": DEFAULT_SYSTEM_PROMPT,
-            }
-            llm = build_llm(llm_settings)
-            prompt_builder = lambda glossary: (
-                f"{DEFAULT_SYSTEM_PROMPT}\n\n{glossary}"
-                if glossary
-                else DEFAULT_SYSTEM_PROMPT
-            )
-        tts = build_tts(settings["tts"], session) if mode == "mock" else None
 
         context = LLMContext()
         corrector = TermCorrector()
@@ -1301,21 +1286,17 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 user_params=_user_turn_params(),
             )
             processors.append(user_aggregator)
-            if mode == "live":
-                # 面试官的问题先查问答库：命中就直接贴原文，这一轮不跑 LLM。
-                processors.append(QaAnswer(settings))
+            # 面试官的问题先查问答库：命中就直接贴原文，这一轮不跑 LLM。
+            processors.append(QaAnswer(settings))
             if prompt_builder is not None:
                 processors.append(
                     GlossaryPrompt(llm, prompt_builder, corrector.transcript)
                 )
             processors.append(llm)
-            # 原来的 TTS 槽位：mock 合成语音，live 只把文本转成
-            # AggregatedTextFrame，由 RTVIObserver 作为 BotOutput 发给前端。
-            if mode == "mock":
-                processors.append(tts)
-            else:
-                processors.append(TextOnlyOutput())
-                processors.append(LLMTextProcessor())
+            # 实时面试只把文本转成 AggregatedTextFrame，由 RTVIObserver
+            # 作为 BotOutput 发给前端，不合成语音。
+            processors.append(TextOnlyOutput())
+            processors.append(LLMTextProcessor())
             processors += [transport.output(), assistant_aggregator]
         else:
             # 分段 STT 靠 VAD 帧切句，而 VAD 由用户聚合器运行；只听不答的
@@ -1345,11 +1326,6 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
             logger.info("Client connected")
-            if mode == "mock":
-                context.add_message(
-                    {"role": "developer", "content": "请先向候选人简短问好，然后开始面试。"}
-                )
-                await worker.queue_frames([LLMRunFrame()])
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

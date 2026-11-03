@@ -2,7 +2,6 @@
 
 import {
   BookOpenIcon,
-  ClipboardListIcon,
   FilesIcon,
   HistoryIcon,
   HomeIcon,
@@ -27,7 +26,6 @@ export type AppPage =
   | "home"
   | "history"
   | "interview"
-  | "mock"
   | "materials"
   | "documents";
 
@@ -44,11 +42,6 @@ function navItems(t: (key: string) => string): NavItem[] {
       id: "home",
       label: t("nav.home"),
       icon: <HomeIcon className="size-4 shrink-0" />,
-    },
-    {
-      id: "mock",
-      label: t("nav.mockInterview"),
-      icon: <ClipboardListIcon className="size-4 shrink-0" />,
     },
     {
       id: "materials",

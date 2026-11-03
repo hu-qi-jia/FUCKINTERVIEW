@@ -19,4 +19,10 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on("window:maximized", handler);
     return () => ipcRenderer.removeListener("window:maximized", handler);
   },
+  privacy: {
+    getContentProtection: () =>
+      ipcRenderer.invoke("privacy:get-content-protection"),
+    setContentProtection: (enabled) =>
+      ipcRenderer.invoke("privacy:set-content-protection", Boolean(enabled)),
+  },
 });

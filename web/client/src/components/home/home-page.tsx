@@ -50,7 +50,6 @@ export function HomePage({
   onOpenMaterials,
   onOpenSession,
   onOpenHistory,
-  onOpenMock,
 }: {
   dataVersion?: number;
   /** 窄屏顶栏左侧的页面入口（桌面端由侧栏承担）。 */
@@ -63,7 +62,6 @@ export function HomePage({
   onOpenMaterials: (segment: MaterialsSegment) => void;
   onOpenSession: (id: number) => void;
   onOpenHistory: () => void;
-  onOpenMock: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -235,10 +233,7 @@ export function HomePage({
               className="lg:col-span-4"
               counts={counts}
               loading={countsLoading}
-              mockSessions={stats?.summary.mockSessions ?? 0}
-              mockAccuracy={stats?.summary.mockAccuracy ?? null}
               onOpenMaterials={onOpenMaterials}
-              onOpenMock={onOpenMock}
             />
             <RecentSessions
               className="lg:col-span-8"

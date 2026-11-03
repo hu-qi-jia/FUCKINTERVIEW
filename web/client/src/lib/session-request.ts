@@ -1,7 +1,7 @@
 import type { APIRequest } from "@pipecat-ai/client-js";
 
 /** Session modes understood by server.py's run_bot(). */
-export type SessionMode = "live" | "listen" | "mock";
+export type SessionMode = "live" | "listen";
 
 /** Shared /start request data for the SmallWebRTC sessions. */
 export const WEBRTC_REQUEST_DATA = {

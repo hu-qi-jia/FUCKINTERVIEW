@@ -65,19 +65,19 @@ function MaterialTile({
 }
 
 /**
- * 模拟面试报告准确率。报告功能接入前 accuracy 为 null：显示虚线圈和「—」，
- * 有报告后传 0–1 的小数即可画出进度弧。尺寸由外部决定，空间紧张时会自动缩小。
+ * 材料准备度环形图：三份材料（档案 / 问答库 / 术语库）里有几份已经建好。
+ * counts 还没读到时传 null，显示虚线圈和「—」。
  */
-function AccuracyRing({
-  accuracy,
+function ReadinessRing({
+  value,
   className,
 }: {
-  accuracy: number | null;
+  value: number | null;
   className?: string;
 }) {
   const radius = 28;
   const circumference = 2 * Math.PI * radius;
-  const ratio = accuracy === null ? 0 : Math.min(1, Math.max(0, accuracy));
+  const ratio = value === null ? 0 : Math.min(1, Math.max(0, value));
   return (
     <div className={cn("relative aspect-square", className)}>
       <svg viewBox="0 0 72 72" className="size-full -rotate-90">
@@ -89,9 +89,9 @@ function AccuracyRing({
           strokeWidth="4"
           stroke="currentColor"
           className="text-border"
-          strokeDasharray={accuracy === null ? "3 5" : undefined}
+          strokeDasharray={value === null ? "3 5" : undefined}
         />
-        {accuracy !== null && (
+        {value !== null && (
           <circle
             cx="36"
             cy="36"
@@ -107,35 +107,63 @@ function AccuracyRing({
         )}
       </svg>
       <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold tabular-nums">
-        {accuracy === null ? "—" : `${Math.round(accuracy * 100)}%`}
+        {value === null ? "—" : `${Math.round(ratio * 100)}%`}
       </span>
     </div>
   );
 }
 
 /**
- * 「面试准备」：上面是模拟面试（次数 + 报告准确率，纵向排），
+ * 「面试准备」：上面是材料准备度（三份材料里有几份可用），
  * 下面是面试档案 / 问答库 / 术语库三个材料入口。
- * 材料图标分别用「简历里的人」「带问号的对话」「词典/术语」来表达原意。
+ * 点击准备度会直接打开第一份缺失的材料。
  */
 export function InterviewPrepCard({
   counts,
   loading,
-  mockSessions,
-  mockAccuracy,
   onOpenMaterials,
-  onOpenMock,
   className,
 }: {
   counts: LibraryCounts;
   loading: boolean;
-  mockSessions: number;
-  mockAccuracy: number | null;
   onOpenMaterials: (segment: MaterialsSegment) => void;
-  onOpenMock: () => void;
   className?: string;
 }) {
   const { t } = useTranslation();
+
+  const items: {
+    segment: MaterialsSegment;
+    label: string;
+    count: number | null;
+  }[] = [
+    {
+      segment: "profiles",
+      label: t("materials.tabs.profiles"),
+      count: counts.profiles,
+    },
+    {
+      segment: "questions",
+      label: t("materials.tabs.questions"),
+      count: counts.questions,
+    },
+    {
+      segment: "terms",
+      label: t("materials.tabs.terms"),
+      count: counts.terms,
+    },
+  ];
+  const known = !loading && items.every((item) => item.count !== null);
+  const ready = items.filter((item) => (item.count ?? 0) > 0).length;
+  const missing = items.find((item) => (item.count ?? 0) === 0);
+  const target = missing?.segment ?? "profiles";
+  const readiness = known ? ready / items.length : null;
+  const caption = loading
+    ? t("home.continue.checking")
+    : !known
+      ? t("home.continue.unknown")
+      : missing
+        ? t("home.continue.readyMissing", { item: missing.label })
+        : t("home.continue.readyAll");
 
   return (
     <Card
@@ -157,12 +185,11 @@ export function InterviewPrepCard({
       </CardHeader>
 
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 p-2.5">
-        {/* 模拟面试：窗口高时环形图在上、次数在下；窗口变矮时自动改成
-            左图右文。原来的纵向布局在 680px 高的窗口里会把环形图压成 0 高，
-            只剩次数和说明。整块都可点。 */}
+        {/* 材料准备度：窗口高时环形图在上、数字在下；窗口变矮时自动改成
+            左图右文。整块都可点，直接去补第一份缺失的材料。 */}
         <button
           type="button"
-          onClick={onOpenMock}
+          onClick={() => onOpenMaterials(target)}
           className={cn(
             "group bg-muted/40 ring-foreground/5 hover:bg-accent/50 relative flex min-h-0 flex-1 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg px-3 pt-2 pb-2 text-center ring-1 transition-colors",
             "max-h-44 [@media(min-height:821px)]:pt-7",
@@ -170,8 +197,8 @@ export function InterviewPrepCard({
           )}
         >
           <span className="flex min-h-0 w-full flex-1 items-center justify-center [@media(max-height:820px)]:w-auto [@media(max-height:820px)]:flex-none">
-            <AccuracyRing
-              accuracy={mockAccuracy}
+            <ReadinessRing
+              value={readiness}
               className="h-full max-h-20 min-h-8 [@media(max-height:820px)]:size-12 [@media(max-height:820px)]:max-h-12 [@media(max-height:820px)]:min-h-12"
             />
           </span>
@@ -179,21 +206,22 @@ export function InterviewPrepCard({
           <span className="flex min-w-0 flex-col items-center gap-0.5 [@media(max-height:820px)]:items-start [@media(max-height:820px)]:gap-0">
             <span className="pointer-events-none absolute inset-x-3 top-2 flex items-center justify-between [@media(max-height:820px)]:static [@media(max-height:820px)]:gap-1">
               <span className="text-[11px] font-medium">
-                {t("home.continue.mock")}
+                {t("home.continue.readiness")}
               </span>
               <ChevronRightIcon className="text-muted-foreground/60 size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 [@media(max-height:820px)]:absolute [@media(max-height:820px)]:top-1/2 [@media(max-height:820px)]:right-2 [@media(max-height:820px)]:-translate-y-1/2" />
             </span>
 
             <span className="flex items-baseline gap-1 text-lg leading-none font-semibold tabular-nums [@media(max-height:820px)]:text-base">
-              {mockSessions}
+              {known ? ready : "—"}
               <span className="text-muted-foreground text-[10px] font-normal">
-                {t("home.continue.mockUnit")}
+                / {items.length} {t("home.continue.readinessUnit")}
               </span>
             </span>
-            <span className="text-muted-foreground w-full truncate text-[10px]">
-              {mockAccuracy === null
-                ? t("home.continue.mockPending")
-                : t("home.continue.mockReady")}
+            <span
+              className="text-muted-foreground w-full truncate text-[10px]"
+              title={caption}
+            >
+              {caption}
             </span>
           </span>
         </button>

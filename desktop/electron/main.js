@@ -137,6 +137,7 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => window.show());
+  applyContentProtection(window);
   window.on("page-title-updated", (event) => {
     // 页面里的 <title> 会把窗口标题覆盖成正式名称；开发版/构建版要保留标记。
     event.preventDefault();
@@ -221,6 +222,17 @@ function installWindowIpc() {
     "window:is-maximized",
     (event) => windowOf(event)?.isMaximized() ?? false
   );
+  ipcMain.handle("privacy:get-content-protection", () => contentProtection);
+  ipcMain.handle("privacy:set-content-protection", (event, enabled) => {
+    // 只接受主窗口自己的请求；页面导航已被 URL 策略锁在本应用内。
+    if (!mainWindow || event.sender !== mainWindow.webContents) {
+      return contentProtection;
+    }
+    contentProtection = Boolean(enabled);
+    savePrivacySettings();
+    applyContentProtection(mainWindow);
+    return contentProtection;
+  });
 }
 
 /**
@@ -323,6 +335,50 @@ function backendLogPath() {
     return path.join(dir, "backend.log");
   } catch {
     return null;
+  }
+}
+
+/**
+ * 防截屏/防录屏：Windows 上用 SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
+ * 把窗口从系统级画面采集里排除；macOS 用 NSWindowSharingNone。
+ * 设置按开发版/构建版/安装版各自的 userData 分别保存。
+ */
+let contentProtection = false;
+
+function privacyPath() {
+  return path.join(app.getPath("userData"), "privacy.json");
+}
+
+function loadPrivacySettings() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(privacyPath(), "utf8"));
+    contentProtection = Boolean(parsed?.contentProtection);
+  } catch {
+    contentProtection = false;
+  }
+}
+
+function savePrivacySettings() {
+  try {
+    const file = privacyPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ contentProtection }, null, 2),
+      "utf8"
+    );
+  } catch (error) {
+    console.error("[privacy] 保存防截屏设置失败", error);
+  }
+}
+
+function applyContentProtection(window) {
+  if (!window || window.isDestroyed()) return;
+  try {
+    window.setContentProtection(contentProtection);
+    console.log(`[privacy] contentProtection=${contentProtection}`);
+  } catch (error) {
+    console.error("[privacy] 应用防截屏设置失败", error);
   }
 }
 
@@ -433,6 +489,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showMainWindow());
 
   app.whenReady().then(() => {
+    loadPrivacySettings();
     installPermissionHandlers();
     installDisplayMediaHandler();
     installWindowIpc();

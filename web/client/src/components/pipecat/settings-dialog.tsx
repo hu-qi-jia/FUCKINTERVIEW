@@ -129,6 +129,9 @@ export function SettingsDialog({
   onThemeChange,
   captureMic,
   onCaptureMicChange,
+  contentProtection = false,
+  onContentProtectionChange,
+  contentProtectionSupported = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -136,6 +139,9 @@ export function SettingsDialog({
   onThemeChange: (theme: ThemeMode) => void;
   captureMic: boolean;
   onCaptureMicChange: (value: boolean) => void;
+  contentProtection?: boolean;
+  onContentProtectionChange?: (value: boolean) => void;
+  contentProtectionSupported?: boolean;
 }) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -473,6 +479,19 @@ export function SettingsDialog({
                 checked={captureMic}
                 onChange={onCaptureMicChange}
               />
+
+              {contentProtectionSupported && onContentProtectionChange && (
+                <div className="grid gap-1.5">
+                  <SwitchRow
+                    label={t("settings.fields.contentProtection")}
+                    checked={contentProtection}
+                    onChange={onContentProtectionChange}
+                  />
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t("settings.contentProtection.hint")}
+                  </p>
+                </div>
+              )}
 
               <Separator className="my-1" />
 
@@ -820,6 +839,8 @@ export function SettingsDialog({
                     </Field>
                   </section>
 
+                  <Separator />
+
                   <section className="grid gap-3" data-slot="settings-section">
                     <h3 className="text-sm font-semibold">
                       {t("settings.sections.embedding")}
@@ -829,9 +850,7 @@ export function SettingsDialog({
                         value={settings.embedding.model}
                         placeholder="BAAI/bge-small-zh-v1.5"
                         spellCheck={false}
-                        onChange={(event) =>
-                          patch("embedding", "model", event.target.value)
-                        }
+                        disabled
                       />
                     </Field>
                     <p className="text-xs leading-relaxed text-muted-foreground">
