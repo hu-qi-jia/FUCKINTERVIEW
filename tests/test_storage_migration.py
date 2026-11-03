@@ -136,3 +136,15 @@ def test_migrate_without_copy_switches_empty_directory(dirs):
     storage_migration.migrate_data_dir(str(target), migrate=False)
     assert saved_data_dir() == str(target)
     assert not (target / "qa.db").exists()
+
+
+def test_migrates_vector_model_cache_when_following_data(dirs):
+    source, target = dirs
+    model = source / "models" / "BAAI" / "bge-small-zh-v1.5"
+    model.mkdir(parents=True)
+    (model / "model.onnx").write_bytes(b"model-bytes")
+
+    storage_migration.migrate_data_dir(str(target))
+
+    migrated = target / "models" / "BAAI" / "bge-small-zh-v1.5" / "model.onnx"
+    assert migrated.read_bytes() == b"model-bytes"

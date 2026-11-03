@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 
 from app import qa as store
-from app.config import ROOT, data_root, load_settings
+from app.config import ROOT, load_settings
 
 # HuggingFace 直连不通，默认走镜像；用户自己设了就尊重用户的。
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
@@ -56,9 +56,11 @@ def model_name() -> str:
 def model_dir() -> Path:
     raw = str(load_settings().get("storage", {}).get("model_dir") or "").strip()
     if not raw:
-        # 默认放在数据根目录下的 models/：开发版是 config/models，
-        # 安装版是 userData/data/models，都可写、都不在安装目录里。
-        return data_root() / "models"
+        # 默认跟随当前数据目录：开发版是 config/models，安装版是
+        # userData/data/models；用户把数据目录改到别的盘时，模型也跟过去。
+        from app.materials import data_dir
+
+        return data_dir() / "models"
     path = Path(raw).expanduser()
     return path if path.is_absolute() else (ROOT / path)
 

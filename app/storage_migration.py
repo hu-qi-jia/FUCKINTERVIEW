@@ -22,7 +22,7 @@ import uuid
 from pathlib import Path
 
 from app import documents, materials, qa, qa_index, sessions, terms
-from app.config import save_storage_paths
+from app.config import load_settings, save_storage_paths
 from app.fsutil import atomic_replace
 
 MARKER = ".interview-migration.json"
@@ -44,6 +44,13 @@ def _source_items(source: Path) -> list[tuple[str, str]]:
     files_dir = source / documents.FILES_DIRNAME
     if files_dir.is_dir() and any(files_dir.iterdir()):
         items.append((documents.FILES_DIRNAME, "dir"))
+    # 模型目录留空时它跟随数据目录；换数据目录时把已下载的向量缓存一起
+    # 带过去，避免换盘后重新下载约 90MB。用户显式设了别的模型目录就不动。
+    storage = load_settings().get("storage") or {}
+    if not str(storage.get("model_dir") or "").strip():
+        models_dir = source / "models"
+        if models_dir.is_dir() and any(models_dir.iterdir()):
+            items.append(("models", "dir"))
     return items
 
 
@@ -89,7 +96,8 @@ def _stage(source: Path, staging: Path, items: list[tuple[str, str]]) -> None:
         if kind == "db":
             _vacuum_into(src, dst)
         elif kind == "dir":
-            shutil.copytree(src, dst)
+            # 预检只拦非空目标；空目录存在时 copytree 默认会报错。
+            shutil.copytree(src, dst, dirs_exist_ok=True)
         else:
             shutil.copy2(src, dst)
 

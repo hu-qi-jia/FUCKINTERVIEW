@@ -189,7 +189,7 @@ export function SettingsDialog({
       .then((info) => {
         if (cancelled) return;
         setStorageDir(info.dataDir);
-        setModelDir(info.modelDir ?? "");
+        setModelDir(info.modelDirCustom ? info.modelDir ?? "" : "");
       })
       .catch((error: Error) => {
         if (cancelled) return;
@@ -210,6 +210,7 @@ export function SettingsDialog({
     try {
       const info = await saveStorage(value, true);
       setStorageDir(info.dataDir);
+      setModelDir(info.modelDirCustom ? info.modelDir ?? "" : "");
       setStorageMessage(t("settings.storage.saved"));
     } catch (error) {
       setStorageFailed(true);
@@ -253,14 +254,14 @@ export function SettingsDialog({
   }, [open]);
 
   const applyModelDir = useCallback(async () => {
+    // 空值表示恢复「跟随数据目录」，不是「不修改」。
     const value = modelDir.trim();
-    if (!value) return;
     setModelBusy(true);
     setModelMessage("");
     setModelFailed(false);
     try {
-      const info = await saveModelDir(value);
-      setModelDir(info.modelDir ?? value);
+      await saveModelDir(value);
+      setModelDir(value);
       setModelMessage(t("settings.modelDir.saved"));
     } catch (error) {
       setModelFailed(true);
@@ -558,7 +559,7 @@ export function SettingsDialog({
                 <div className="flex items-center gap-2">
                   <Input
                     value={modelDir}
-                    placeholder="config/models"
+                    placeholder={t("settings.modelDir.follow")}
                     spellCheck={false}
                     onChange={(event) => setModelDir(event.target.value)}
                     className="h-8 min-w-0 flex-1"
@@ -584,7 +585,7 @@ export function SettingsDialog({
                   <Button
                     variant="outline"
                     className="h-8"
-                    disabled={modelBusy || !modelDir.trim()}
+                    disabled={modelBusy}
                     onClick={() => void applyModelDir()}
                   >
                     {modelBusy && <Spinner className="size-3.5" />}

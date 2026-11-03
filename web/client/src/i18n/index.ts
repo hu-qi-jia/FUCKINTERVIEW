@@ -565,11 +565,12 @@ const zh = {
     storage: {
       apply: "应用",
       pick: "选择文件夹",
-      hint: "切换时会把现有数据复制过去，旧文件保留备份。",
+      hint: "切换时会把现有数据复制过去，旧文件保留备份；模型目录留空时会一起带过去。",
       saved: "已切换数据目录",
     },
     modelDir: {
-      hint: "向量模型缓存目录，首次使用会自动下载（约 90MB）。",
+      follow: "跟随数据目录",
+      hint: "留空则跟随数据目录；首次使用会自动下载向量模型（约 90MB）。",
       saved: "已切换模型目录",
     },
     embedding: {
@@ -587,6 +588,21 @@ const zh = {
     saved: "已保存",
     save: "保存设置",
     cancel: "取消",
+  },
+  storageSetup: {
+    title: "选择数据位置",
+    intro:
+      "档案、问答库、术语库和历史会保存在数据目录；向量模型（约 90MB）首次使用时会下载到模型目录。之后可以在「设置 → 通用设置」里随时修改。",
+    dataLabel: "数据目录",
+    modelLabel: "向量模型目录",
+    followData: "跟随数据目录",
+    pick: "选择文件夹",
+    useCurrent: "暂不修改，直接开始",
+    save: "保存并开始",
+    saving: "正在保存…",
+    failed: "保存失败：{{message}}",
+    needData: "请选择数据目录",
+    needModel: "请选择模型目录，或勾选「跟随数据目录」",
   },
   qa: {
     errors: {
@@ -1348,11 +1364,12 @@ const en = {
     storage: {
       apply: "Apply",
       pick: "Choose folder",
-      hint: "Switching copies the existing data over and keeps a backup.",
+      hint: "Switching copies the existing data over and keeps a backup; a followed model folder moves with it.",
       saved: "Data folder updated",
     },
     modelDir: {
-      hint: "Cache folder for the embedding model; downloaded on first use (~90MB).",
+      follow: "Follow data folder",
+      hint: "Leave empty to follow the data folder; the vector model downloads on first use (~90MB).",
       saved: "Model folder updated",
     },
     embedding: {
@@ -1370,6 +1387,21 @@ const en = {
     saved: "Saved",
     save: "Save",
     cancel: "Cancel",
+  },
+  storageSetup: {
+    title: "Choose storage locations",
+    intro:
+      "Profiles, question banks, glossaries and history live in the data folder; the vector model (~90MB) downloads into the model folder on first use. You can change both later in Settings → General.",
+    dataLabel: "Data folder",
+    modelLabel: "Vector model folder",
+    followData: "Follow data folder",
+    pick: "Choose folder",
+    useCurrent: "Keep current and start",
+    save: "Save and start",
+    saving: "Saving…",
+    failed: "Could not save: {{message}}",
+    needData: "Choose a data folder",
+    needModel: "Choose a model folder or enable “Follow data folder”",
   },
   qa: {
     errors: {

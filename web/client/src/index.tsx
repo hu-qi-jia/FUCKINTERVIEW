@@ -23,6 +23,7 @@ import { InterviewTimer } from "@/components/interview-timer";
 import { MaterialsPage } from "@/components/materials/materials-page";
 import { Console } from "@/components/pipecat/console/console";
 import { SettingsDialog } from "@/components/pipecat/settings-dialog";
+import { StorageSetupDialog } from "@/components/storage-setup-dialog";
 import { AppSidebar, MobileNav, type AppPage } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import "./index.css";
 
 const PAGE_KEY = "interview-assistant:page";
+const STORAGE_SETUP_KEY = "interview-assistant:storage-setup-done:v1";
 const SIDEBAR_WIDTH_KEY = "interview-assistant:sidebar-width";
 const SIDEBAR_COLLAPSED_KEY = "interview-assistant:sidebar-collapsed";
 const SIDEBAR_DEFAULT_WIDTH = 224;
@@ -129,6 +131,11 @@ function Home() {
       stored === "documents"
       ? stored
       : "home";
+  });
+  // 桌面端首次运行先选数据 / 模型位置；浏览器版没有这个桥接，直接在设置里改。
+  const [storageSetupOpen, setStorageSetupOpen] = useState(() => {
+    if (!window.desktop?.isDesktop) return false;
+    return localStorage.getItem(STORAGE_SETUP_KEY) !== "1";
   });
   // 从首页/历史页跳过去时要打开的那一条记录、那一份档案。
   const [historyFocus, setHistoryFocus] = useState<number | null>(null);
@@ -589,6 +596,15 @@ function Home() {
           contentProtection={contentProtection.enabled}
           onContentProtectionChange={contentProtection.setEnabled}
           contentProtectionSupported={contentProtection.supported}
+        />
+
+        <StorageSetupDialog
+          open={storageSetupOpen}
+          onDone={() => {
+            localStorage.setItem(STORAGE_SETUP_KEY, "1");
+            setStorageSetupOpen(false);
+            setDataVersion((version) => version + 1);
+          }}
         />
       </div>
     </TooltipProvider>

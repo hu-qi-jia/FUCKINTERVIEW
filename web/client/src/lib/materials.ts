@@ -101,6 +101,8 @@ export interface StorageInfo {
   fileExists: boolean;
   /** 向量模型缓存目录（独立于数据目录）。 */
   modelDir?: string;
+  /** modelDir 是否是用户显式设置的；false 表示跟随数据目录。 */
+  modelDirCustom?: boolean;
 }
 
 export type MaterialKind = "resume" | "jobDescription";
@@ -232,6 +234,21 @@ export async function pickFolder(initial: string): Promise<string> {
 /** 只改模型缓存目录，数据目录不动。 */
 export async function saveModelDir(modelDir: string): Promise<StorageInfo> {
   return request<StorageInfo>("/api/storage", json("PUT", { modelDir }));
+}
+
+/**
+ * 一次提交数据目录和模型目录。modelDir 传空串表示「跟随数据目录」；
+ * dataDir 传空串表示不改数据目录（只用于分开设置时）。
+ */
+export async function saveStoragePaths(
+  dataDir: string,
+  modelDir: string,
+  migrate = true,
+): Promise<StorageInfo> {
+  return request<StorageInfo>(
+    "/api/storage",
+    json("PUT", { dataDir, modelDir, migrate }),
+  );
 }
 
 /** 空卡片（手动新增时用）。 */

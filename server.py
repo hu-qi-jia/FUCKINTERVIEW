@@ -454,7 +454,14 @@ async def api_document_file(document_id: str):
 
 
 def _storage_payload() -> dict:
-    return {**storage_info(), "modelDir": str(qa_index.model_dir())}
+    settings = load_settings()
+    raw_model = str((settings.get("storage") or {}).get("model_dir") or "").strip()
+    return {
+        **storage_info(),
+        "modelDir": str(qa_index.model_dir()),
+        # 空表示「跟随数据目录」，界面上用空输入 + placeholder 表达。
+        "modelDirCustom": bool(raw_model),
+    }
 
 
 @app.get("/api/storage")
@@ -470,6 +477,7 @@ async def api_set_storage(request: Request):
 
     data_dir_value = str(payload.get("dataDir") or "").strip()
     model_dir = payload.get("modelDir")
+    model_dir_supplied = "modelDir" in payload
     model_dir_value = model_dir.strip() if isinstance(model_dir, str) else ""
 
     if data_dir_value:
@@ -486,7 +494,8 @@ async def api_set_storage(request: Request):
         except OSError as e:
             raise HTTPException(status_code=400, detail=f"迁移数据目录失败：{e}")
 
-    if model_dir_value:
+    if model_dir_supplied:
+        # 空字符串 = 恢复「跟随数据目录」，不是「不改」。
         save_model_dir(model_dir_value)
         qa_index.invalidate()
         qa_index.reset_model_failure()

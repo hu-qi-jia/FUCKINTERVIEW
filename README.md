@@ -87,6 +87,9 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 - **构建产物也不碰安装版**：直接运行 `desktop/dist/win-unpacked` 时 userData 是
   `interview-desktop-build`、端口 7871，不共享安装版的单实例锁和 `data/`。
   不要把 `win-unpacked` 当客户端长期使用；它只是本次构建的输出
+- **首次启动选位置**：安装版第一次打开会先弹出「选择数据位置」，可以把数据目录和模型目录
+  换到任意可写路径；模型目录默认「跟随数据目录」。不修改直接开始也行，之后可以在
+  「设置 → 通用设置」里随时更换（换数据目录会把现有数据一起复制过去，跟随模式的模型缓存也会带上）
 - **打包前自动重建**：`npm --prefix desktop run dist` 会先重建便携后端和前端，再清掉
   旧的 `desktop/dist`，避免历史 `win-unpacked`/安装包混进新产物。只想清干净时用
   `npm --prefix desktop run clean`
@@ -172,7 +175,8 @@ npm --prefix desktop start
   小屏隐藏侧栏时入口在顶栏。实时面试只启用麦克风，摄像头与屏幕共享置灰
 - 默认中文；语言与主题都在「设置 → 通用设置」里切换（主题支持浅色 / 深色 / 跟随系统），选择保存在浏览器 localStorage
 - 文案统一走 `web/client/src/i18n/index.ts`（i18next），新增文案在 `zh` / `en` 两份资源里同步添加
-- 设置页分两页：「通用设置」（界面语言、主题、采集麦克风、数据目录）与「模型配置」（ASR / LLM / TTS 三段，同页滚动）
+- 设置页分两页：「通用设置」（界面语言、主题、采集麦克风、防截屏、数据目录、模型目录）与
+  「模型配置」（ASR / LLM / TTS 三段，同页滚动）
 - 界面只保留浏览器直连的 **SmallWebRTC**。Daily、LiveKit、Twilio、MoQ、原始 WebSocket
   等属于电话/第三方云/调试场景的传输，已从下拉框移除
 - 电话拨号盘（DTMF 键盘）用于拨打 IVR 按键菜单，语音面试用不到，已移除
@@ -315,8 +319,9 @@ Markdown 用 `## 问题` + 紧随其后的 `> 别名: …` 元数据行，正文
 
 **索引是后台异步算的**：保存或导入只写库、界面立刻返回，向量由一条后台线程补算，
 列表上用小圆点显示「已索引 / 待索引 / 失败」。模型常驻内存（约 200MB），首次使用会从
-`hf-mirror.com` 下载约 90MB（HuggingFace 直连不通），缓存在 `config/models`，
-可在「设置 → 通用设置 → 模型目录」换位置；**模型不进数据目录**，因为它是二进制资产。
+`hf-mirror.com` 下载约 90MB（HuggingFace 直连不通），缓存在数据目录的 `models/`
+（开发版 `config/models`，安装版 `userData/data/models`）；可在「设置 → 通用设置 → 模型目录」
+换位置，留空则跟随数据目录。换数据目录时，跟随模式的模型缓存会一起复制过去。
 
 **实时面试已经接上问答库**。面试官说完一句话，后端先拿转写去问答库检索：
 
@@ -452,8 +457,8 @@ PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest tests -q
 | PATCH | `/api/documents/{id}` | 重命名（只改显示名） |
 | DELETE | `/api/documents/{id}` | 删除资料与原件 |
 | GET | `/api/documents/{id}/file` | 原件直出（支持 Range，PDF 按需分片） |
-| GET | `/api/storage` | 数据目录信息 |
-| PUT | `/api/storage` | 切换数据目录（默认迁移现有文件） |
+| GET | `/api/storage` | 数据目录 / 模型目录信息（含 `modelDirCustom`） |
+| PUT | `/api/storage` | 切换数据目录和 / 或模型目录（默认迁移现有文件；`modelDir: ""` 表示跟随数据目录） |
 | POST | `/api/storage/open` | 在资源管理器中打开数据目录 |
 | GET | `/api/sessions/stats` | 首页看板：热力图、总量/平均、当前模型 |
 | GET | `/api/sessions` | 历史列表（`mode=all|live|mock`、`limit`、`offset`） |
