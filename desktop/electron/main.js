@@ -42,7 +42,10 @@ const PRELOAD_PATH = path.join(__dirname, "preload.js");
 // desktop/dist/win-unpacked 里的是「构建产物」，不是安装版：它也是 packaged，
 // 但绝不能和安装版共用 userData，否则历史构建一运行就会读写安装版的数据、
 // 抢单实例锁。按路径识别后单独放 interview-desktop-build。
-const BUILD_TREE_RUN = /[\\/]dist[\\/]win-unpacked[\\/]/i.test(process.execPath);
+const BUILD_TREE_RUN = path
+  .normalize(process.execPath)
+  .toLowerCase()
+  .includes(`${path.sep}dist${path.sep}win-unpacked${path.sep}`);
 if (!app.isPackaged || BUILD_TREE_RUN) {
   app.setPath(
     "userData",
