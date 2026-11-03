@@ -137,6 +137,11 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => window.show());
+  window.on("page-title-updated", (event) => {
+    // 页面里的 <title> 会把窗口标题覆盖成正式名称；开发版/构建版要保留标记。
+    event.preventDefault();
+    window.setTitle(APP_TITLE);
+  });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
   });
