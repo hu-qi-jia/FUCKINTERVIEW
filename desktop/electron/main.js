@@ -30,7 +30,6 @@ const { startBackend, stopAll, ROOT } = require("./backend");
 const { createUrlPolicy, normalizeOrigin, safeExternalUrl } = require("./url-policy");
 
 const IS_DEV = process.argv.includes("--dev");
-const APP_TITLE = "面试语音助手";
 const BUILD_DIR = path.join(__dirname, "..", "build");
 const ICON_PATH = path.join(BUILD_DIR, "icon.png");
 const TRAY_ICON_PATH = path.join(BUILD_DIR, "tray.png");
@@ -55,6 +54,8 @@ if (!app.isPackaged || BUILD_TREE_RUN) {
     )
   );
 }
+const DEV_CHANNEL = !app.isPackaged || BUILD_TREE_RUN;
+const APP_TITLE = DEV_CHANNEL ? "面试语音助手（开发版）" : "面试语音助手";
 const DEV_PORT = 7870;
 const BUILD_PORT = 7871;
 
@@ -378,11 +379,16 @@ async function boot() {
   mainWindow = createWindow();
 
   try {
+    const packaged = packagedBackendOptions();
     backend = await startBackend({
       onLog,
       // 开发端 7870、构建产物 7871，安装版仍从 7860 起找空闲端口。
       port: !app.isPackaged ? DEV_PORT : BUILD_TREE_RUN ? BUILD_PORT : undefined,
-      ...packagedBackendOptions(),
+      ...packaged,
+      env: {
+        ...(packaged.env || {}),
+        INTERVIEW_CHANNEL: DEV_CHANNEL ? "dev" : "production",
+      },
     });
   } catch (error) {
     log?.end();
@@ -411,7 +417,9 @@ async function boot() {
   mainWindow?.once("closed", () => log?.end());
 }
 
-app.setAppUserModelId("com.fuckinterview.desktop");
+app.setAppUserModelId(
+  DEV_CHANNEL ? "com.fuckinterview.desktop.dev" : "com.fuckinterview.desktop"
+);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

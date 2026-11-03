@@ -7,6 +7,7 @@
 
 import asyncio
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -112,7 +113,8 @@ def _log_build_info() -> None:
     except (OSError, json.JSONDecodeError):
         return
     logger.info(
-        "Build version={} commit={} dirty={} builtAt={}".format(
+        "Build channel={} version={} commit={} dirty={} builtAt={}".format(
+            os.environ.get("INTERVIEW_CHANNEL") or "unknown",
             info.get("version") or "?",
             str(info.get("commit") or "?")[:12],
             info.get("dirty"),

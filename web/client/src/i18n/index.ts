@@ -9,6 +9,11 @@ const zh = {
       http: "请求失败（HTTP {{status}}）",
     },
   },
+  setup: {
+    missingKeys:
+      "还没有填写 ASR / LLM / TTS 的 API Key。先完成模型设置，才能开始面试。",
+    openSettings: "去设置",
+  },
   nav: {
     home: "首页",
     history: "历史记录",
@@ -776,6 +781,11 @@ const en = {
       network: "Request failed: {{message}}",
       http: "Request failed (HTTP {{status}})",
     },
+  },
+  setup: {
+    missingKeys:
+      "ASR / LLM / TTS API keys are not set yet. Configure the models before starting an interview.",
+    openSettings: "Open settings",
   },
   nav: {
     home: "Home",

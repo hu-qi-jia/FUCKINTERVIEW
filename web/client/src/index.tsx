@@ -39,6 +39,7 @@ import {
   saveDeviceId,
 } from "@/lib/preferences";
 import { markSessionEnded } from "@/lib/sessions";
+import { fetchSettings } from "@/lib/settings";
 import { startBotParams } from "@/lib/session-request";
 import type { TermCorrection } from "@/lib/terms";
 import { readTheme, resolveDark, saveTheme, type ThemeMode } from "@/lib/theme";
@@ -96,6 +97,8 @@ function Home() {
   const { t, i18n } = useTranslation();
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 新用户第一次打开时应该先去设置里填 ASR / LLM / TTS 的 Key。
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [captureMic, setCaptureMic] = useState(readCaptureMic);
   const [liveProfileId, setLiveProfileId] = useState<string | null>(
     readLiveProfileId
@@ -162,6 +165,26 @@ function Home() {
   >(null);
   // 设置里切换数据目录后，让面试材料页重新拉一次档案。
   const [dataVersion, setDataVersion] = useState(0);
+
+  // 首页提示新用户先配置模型。设置保存/关闭后会 dataVersion+1，重新检查。
+  useEffect(() => {
+    if (page !== "home") return;
+    let cancelled = false;
+    void fetchSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        const missing = [settings.asr, settings.llm, settings.tts].some(
+          (section) => !String(section?.api_key || "").trim(),
+        );
+        setNeedsSetup(missing);
+      })
+      .catch(() => {
+        // 读不到配置不挡首页；设置页自己会报错。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, dataVersion]);
 
   // Leaving the live page must end both sessions and stop the system-audio
   // capture; the Console only tears down its own client on unmount.
@@ -445,6 +468,18 @@ function Home() {
         )}
 
         <div className="flex h-full min-w-0 flex-1 flex-col">
+          {page === "home" && needsSetup && (
+            <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+              <span className="min-w-0 flex-1">{t("setup.missingKeys")}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSettingsOpen(true)}
+              >
+                {t("setup.openSettings")}
+              </Button>
+            </div>
+          )}
           {/* Each page owns its Console and connection; switching pages
               unmounts the other, so the two sessions stay independent. */}
           {page === "home" ? (

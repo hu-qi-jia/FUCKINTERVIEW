@@ -93,7 +93,17 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 - **构建版本可核对**：打包时会把当前 `git commit`（含 `dirty` 标记）写进
   `resources/backend/build-info.json`；安装版启动后在
   `%APPDATA%\面试语音助手\backend.log` 第一行附近能看到
-  `Build version=... commit=... dirty=...`，用它对一下是不是当前代码
+  `Build channel=production version=... commit=... dirty=...`，用它对一下是不是当前代码
+- **开发版 / 线上版**：`npm --prefix desktop start` 是开发版，窗口标题带「（开发版）」，
+  userData 在 `interview-desktop-dev`；`npm --prefix desktop run dist` 产出的是线上版安装包，
+  标题不带开发标记。两种版本使用不同端口、不同数据目录，可以同时开着
+- **新用户第一次打开**：首页会提示先填写 ASR / LLM / TTS 的 API Key；安装包本身不包含
+  任何开发者的 `settings.json`、档案、数据库或模型缓存，所有数据都写在当前用户的
+  `%APPDATA%\面试语音助手\data` 下
+- **发布前自检**：`npm --prefix desktop run dist` 之后跑
+  `npm --prefix desktop run release-check`。它会检查包里没有开发数据、构建 commit 与当前
+  HEAD 一致，并用一个临时空数据目录启动后端，确认 `/status`、`/client/`、`/api/settings`
+  和空档案列表都正常
 - **无边框窗口**：不画单独的一条标题栏，最小化 / 最大化还原 / 关闭三个按钮直接排在页头的末尾
   （`web/client/src/components/window-controls.tsx`），和页面标题同一行；页头整行是窗口拖拽区，
   三个按钮标了 `no-drag` 才收得到点击（Electron 里拖拽区会吞掉鼠标事件，浮在上面的元素也不行）。

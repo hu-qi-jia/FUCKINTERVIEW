@@ -12,6 +12,7 @@
     "backend": "python scripts/build-backend.py",
     "clean": "node scripts/clean-build.js",
     "dist": "npm run backend && node scripts/clean-build.js dist && electron-builder --win nsis",
+    "release-check": "python scripts/release-check.py",
     "test": "node --test electron/*.test.js"
   },
   "devDependencies": {
