@@ -46,13 +46,14 @@ const BUILD_TREE_RUN = path
   .toLowerCase()
   .includes(`${path.sep}dist${path.sep}win-unpacked${path.sep}`);
 if (!app.isPackaged || BUILD_TREE_RUN) {
-  app.setPath(
-    "userData",
-    path.join(
-      app.getPath("appData"),
-      BUILD_TREE_RUN ? "interview-desktop-build" : "interview-desktop-dev"
-    )
+  const userDataDir = path.join(
+    app.getPath("appData"),
+    BUILD_TREE_RUN ? "interview-desktop-build" : "interview-desktop-dev"
   );
+  app.setPath("userData", userDataDir);
+  // Chromium 的 localStorage / IndexedDB 走 sessionData，不跟着 userData 自动换；
+  // 不显式隔开的话，历史构建会读到安装版记住的页面和麦克风。
+  app.setPath("sessionData", path.join(userDataDir, "session"));
 }
 const DEV_CHANNEL = !app.isPackaged || BUILD_TREE_RUN;
 const APP_TITLE = DEV_CHANNEL ? "面试语音助手（开发版）" : "面试语音助手";
