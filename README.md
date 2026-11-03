@@ -1,6 +1,6 @@
-# 面试语音助手（基于 Pipecat）
+# FUCKINTERVIEW（基于 Pipecat）
 
-实时语音面试助手：浏览器说话 → ASR 转写 → LLM 面试官 → TTS 朗读。
+实时语音面试助手：系统音频 / 麦克风 → ASR 转写 → LLM 生成候选人回答；实时面试只显示文字，不再朗读。
 界面复用 Pipecat 官方 [pipecat-prebuilt](https://github.com/pipecat-ai/pipecat-prebuilt) 的 React 组件，
 并新增了可视化「模型设置」页，可在运行时切换 ASR / LLM / TTS 供应商。
 
@@ -57,7 +57,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 打开 <http://localhost:7860/>，会自动跳转到 `/client/`。
 
 开发环境的数据全部在仓库的 `config/` 下；安装版的数据在
-`%APPDATA%\面试语音助手\data`，两边用不同的目录、不同的模型缓存，互不覆盖。
+`%APPDATA%\FUCKINTERVIEW\data`，两边用不同的目录、不同的模型缓存，互不覆盖。
 开着安装版时如果要同时跑浏览器开发端，换一个端口：
 
 ```bash
@@ -82,7 +82,7 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 - 端口默认 7860，被占用时自动往后找空闲端口；单实例运行，重复启动会唤起已有窗口
 - **开发端与安装版隔离**：`npm --prefix desktop start` 用仓库自己的 `.venv` 和
   `config/`，userData 指到 `interview-desktop-dev`，默认端口 7870；安装版用打包的
-  Python 运行时，数据在 `%APPDATA%\面试语音助手\data`，默认从 7860 起找端口。
+  Python 运行时，数据在 `%APPDATA%\FUCKINTERVIEW\data`，默认从 7860 起找端口。
   两者可以同时运行，不会抢窗口、抢数据或抢端口
 - **构建产物也不碰安装版**：直接运行 `desktop/dist/win-unpacked` 时 userData 是
   `interview-desktop-build`、端口 7871，不共享安装版的单实例锁和 `data/`。
@@ -90,19 +90,21 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
 - **首次启动选位置**：安装版第一次打开会先弹出「选择数据位置」，可以把数据目录和模型目录
   换到任意可写路径；模型目录默认「跟随数据目录」。不修改直接开始也行，之后可以在
   「设置 → 通用设置」里随时更换（换数据目录会把现有数据一起复制过去，跟随模式的模型缓存也会带上）
+- **从旧名字升级**：旧版 userData 在 `%APPDATA%\面试语音助手`；新版首次启动会把其中的
+  `data`、`Local Storage`、`privacy.json` 复制到 `%APPDATA%\FUCKINTERVIEW`，旧目录保留作为备份
 - **打包前自动重建**：`npm --prefix desktop run dist` 会先重建便携后端和前端，再清掉
   旧的 `desktop/dist`，避免历史 `win-unpacked`/安装包混进新产物。只想清干净时用
   `npm --prefix desktop run clean`
 - **构建版本可核对**：打包时会把当前 `git commit`（含 `dirty` 标记）写进
   `resources/backend/build-info.json`；安装版启动后在
-  `%APPDATA%\面试语音助手\backend.log` 第一行附近能看到
+  `%APPDATA%\FUCKINTERVIEW\backend.log` 第一行附近能看到
   `Build channel=production version=... commit=... dirty=...`，用它对一下是不是当前代码
 - **开发版 / 线上版**：`npm --prefix desktop start` 是开发版，窗口标题带「（开发版）」，
   userData 在 `interview-desktop-dev`；`npm --prefix desktop run dist` 产出的是线上版安装包，
   标题不带开发标记。两种版本使用不同端口、不同数据目录，可以同时开着
 - **新用户第一次打开**：首页会提示先填写 ASR / LLM / TTS 的 API Key；安装包本身不包含
   任何开发者的 `settings.json`、档案、数据库或模型缓存，所有数据都写在当前用户的
-  `%APPDATA%\面试语音助手\data` 下
+  `%APPDATA%\FUCKINTERVIEW\data` 下
 - **发布前自检**：`npm --prefix desktop run dist` 之后跑
   `npm --prefix desktop run release-check`。它会检查包里没有开发数据、构建 commit 与当前
   HEAD 一致，并用一个临时空数据目录启动后端，确认 `/status`、`/client/`、`/api/settings`
@@ -127,12 +129,12 @@ npm --prefix desktop start          # 启动；npm --prefix desktop run dev 额�
   运行时用不到的重包（OpenCV / pip / pygments 等）并预编译 `.pyc`，再
   `npm --prefix desktop run dist` 用 electron-builder 出 NSIS 安装包
   （`desktop/dist/FUCKINTERVIEW-Setup-<版本>.exe`）。
-  安装版的后端跑在 `%APPDATA%\面试语音助手\data`，配置、档案、问答库、历史、
+  安装版的后端跑在 `%APPDATA%\FUCKINTERVIEW\data`，配置、档案、问答库、历史、
   模型缓存都写在那儿，和安装目录分开；从旧版本升级时会自动把**同一个安装目录**
   `resources/backend/config` 里的数据搬过来（只补缺失文件，不覆盖新数据）。
   如果旧版装在另一个目录，把那个目录下 `resources/backend/config` 里的
   `settings.json` / `profiles.json` / `*.db` / `documents*` / `models/` 手动拷到
-  `%APPDATA%\面试语音助手\data` 即可
+  `%APPDATA%\FUCKINTERVIEW\data` 即可
 
 ### 换一台机器
 

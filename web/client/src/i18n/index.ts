@@ -2,7 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
 const zh = {
-  app: { title: "面试语音助手" },
+  app: { title: "FUCKINTERVIEW" },
   common: {
     request: {
       network: "网络请求失败：{{message}}",
@@ -797,7 +797,7 @@ const zh = {
 };
 
 const en = {
-  app: { title: "Interview Voice Assistant" },
+  app: { title: "FUCKINTERVIEW" },
   common: {
     request: {
       network: "Request failed: {{message}}",

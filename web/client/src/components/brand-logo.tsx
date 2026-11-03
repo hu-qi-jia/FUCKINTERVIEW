@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * 尺寸用 size 控制，锁定宽高比，不随父级拉伸。
  */
 export function BrandLogo({
-  alt = "面试语音助手",
+  alt = "FUCKINTERVIEW",
   size = 24,
   className,
 }: {

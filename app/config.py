@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # 数据根目录（settings.json、档案、问答库、术语库、历史、资料与模型缓存）。
 #
 # 开发环境：默认仓库里的 config/，和安装版完全分开。
-# 安装版：Electron 通过 INTERVIEW_DATA_DIR 指到 %APPDATA%/面试语音助手/data，
+# 安装版：Electron 通过 INTERVIEW_DATA_DIR 指到 %APPDATA%/FUCKINTERVIEW/data，
 # 安装目录只读、升级会被覆盖，不能往里写用户数据。
 ENV_DATA_DIR = "INTERVIEW_DATA_DIR"
 DEFAULT_DATA_DIRNAME = "config"

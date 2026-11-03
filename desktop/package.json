@@ -1,9 +1,9 @@
 {
   "name": "interview-desktop",
-  "productName": "面试语音助手",
+  "productName": "FUCKINTERVIEW",
   "version": "0.0.1",
   "private": true,
-  "description": "面试语音助手桌面端：Electron 外壳 + 本地 Python 服务",
+  "description": "FUCKINTERVIEW 桌面端：Electron 外壳 + 本地 Python 服务",
   "author": "hu-qi-jia",
   "main": "electron/main.js",
   "scripts": {
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.fuckinterview.desktop",
-    "productName": "面试语音助手",
+    "productName": "FUCKINTERVIEW",
     "copyright": "FUCKINTERVIEW",
     "directories": {
       "output": "dist",
@@ -57,7 +57,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "面试语音助手",
+      "shortcutName": "FUCKINTERVIEW",
       "artifactName": "FUCKINTERVIEW-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": false
     }

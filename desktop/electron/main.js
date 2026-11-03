@@ -56,9 +56,60 @@ if (!app.isPackaged || BUILD_TREE_RUN) {
   app.setPath("sessionData", path.join(userDataDir, "session"));
 }
 const DEV_CHANNEL = !app.isPackaged || BUILD_TREE_RUN;
-const APP_TITLE = DEV_CHANNEL ? "面试语音助手（开发版）" : "面试语音助手";
+const APP_TITLE = DEV_CHANNEL ? "FUCKINTERVIEW（开发版）" : "FUCKINTERVIEW";
 const DEV_PORT = 7870;
 const BUILD_PORT = 7871;
+
+/**
+ * 安装版从旧名字“面试语音助手”改名为 FUCKINTERVIEW 后，userData 会从
+ * %APPDATA%\面试语音助手 变成 %APPDATA%\FUCKINTERVIEW。首次启动时把旧目录里
+ * 的业务数据、本地偏好和防截屏设置复制过来，旧目录原样保留。
+ * 开发版和构建产物有自己的 userData，不参与这段迁移。
+ */
+function migrateLegacyUserData() {
+  if (!app.isPackaged || BUILD_TREE_RUN) return;
+  try {
+    const oldRoot = path.join(app.getPath("appData"), "面试语音助手");
+    const newRoot = app.getPath("userData");
+    if (
+      !fs.existsSync(oldRoot) ||
+      path.resolve(oldRoot) === path.resolve(newRoot)
+    ) {
+      return;
+    }
+
+    const copyDir = (name) => {
+      const source = path.join(oldRoot, name);
+      const target = path.join(newRoot, name);
+      if (!fs.existsSync(source) || fs.existsSync(target)) return false;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.cpSync(source, target, {
+        recursive: true,
+        force: false,
+        errorOnExist: false,
+      });
+      return true;
+    };
+    const copyFile = (name) => {
+      const source = path.join(oldRoot, name);
+      const target = path.join(newRoot, name);
+      if (!fs.existsSync(source) || fs.existsSync(target)) return false;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(source, target);
+      return true;
+    };
+
+    const copiedData = copyDir("data");
+    const copiedPrefs = copyDir("Local Storage");
+    const copiedPrivacy = copyFile("privacy.json");
+    if (copiedData || copiedPrefs || copiedPrivacy) {
+      console.log(`[app] migrated legacy userData: ${oldRoot} -> ${newRoot}`);
+    }
+  } catch (error) {
+    console.error("[app] 迁移旧版 userData 失败", error);
+  }
+}
+
 
 /** 主进程允许网页申请的权限：只放行本地界面真正会用到的。 */
 const ALLOWED_PERMISSIONS = new Set([
@@ -489,6 +540,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showMainWindow());
 
   app.whenReady().then(() => {
+    migrateLegacyUserData();
     loadPrivacySettings();
     installPermissionHandlers();
     installDisplayMediaHandler();

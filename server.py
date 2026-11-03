@@ -1,4 +1,4 @@
-"""面试语音助手 —— 本地开发入口。
+"""FUCKINTERVIEW —— 本地开发入口。
 
 - 复用 Pipecat 官方 dev runner（SmallWebRTC、/start、/api/offer 等）
 - 额外提供 /api/settings 读写配置
