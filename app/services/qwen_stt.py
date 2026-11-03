@@ -60,6 +60,18 @@ class QwenSTTService(SegmentedSTTService):
             await self._session.close()
             self._session = None
 
+    async def warm_up(self) -> None:
+        """提前建立到 DashScope 的连接，别让第一段语音等 DNS/TLS。"""
+        try:
+            if not self._session:
+                self._session = aiohttp.ClientSession()
+            async with self._session.get(
+                self._base_url, timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                await response.read()
+        except Exception as error:
+            logger.debug(f"Qwen ASR warm-up skipped: {error}")
+
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """audio 是 SegmentedSTTService 生成的 WAV 片段。"""
         try:
@@ -90,7 +102,10 @@ class QwenSTTService(SegmentedSTTService):
             }
 
             async with self._session.post(
-                f"{self._base_url}/chat/completions", json=payload, headers=headers
+                f"{self._base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()

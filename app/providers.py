@@ -53,7 +53,7 @@ def _require_key(section: dict[str, Any], label: str, env: str = "") -> str:
     return api_key
 
 
-def build_stt(section: dict[str, Any]):
+def build_stt(section: dict[str, Any], session=None):
     provider = section.get("provider", "qwen")
     language = section.get("language") or None
     model = (section.get("model") or "").strip()
@@ -67,6 +67,7 @@ def build_stt(section: dict[str, Any]):
             base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
             model=model or "qwen3-asr-flash",
             language=language,
+            aiohttp_session=session,
         )
 
     if provider == "minimax":
@@ -78,6 +79,7 @@ def build_stt(section: dict[str, Any]):
             base_url=base_url or MINIMAX_ASR_BASE_URL,
             model=model or "asr-1.0",
             language=language,
+            aiohttp_session=session,
         )
 
     if provider == "deepgram":

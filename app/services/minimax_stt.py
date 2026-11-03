@@ -96,6 +96,25 @@ class MiniMaxSTTService(SegmentedSTTService):
             await self._session.close()
             self._session = None
 
+    async def warm_up(self) -> None:
+        """提前建立到 ASR 服务的 TCP/TLS 连接。
+
+        MiniMax 每段语音都要新发一次 HTTPS 请求；第一段如果没有已经就绪的
+        连接，会额外等一次 DNS + TLS，表现为「系统音频的第一句识别更慢」。
+        后台先打一个请求把连接放进 keep-alive 池，第一段转写就只花服务本身
+        的时间。
+        """
+        try:
+            if not self._session:
+                self._session = aiohttp.ClientSession()
+            async with self._session.get(
+                self._base_url, timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                await response.read()
+        except Exception as error:
+            # 预热失败不影响正式请求，最坏也就是回到原来的首段延迟。
+            logger.debug(f"MiniMax ASR warm-up skipped: {error}")
+
     def _language(self) -> str | None:
         language = self._settings.language
         return str(language) if language else None
@@ -136,7 +155,12 @@ class MiniMaxSTTService(SegmentedSTTService):
 
             text = ""
             async with self._session.post(
-                f"{self._base_url}/speech_to_text", data=form, headers=headers
+                f"{self._base_url}/speech_to_text",
+                data=form,
+                headers=headers,
+                # 分段转写是串行的：一段卡住会让后面的整段排队。给个上限，
+                # 超时就报错丢这一段，而不是一直占着队列。
+                timeout=aiohttp.ClientTimeout(total=30),
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()

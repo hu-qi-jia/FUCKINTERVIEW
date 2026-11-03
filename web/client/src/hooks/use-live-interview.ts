@@ -7,7 +7,11 @@ import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { usePipecatApp } from "@/hooks/use-pipecat-app";
-import { CaptureError, captureSystemAudio } from "@/lib/capture";
+import {
+  CaptureError,
+  captureSystemAudio,
+  type CapturedSystemAudio,
+} from "@/lib/capture";
 import { transcriptTimestamp, type LiveMessage } from "@/lib/live-message";
 import { readCaptureMic, readDeviceId, saveDeviceId } from "@/lib/preferences";
 import { startBotParams as buildStartBotParams } from "@/lib/session-request";
@@ -45,7 +49,7 @@ export function useLiveInterview({
   const serverMessageRef = useRef(onServerMessage);
   serverMessageRef.current = onServerMessage;
 
-  const displayRef = useRef<MediaStream | null>(null);
+  const displayRef = useRef<CapturedSystemAudio | null>(null);
   const [extraMessages, setExtraMessages] = useState<LiveMessage[]>([]);
   const [interimText, setInterimText] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
@@ -121,7 +125,7 @@ export function useLiveInterview({
 
   const stopCapture = useCallback(() => {
     manager.stop();
-    for (const track of displayRef.current?.getTracks() ?? []) track.stop();
+    displayRef.current?.dispose();
     displayRef.current = null;
     setInterimText("");
   }, [manager]);
@@ -130,10 +134,10 @@ export function useLiveInterview({
     setMicError(null);
 
     try {
-      const stream = await captureSystemAudio();
-      displayRef.current = stream;
-      manager.setStream(stream);
-      stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+      const capture = await captureSystemAudio();
+      displayRef.current = capture;
+      manager.setStream(capture.stream);
+      capture.source.getAudioTracks()[0]?.addEventListener("ended", () => {
         setDisconnectSignal((value) => value + 1);
       });
     } catch (error) {

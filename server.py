@@ -913,6 +913,10 @@ transport_params = {
 # 多等 1.5 秒。1.2 秒对正常提问足够长，也不会把句中的停顿当成说完了。
 TURN_STOP_SECS = 1.2
 
+# VAD 的音量门槛（ITU-R BS.1770 归一化到 0–1）。默认 0.6 对很轻的系统
+# 音频偏高，调到 0.45（约 -60 LUFS）仍然远低于正常说话。
+VAD_MIN_VOLUME = 0.45
+
 # 两路实时面试会同时建两条 pipeline，每场都重新加载 2.2MB / 8.3MB 的 ONNX
 # 模型；模型文件本身是无状态的，把底层 InferenceSession 复用，分析器仍然
 # 每场新建（VAD / 断句的流内状态不能跨会话共享）。
@@ -923,8 +927,13 @@ _smart_turn_session = None
 def _shared_vad_analyzer():
     global _vad_session
     from pipecat.audio.vad.silero import SileroVADAnalyzer
+    from pipecat.audio.vad.vad_analyzer import VADParams
 
-    analyzer = SileroVADAnalyzer()
+    # pipecat 默认 min_volume=0.6（约 -50 LUFS）。系统音频被调得很小时，
+    # 轻声帧会被音量门槛挡掉（10% 系统音量实测只有 61% 的语音帧通过，
+    # 正常音量是 76%），切句和识别都会受影响。调到 0.45 兜底；客户端
+    # 另外做了自动增益。
+    analyzer = SileroVADAnalyzer(params=VADParams(min_volume=VAD_MIN_VOLUME))
     if _vad_session is None:
         _vad_session = analyzer._model.session
     else:
@@ -1219,13 +1228,23 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     async with aiohttp.ClientSession() as session:
         try:
-            stt = build_stt(settings["asr"])
+            # 复用同一个 aiohttp 会话：ASR 和 TTS 共用连接池，也方便提前
+            # 建好到 ASR 服务的 TLS 连接。
+            stt = build_stt(settings["asr"], session=session)
         except Exception as error:
             logger.error(
                 f"ASR 初始化失败（{settings['asr'].get('provider')}/"
                 f"{settings['asr'].get('model')}）：{error}"
             )
             raise
+
+        # 预热 ASR 连接（不阻塞建 pipeline）：把 DNS/TLS 握手放在用户
+        # 开口之前，第一段语音不用再额外等连接建立。
+        warm_up = getattr(stt, "warm_up", None)
+        if callable(warm_up):
+            warm_task = asyncio.create_task(warm_up())
+        else:
+            warm_task = None
 
         # live 模式用不到 TTS：答案只以文本形式推给前端。
         # listen 是实时面试的第二路（麦克风），只做转写。
@@ -1356,7 +1375,12 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                     logger.warning(f"写入面试历史失败：{error}")
             await runner.cancel()
 
-        await runner.run()
+        try:
+            await runner.run()
+        finally:
+            # 会话可能在预热完成前就结束（用户马上挂断）；别留下悬挂任务。
+            if warm_task is not None and not warm_task.done():
+                warm_task.cancel()
 
 
 async def bot(runner_args: RunnerArguments):
