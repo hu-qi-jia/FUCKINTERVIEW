@@ -9,6 +9,8 @@
 用法：python desktop/scripts/build-backend.py
 """
 
+from __future__ import annotations
+
 import json
 import os
 import shutil
