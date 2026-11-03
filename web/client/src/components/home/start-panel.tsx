@@ -61,8 +61,8 @@ export function StartPanel({
         <Button
           onClick={onStart}
           className={cn(
-            "text-background relative h-14 w-[60%]",
-            "rounded-[0.6rem] px-6 text-base font-semibold tracking-wide",
+            "text-background relative h-[54px] w-[60%]",
+            "rounded-xl px-6 text-base font-semibold tracking-wide",
             "bg-[linear-gradient(180deg,var(--heat-4),color-mix(in_oklab,var(--heat-4)_84%,black))]",
             "shadow-[inset_0_1px_0_oklch(1_0_0/28%),0_12px_30px_-14px_var(--heat-3)]",
             "transition-[transform,box-shadow,filter] duration-200 ease-out",

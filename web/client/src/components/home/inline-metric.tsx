@@ -1,21 +1,31 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+
 /** 首页卡片顶部的一行内联指标；和相邻指标之间用竖线分隔。 */
 export function InlineMetric({
   label,
   value,
   unit,
+  valueClassName,
 }: {
   label: string;
   value: string;
   unit?: string;
+  /** 数值行的额外样式（例如按容器宽度调整字号）。 */
+  valueClassName?: string;
 }) {
   return (
-    <div className="min-w-0 flex-1 px-3 first:pl-0 last:pr-0 sm:px-4">
+    <div className="min-w-fit flex-1 px-3 first:pl-0 last:pr-0 sm:px-4">
       <span className="text-muted-foreground block truncate text-[11px]">
         {label}
       </span>
-      <span className="mt-1 flex items-baseline gap-1 text-xl leading-none font-semibold tabular-nums">
+      <span
+        className={cn(
+          "mt-1 flex items-baseline gap-1 text-xl leading-none font-semibold whitespace-nowrap tabular-nums",
+          valueClassName
+        )}
+      >
         {value}
         {unit && (
           <span className="text-muted-foreground text-[10px] font-normal">

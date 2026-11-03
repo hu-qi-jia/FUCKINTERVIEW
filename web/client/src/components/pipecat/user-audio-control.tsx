@@ -192,6 +192,11 @@ export interface UserAudioControlViewProps {
   /** Hide the push-to-talk switch in the device dropdown. */
   noModeSwitch?: boolean;
   /**
+   * 在设备下拉菜单顶部加一项「关闭/打开麦克风」。侧栏折叠成图标、
+   * 只剩一个设备菜单入口时，仍然能直接关掉输入。
+   */
+  micToggleInMenu?: boolean;
+  /**
    * Sets the mic to an absolute state. Push-to-talk prefers this over
    * onToggleMic (its fallback), which can race across quick presses. The
    * connected control wires it to client.enableMic().
@@ -268,6 +273,7 @@ export function UserAudioControlView({
   mode = "toggle",
   onModeChange,
   noModeSwitch = false,
+  micToggleInMenu = false,
   onMicEnabledChange,
   pttKey = "Backquote",
   pttKeyLabel,
@@ -439,6 +445,17 @@ export function UserAudioControlView({
 
   const menuContent = (
     <>
+            {micToggleInMenu && (
+              <>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => setMic(!isMicEnabled)}>
+                    {isMicEnabled ? <MicOffIcon /> : <MicIcon />}
+                    {isMicEnabled ? t("audio.closeMic") : t("audio.openMic")}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                {(hasMics || hasSpeakers) && <DropdownMenuSeparator />}
+              </>
+            )}
             {/* Base UI requires GroupLabel to live inside a Group. */}
             {hasMics && (
               <DropdownMenuGroup>

@@ -13,7 +13,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { InlineMetric } from "@/components/home/inline-metric";
-import { formatDateTime, formatMs, formatTokens } from "@/lib/format";
+import { formatDateTime, formatTokens } from "@/lib/format";
 import type { SessionStats, SessionSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +82,7 @@ export function ModelUsageCard({
       </CardHeader>
 
       <CardContent className="flex min-h-0 flex-1 flex-col px-4 py-3">
-        <div className="mb-2 flex shrink-0 items-stretch divide-x">
+        <div className="mb-2 flex shrink-0 items-stretch divide-x @container/metrics">
           <InlineMetric
             label={t("home.models.avgTokensShort")}
             value={
@@ -91,6 +91,7 @@ export function ModelUsageCard({
                 : "–"
             }
             unit="token"
+            valueClassName="text-base @[14rem]/metrics:text-lg @[20rem]/metrics:text-xl"
           />
           <InlineMetric
             label={t("home.models.totalTokensShort")}
@@ -98,11 +99,7 @@ export function ModelUsageCard({
               summary ? formatTokens(summary.totalTokens, i18n.language) : "–"
             }
             unit="token"
-          />
-          <InlineMetric
-            label={t("home.models.avgTtftShort")}
-            value={formatMs(summary?.avgTtftMs)}
-            unit="ms"
+            valueClassName="text-base @[14rem]/metrics:text-lg @[20rem]/metrics:text-xl"
           />
         </div>
 

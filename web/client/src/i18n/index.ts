@@ -64,7 +64,6 @@ const zh = {
       tokenLine: "token",
       avgTokensShort: "平均每场",
       totalTokensShort: "累计",
-      avgTtftShort: "首字",
       noTrend: "完成两场实时面试后显示趋势",
     },
     latency: {
@@ -382,6 +381,8 @@ const zh = {
   audio: {
     mute: "静音麦克风",
     unmute: "取消静音",
+    closeMic: "关闭麦克风",
+    openMic: "打开麦克风",
     holdToTalk: "按住说话",
     pushToTalk: "按住说话",
     pttHint: "按 [key] 说话",
@@ -837,7 +838,6 @@ const en = {
       tokenLine: "Tokens",
       avgTokensShort: "Avg",
       totalTokensShort: "Total",
-      avgTtftShort: "First token",
       noTrend: "The trend appears after two live interviews.",
     },
     latency: {
@@ -1157,6 +1157,8 @@ const en = {
   audio: {
     mute: "Mute microphone",
     unmute: "Unmute microphone",
+    closeMic: "Turn off microphone",
+    openMic: "Turn on microphone",
     holdToTalk: "Hold to talk",
     pushToTalk: "Push to talk",
     pttHint: "press [key] to talk",

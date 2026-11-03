@@ -624,10 +624,11 @@ function Home() {
             <SidebarDevices
               collapsed={sidebarFolded}
               disabled={liveDevices}
+              micToggleInMenu
               version={page}
             />
             <PortalTo id={HEADER_SLOT} version={page}>
-              <HeaderDeviceButton disabled={liveDevices} />
+              <HeaderDeviceButton disabled={liveDevices} micToggleInMenu />
             </PortalTo>
           </PipecatClientProvider>
         )}

@@ -157,37 +157,44 @@ export function InterviewPrepCard({
       </CardHeader>
 
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 p-2.5">
-        {/* 模拟面试：环形图在上、次数和说明在下，整块都可点。
-            高度上限压住，卡片被拉高时内容居中而不是被抻散。 */}
+        {/* 模拟面试：窗口高时环形图在上、次数在下；窗口变矮时自动改成
+            左图右文。原来的纵向布局在 680px 高的窗口里会把环形图压成 0 高，
+            只剩次数和说明。整块都可点。 */}
         <button
           type="button"
           onClick={onOpenMock}
-          className="group bg-muted/40 ring-foreground/5 hover:bg-accent/50 relative flex max-h-44 min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-3 pt-7 pb-2 text-center ring-1 transition-colors"
+          className={cn(
+            "group bg-muted/40 ring-foreground/5 hover:bg-accent/50 relative flex min-h-0 flex-1 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg px-3 pt-2 pb-2 text-center ring-1 transition-colors",
+            "max-h-44 [@media(min-height:821px)]:pt-7",
+            "[@media(max-height:820px)]:max-h-32 [@media(max-height:820px)]:flex-row [@media(max-height:820px)]:items-center [@media(max-height:820px)]:justify-center [@media(max-height:820px)]:gap-3 [@media(max-height:820px)]:px-6 [@media(max-height:820px)]:py-2 [@media(max-height:820px)]:text-left"
+          )}
         >
-          <span className="pointer-events-none absolute inset-x-3 top-2 flex items-center justify-between">
-            <span className="text-[11px] font-medium">
-              {t("home.continue.mock")}
-            </span>
-            <ChevronRightIcon className="text-muted-foreground/60 size-3.5 transition-transform group-hover:translate-x-0.5" />
-          </span>
-
-          <span className="flex min-h-0 w-full flex-1 items-center justify-center">
+          <span className="flex min-h-0 w-full flex-1 items-center justify-center [@media(max-height:820px)]:w-auto [@media(max-height:820px)]:flex-none">
             <AccuracyRing
               accuracy={mockAccuracy}
-              className="h-full max-h-20 min-h-8"
+              className="h-full max-h-20 min-h-8 [@media(max-height:820px)]:size-12 [@media(max-height:820px)]:max-h-12 [@media(max-height:820px)]:min-h-12"
             />
           </span>
 
-          <span className="flex items-baseline gap-1 text-lg leading-none font-semibold tabular-nums">
-            {mockSessions}
-            <span className="text-muted-foreground text-[10px] font-normal">
-              {t("home.continue.mockUnit")}
+          <span className="flex min-w-0 flex-col items-center gap-0.5 [@media(max-height:820px)]:items-start [@media(max-height:820px)]:gap-0">
+            <span className="pointer-events-none absolute inset-x-3 top-2 flex items-center justify-between [@media(max-height:820px)]:static [@media(max-height:820px)]:gap-1">
+              <span className="text-[11px] font-medium">
+                {t("home.continue.mock")}
+              </span>
+              <ChevronRightIcon className="text-muted-foreground/60 size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 [@media(max-height:820px)]:absolute [@media(max-height:820px)]:top-1/2 [@media(max-height:820px)]:right-2 [@media(max-height:820px)]:-translate-y-1/2" />
             </span>
-          </span>
-          <span className="text-muted-foreground w-full truncate text-[10px]">
-            {mockAccuracy === null
-              ? t("home.continue.mockPending")
-              : t("home.continue.mockReady")}
+
+            <span className="flex items-baseline gap-1 text-lg leading-none font-semibold tabular-nums [@media(max-height:820px)]:text-base">
+              {mockSessions}
+              <span className="text-muted-foreground text-[10px] font-normal">
+                {t("home.continue.mockUnit")}
+              </span>
+            </span>
+            <span className="text-muted-foreground w-full truncate text-[10px]">
+              {mockAccuracy === null
+                ? t("home.continue.mockPending")
+                : t("home.continue.mockReady")}
+            </span>
           </span>
         </button>
 

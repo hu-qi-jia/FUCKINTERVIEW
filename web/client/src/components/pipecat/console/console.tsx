@@ -716,7 +716,7 @@ function ConsoleShell({
               )}
             </Button>
           )}
-          {connectionUrl ? (
+          {connectionUrl && !isInterviewLayout ? (
             <Tooltip>
               <TooltipTrigger render={<span className="inline-flex" />}>
                 {connectButton}

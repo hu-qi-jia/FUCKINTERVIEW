@@ -98,9 +98,12 @@ function Disabled({
 /** The three device controls, in their normal (expanded) form. */
 export function DeviceGroup({
   disabled,
+  micToggleInMenu,
   className,
 }: {
   disabled?: DeviceDisabled;
+  /** 音频下拉里加「关闭麦克风」入口（实时面试用）。 */
+  micToggleInMenu?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -115,7 +118,10 @@ export function DeviceGroup({
         {/* The stock controls reserve 8rem for the label; the sidebar can be
             160px wide, so let the group shrink instead of pushing the device
             chevron out of the rail. */}
-        <UserAudioControl className="w-full [&>button]:!min-w-0" />
+        <UserAudioControl
+          className="w-full [&>button]:!min-w-0"
+          micToggleInMenu={micToggleInMenu}
+        />
       </Disabled>
       <Disabled active={disabled?.cam}>
         <UserVideoControl
@@ -173,9 +179,11 @@ function DevicePopover({
  */
 export function CollapsedDeviceGroup({
   disabled,
+  micToggleInMenu,
   className,
 }: {
   disabled?: DeviceDisabled;
+  micToggleInMenu?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -188,6 +196,7 @@ export function CollapsedDeviceGroup({
       )}
     >
       <UserAudioControl
+        micToggleInMenu={micToggleInMenu}
         trigger={
           <Button
             variant="ghost"
@@ -226,19 +235,24 @@ export function CollapsedDeviceGroup({
 export function SidebarDevices({
   collapsed,
   disabled,
+  micToggleInMenu,
   version,
 }: {
   collapsed: boolean;
   disabled?: DeviceDisabled;
+  micToggleInMenu?: boolean;
   version?: unknown;
 }) {
   return (
     <PortalTo id={SIDEBAR_SLOT} version={version}>
       {collapsed ? (
-        <CollapsedDeviceGroup disabled={disabled} />
+        <CollapsedDeviceGroup
+          disabled={disabled}
+          micToggleInMenu={micToggleInMenu}
+        />
       ) : (
         <div className="border-t border-sidebar-border p-2">
-          <DeviceGroup disabled={disabled} />
+          <DeviceGroup disabled={disabled} micToggleInMenu={micToggleInMenu} />
         </div>
       )}
     </PortalTo>
@@ -246,7 +260,13 @@ export function SidebarDevices({
 }
 
 /** Header entry for small screens, where the sidebar is hidden. */
-export function HeaderDeviceButton({ disabled }: { disabled?: DeviceDisabled }) {
+export function HeaderDeviceButton({
+  disabled,
+  micToggleInMenu,
+}: {
+  disabled?: DeviceDisabled;
+  micToggleInMenu?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <Popover>
@@ -263,7 +283,7 @@ export function HeaderDeviceButton({ disabled }: { disabled?: DeviceDisabled }) 
         }
       />
       <PopoverContent align="end" className="w-80 p-3">
-        <DeviceGroup disabled={disabled} />
+        <DeviceGroup disabled={disabled} micToggleInMenu={micToggleInMenu} />
       </PopoverContent>
     </Popover>
   );
