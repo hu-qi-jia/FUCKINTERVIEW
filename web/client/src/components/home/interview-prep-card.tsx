@@ -193,32 +193,32 @@ export function InterviewPrepCard({
           className={cn(
             "group bg-muted/40 ring-foreground/5 hover:bg-accent/50 relative flex min-h-0 flex-1 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg px-3 pt-2 pb-2 text-center ring-1 transition-colors",
             "max-h-44 [@media(min-height:821px)]:pt-7",
-            "[@media(max-height:820px)]:max-h-32 [@media(max-height:820px)]:flex-row [@media(max-height:820px)]:items-center [@media(max-height:820px)]:justify-center [@media(max-height:820px)]:gap-3 [@media(max-height:820px)]:px-6 [@media(max-height:820px)]:py-2 [@media(max-height:820px)]:text-left"
+            "[@media(max-height:820px)]:max-h-32 [@media(max-height:820px)]:flex-row [@media(max-height:820px)]:items-center [@media(max-height:820px)]:gap-4 [@media(max-height:820px)]:px-5 [@media(max-height:820px)]:py-3 [@media(max-height:820px)]:text-left"
           )}
         >
           <span className="flex min-h-0 w-full flex-1 items-center justify-center [@media(max-height:820px)]:w-auto [@media(max-height:820px)]:flex-none">
             <ReadinessRing
               value={readiness}
-              className="h-full max-h-20 min-h-8 [@media(max-height:820px)]:size-12 [@media(max-height:820px)]:max-h-12 [@media(max-height:820px)]:min-h-12"
+              className="h-full max-h-20 min-h-8 [@media(max-height:820px)]:size-14 [@media(max-height:820px)]:max-h-14 [@media(max-height:820px)]:min-h-14"
             />
           </span>
 
-          <span className="flex min-w-0 flex-col items-center gap-0.5 [@media(max-height:820px)]:items-start [@media(max-height:820px)]:gap-0">
-            <span className="pointer-events-none absolute inset-x-3 top-2 flex items-center justify-between [@media(max-height:820px)]:static [@media(max-height:820px)]:gap-1">
+          <span className="flex min-w-0 flex-col items-center gap-0.5 [@media(max-height:820px)]:h-full [@media(max-height:820px)]:flex-1 [@media(max-height:820px)]:items-start [@media(max-height:820px)]:justify-between [@media(max-height:820px)]:gap-1.5 [@media(max-height:820px)]:py-0.5 [@media(max-height:820px)]:pr-5">
+            <span className="pointer-events-none absolute inset-x-3 top-2 flex items-center justify-between [@media(max-height:820px)]:static [@media(max-height:820px)]:w-full [@media(max-height:820px)]:gap-2">
               <span className="text-[11px] font-medium">
                 {t("home.continue.readiness")}
               </span>
-              <ChevronRightIcon className="text-muted-foreground/60 size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 [@media(max-height:820px)]:absolute [@media(max-height:820px)]:top-1/2 [@media(max-height:820px)]:right-2 [@media(max-height:820px)]:-translate-y-1/2" />
+              <ChevronRightIcon className="text-muted-foreground/60 size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5 [@media(max-height:820px)]:absolute [@media(max-height:820px)]:top-1/2 [@media(max-height:820px)]:right-3 [@media(max-height:820px)]:-translate-y-1/2" />
             </span>
 
-            <span className="flex items-baseline gap-1 text-lg leading-none font-semibold tabular-nums [@media(max-height:820px)]:text-base">
+            <span className="flex items-baseline gap-1 text-lg leading-none font-semibold tabular-nums [@media(max-height:820px)]:text-xl">
               {known ? ready : "—"}
               <span className="text-muted-foreground text-[10px] font-normal">
                 / {items.length} {t("home.continue.readinessUnit")}
               </span>
             </span>
             <span
-              className="text-muted-foreground w-full truncate text-[10px]"
+              className="text-muted-foreground w-full truncate text-[10px] [@media(max-height:820px)]:text-[11px]"
               title={caption}
             >
               {caption}
