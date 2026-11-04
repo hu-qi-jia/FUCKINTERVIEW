@@ -77,7 +77,7 @@ npm --prefix desktop run dist
 | 前端 | React 19 · TypeScript · Vite · Tailwind CSS · Pipecat React SDK |
 | 后端 | Python 3.12 · FastAPI · Pipecat 语音管线（SmallWebRTC 传输） |
 | 语音处理 | Silero VAD · Smart Turn v3（本地 ONNX 推理） |
-| 模型服务 | ASR：Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM：任意 OpenAI 兼容接口 / Qwen / Anthropic<br />TTS：MiniMax / Qwen / OpenAI / ElevenLabs / Cartesia |
+| 模型服务 | ASR：Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM：任意 OpenAI 兼容接口 / Qwen / Anthropic |
 | 本地检索 | SQLite FTS5 + `BAAI/bge-small-zh-v1.5` 向量检索（ONNX，无需 PyTorch） |
 
 <p align="center"><sub>Built with Pipecat · © 2026 hu-qi-jia</sub></p>

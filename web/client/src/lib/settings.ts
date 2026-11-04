@@ -19,16 +19,6 @@ export interface LlmSettings {
   disable_thinking?: boolean;
 }
 
-export interface TtsSettings {
-  provider: string;
-  api_key: string;
-  base_url: string;
-  model: string;
-  voice: string;
-  group_id: string;
-  language: string;
-}
-
 export interface EmbeddingSettings {
   /** 本地向量模型名，默认 BAAI/bge-small-zh-v1.5（ONNX，不需要 torch）。 */
   model: string;
@@ -39,7 +29,6 @@ export interface EmbeddingSettings {
 export interface AppSettings {
   asr: AsrSettings;
   llm: LlmSettings;
-  tts: TtsSettings;
   embedding: EmbeddingSettings;
 }
 
@@ -47,10 +36,6 @@ export interface ProviderMeta {
   value: string;
   label: string;
   models: string[];
-}
-
-export interface TtsProviderMeta extends ProviderMeta {
-  needsGroupId?: boolean;
 }
 
 export const ASR_PROVIDERS: ProviderMeta[] = [
@@ -91,35 +76,6 @@ export const LLM_PROVIDERS: ProviderMeta[] = [
     value: "anthropic",
     label: "Anthropic Claude",
     models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
-  },
-];
-
-export const TTS_PROVIDERS: TtsProviderMeta[] = [
-  {
-    value: "minimax",
-    label: "MiniMax",
-    models: ["speech-2.8-turbo", "speech-2.6-turbo", "speech-02-turbo"],
-    needsGroupId: true,
-  },
-  {
-    value: "qwen",
-    label: "Qwen（百炼 DashScope）",
-    models: ["qwen3-tts-flash", "qwen-tts"],
-  },
-  {
-    value: "openai",
-    label: "OpenAI TTS",
-    models: ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"],
-  },
-  {
-    value: "elevenlabs",
-    label: "ElevenLabs",
-    models: ["eleven_flash_v2_5", "eleven_multilingual_v2"],
-  },
-  {
-    value: "cartesia",
-    label: "Cartesia",
-    models: ["sonic-2", "sonic"],
   },
 ];
 

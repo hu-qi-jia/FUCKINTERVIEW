@@ -59,7 +59,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "FUCKINTERVIEW",
       "artifactName": "FUCKINTERVIEW-Setup-${version}.${ext}",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "packElevateHelper": false,
+      "differentialPackage": false,
+      "useZip": true
     }
   }
 }

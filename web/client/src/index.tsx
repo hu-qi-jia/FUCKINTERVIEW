@@ -155,7 +155,7 @@ function Home() {
     void fetchSettings()
       .then((settings) => {
         if (cancelled) return;
-        const missing = [settings.asr, settings.llm, settings.tts].some(
+        const missing = [settings.asr, settings.llm].some(
           (section) => !String(section?.api_key || "").trim(),
         );
         setNeedsSetup(missing);

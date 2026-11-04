@@ -38,13 +38,11 @@ import {
   findProvider,
   LLM_PROVIDERS,
   saveSettings,
-  TTS_PROVIDERS,
   type AppSettings,
   type ProviderMeta,
-  type TtsProviderMeta,
 } from "@/lib/settings";
 
-type Section = "asr" | "llm" | "tts" | "embedding";
+type Section = "asr" | "llm" | "embedding";
 type Status = "idle" | "loading" | "saving" | "saved" | "error";
 
 /** 表单规范见 web/client/FORM_SPEC.md：两列等宽、gap-3、控件统一 h-8。 */
@@ -337,26 +335,6 @@ export function SettingsDialog({
     setMessage("");
   }, []);
 
-  const changeTtsProvider = useCallback((provider: string) => {
-    if (!findProvider<TtsProviderMeta>(TTS_PROVIDERS, provider)) return;
-    setSettings((current) =>
-      current
-        ? {
-            ...current,
-            tts: {
-              ...current.tts,
-              provider,
-              model: "",
-              base_url: "",
-              voice: "",
-            },
-          }
-        : current
-    );
-    setStatus("idle");
-    setMessage("");
-  }, []);
-
   const onSave = useCallback(async () => {
     if (!settings) return;
     setStatus("saving");
@@ -373,9 +351,6 @@ export function SettingsDialog({
 
   if (!open) return null;
 
-  const ttsMeta = settings
-    ? findProvider<TtsProviderMeta>(TTS_PROVIDERS, settings.tts.provider)
-    : undefined;
   const showLlmBaseUrl = !!settings && settings.llm.provider !== "anthropic";
   const showAsrBaseUrl = !!settings && settings.asr.provider !== "deepgram";
   const currentLanguage: AppLanguage = i18n.language.startsWith("en")
@@ -754,90 +729,6 @@ export function SettingsDialog({
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {t("settings.builtinPrompts")}
                     </p>
-                  </section>
-
-                  <Separator />
-
-                  <section className="grid gap-3" data-slot="settings-section">
-                    <h3 className="text-sm font-semibold">
-                      {t("settings.sections.tts")}
-                    </h3>
-                    <Field label={t("settings.fields.provider")}>
-                      <ProviderSelect
-                        providers={TTS_PROVIDERS}
-                        value={settings.tts.provider}
-                        onChange={changeTtsProvider}
-                      />
-                    </Field>
-
-                    <div className={FORM_GRID}>
-                      <Field label={t("settings.fields.model")}>
-                        <Input
-                          value={settings.tts.model}
-                          placeholder="speech-2.8-turbo"
-                          onChange={(event) =>
-                            patch("tts", "model", event.target.value)
-                          }
-                        />
-                      </Field>
-                      <Field label={t("settings.fields.voice")}>
-                        <Input
-                          value={settings.tts.voice}
-                          placeholder="Calm_Woman"
-                          onChange={(event) =>
-                            patch("tts", "voice", event.target.value)
-                          }
-                        />
-                      </Field>
-                    </div>
-
-                    <div className={FORM_GRID}>
-                      <Field
-                        label={t("settings.fields.language")}
-                        className={ttsMeta?.needsGroupId ? "" : "sm:col-span-2"}
-                      >
-                        <Input
-                          value={settings.tts.language}
-                          placeholder="zh"
-                          onChange={(event) =>
-                            patch("tts", "language", event.target.value)
-                          }
-                        />
-                      </Field>
-                      {ttsMeta?.needsGroupId && (
-                        <Field label={t("settings.fields.groupId")}>
-                          <Input
-                            value={settings.tts.group_id}
-                            placeholder="Minimax GroupId"
-                            onChange={(event) =>
-                              patch("tts", "group_id", event.target.value)
-                            }
-                          />
-                        </Field>
-                      )}
-                    </div>
-
-                    <Field label={t("settings.fields.baseUrl")}>
-                      <Input
-                        value={settings.tts.base_url}
-                        placeholder={t("settings.placeholders.default")}
-                        onChange={(event) =>
-                          patch("tts", "base_url", event.target.value)
-                        }
-                      />
-                    </Field>
-
-                    <Field label={t("settings.fields.apiKey")}>
-                      <Input
-                        type="password"
-                        autoComplete="off"
-                        value={settings.tts.api_key}
-                        placeholder="sk-…"
-                        onChange={(event) =>
-                          patch("tts", "api_key", event.target.value)
-                        }
-                      />
-                    </Field>
                   </section>
 
                   <Separator />

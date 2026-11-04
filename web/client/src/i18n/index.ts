@@ -11,7 +11,7 @@ const zh = {
   },
   setup: {
     missingKeys:
-      "还没有填写 ASR / LLM / TTS 的 API Key。先完成模型设置，才能开始面试。",
+      "还没有填写 ASR / LLM 的 API Key。先完成模型设置，才能开始面试。",
     openSettings: "去设置",
   },
   nav: {
@@ -60,7 +60,6 @@ const zh = {
       subtitle: "最近 30 场",
       asr: "ASR",
       llm: "LLM",
-      tts: "TTS",
       tokenLine: "token",
       avgTokensShort: "平均每场",
       totalTokensShort: "累计",
@@ -523,7 +522,6 @@ const zh = {
     sections: {
       asr: "语音识别 ASR",
       llm: "对话模型 LLM",
-      tts: "语音合成 TTS",
       embedding: "向量（问答库检索）",
     },
     fields: {
@@ -541,8 +539,6 @@ const zh = {
       disableThinking: "关闭模型思考（更快）",
       baseUrl: "Base URL",
       apiKey: "API Key",
-      voice: "音色 / Voice ID",
-      groupId: "Group ID",
     },
     builtinPrompts:
       "提示词按场景内置：实时面试、面试材料各不相同，不需要在这里配置。",
@@ -557,9 +553,6 @@ const zh = {
       baseUrl: "https://api.openai.com/v1",
       apiKey: "sk-…",
       llmModel: "gpt-4o-mini",
-      ttsModel: "speech-2.8-turbo",
-      voice: "Calm_Woman",
-      groupId: "Minimax GroupId",
       default: "默认",
     },
     storage: {
@@ -806,7 +799,7 @@ const en = {
   },
   setup: {
     missingKeys:
-      "ASR / LLM / TTS API keys are not set yet. Configure the models before starting an interview.",
+      "ASR / LLM API keys are not set yet. Configure the models before starting an interview.",
     openSettings: "Open settings",
   },
   nav: {
@@ -855,7 +848,6 @@ const en = {
       subtitle: "Last 30",
       asr: "ASR",
       llm: "LLM",
-      tts: "TTS",
       tokenLine: "Tokens",
       avgTokensShort: "Avg",
       totalTokensShort: "Total",
@@ -1322,7 +1314,6 @@ const en = {
     sections: {
       asr: "Speech to text",
       llm: "Language model",
-      tts: "Text to speech",
       embedding: "Embeddings (question bank)",
     },
     fields: {
@@ -1340,8 +1331,6 @@ const en = {
       disableThinking: "Disable model reasoning (faster)",
       baseUrl: "Base URL",
       apiKey: "API key",
-      voice: "Voice ID",
-      groupId: "Group ID",
     },
     builtinPrompts:
       "Prompts are built in per mode — live interview and interview materials each use their own. Nothing to configure here.",
@@ -1356,9 +1345,6 @@ const en = {
       baseUrl: "https://api.openai.com/v1",
       apiKey: "sk-…",
       llmModel: "gpt-4o-mini",
-      ttsModel: "speech-2.8-turbo",
-      voice: "Calm_Woman",
-      groupId: "Minimax GroupId",
       default: "Default",
     },
     storage: {

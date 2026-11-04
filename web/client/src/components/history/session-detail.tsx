@@ -300,14 +300,6 @@ export function SessionDetailView({
                       {detail.models.llm || "—"}
                     </span>
                   </div>
-                  <div className="flex min-w-0 justify-between gap-3">
-                    <span className="text-muted-foreground shrink-0">
-                      {t("home.models.tts")}
-                    </span>
-                    <span className="truncate text-right">
-                      {detail.models.tts || "—"}
-                    </span>
-                  </div>
                 </div>
 
                 {detail.corrections.length > 0 && (

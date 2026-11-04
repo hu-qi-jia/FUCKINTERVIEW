@@ -64,7 +64,6 @@ export function ModelUsageCard({
   const models = [
     { label: t("home.models.asr"), value: stats?.models.asr.model },
     { label: t("home.models.llm"), value: stats?.models.llm.model },
-    { label: t("home.models.tts"), value: stats?.models.tts.model },
   ];
 
   return (

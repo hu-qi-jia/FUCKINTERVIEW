@@ -77,7 +77,7 @@ The output is `desktop/dist/FUCKINTERVIEW-Setup-<version>.exe`.
 | Frontend | React 19 · TypeScript · Vite · Tailwind CSS · Pipecat React SDK |
 | Backend | Python 3.12 · FastAPI · Pipecat voice pipeline (SmallWebRTC transport) |
 | Voice | Silero VAD · Smart Turn v3 (local ONNX inference) |
-| Model providers | ASR: Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM: any OpenAI-compatible API / Qwen / Anthropic<br />TTS: MiniMax / Qwen / OpenAI / ElevenLabs / Cartesia |
+| Model providers | ASR: Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM: any OpenAI-compatible API / Qwen / Anthropic |
 | Local retrieval | SQLite FTS5 + `BAAI/bge-small-zh-v1.5` embeddings (ONNX, no PyTorch) |
 
 <p align="center"><sub>Built with Pipecat · © 2026 hu-qi-jia</sub></p>
