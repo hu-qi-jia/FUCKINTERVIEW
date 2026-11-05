@@ -110,12 +110,12 @@ const zh = {
   },
   history: {
     title: "历史记录",
-    filter: { all: "全部", live: "实时", mock: "模拟" },
+    allInterviews: "全部面试",
     total: "共 {{count}} 场",
     loadFailed: "加载失败：{{message}}",
     empty: {
       title: "还没有面试记录",
-      hint: "结束一场实时面试或模拟面试后，这里会留下完整转写和指标。",
+      hint: "结束一场实时面试后，这里会留下完整转写和指标。",
       goHome: "回到首页",
     },
     mode: { live: "实时", mock: "模拟" },
@@ -899,12 +899,12 @@ const en = {
   },
   history: {
     title: "History",
-    filter: { all: "All", live: "Live", mock: "Mock" },
+    allInterviews: "All interviews",
     total: "{{count}} sessions",
     loadFailed: "Could not load: {{message}}",
     empty: {
       title: "No interviews yet",
-      hint: "Once a live or mock interview ends, its transcript and metrics are kept here.",
+      hint: "Once a live interview ends, its transcript and metrics are kept here.",
       goHome: "Back to home",
     },
     mode: { live: "Live", mock: "Mock" },

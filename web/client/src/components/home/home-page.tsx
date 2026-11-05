@@ -95,7 +95,7 @@ export function HomePage({
   const loadSessions = useCallback(async () => {
     setSessionsError(null);
     try {
-      const data = await fetchSessions({ limit: 30 });
+      const data = await fetchSessions({ mode: "live", limit: 30 });
       setSessions(data.sessions);
     } catch (error) {
       setSessionsError(errorMessage(error));

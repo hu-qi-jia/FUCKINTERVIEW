@@ -8,34 +8,20 @@ import { SessionDetailView } from "@/components/history/session-detail";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WindowControls } from "@/components/window-controls";
 import {
   formatDateTime,
   formatDuration,
   formatTokens,
 } from "@/lib/format";
-import { fetchSessions, type SessionMode, type SessionSummary } from "@/lib/sessions";
+import { fetchSessions, type SessionSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 30;
-type Filter = "all" | SessionMode;
-
-function ModeDot({ mode }: { mode: SessionMode }) {
-  return (
-    <span
-      className={cn(
-        "size-1.5 shrink-0 self-center rounded-full",
-        mode === "live" ? "bg-heat-3" : "bg-muted-foreground/40",
-      )}
-      aria-hidden
-    />
-  );
-}
 
 /**
- * 历史记录：实时和模拟都在这一页。列表每次 30 条，点一条看完整转写。
- * 进详情时列表只是隐藏、不卸载，返回后筛选和滚动位置都还在。
+ * 历史记录：只展示实时面试。列表每次 30 条，点一条看完整转写。
+ * 进详情时列表只是隐藏、不卸载，返回后滚动位置还在。
  */
 export function HistoryPage({
   headerExtras,
@@ -54,7 +40,6 @@ export function HistoryPage({
   onGoHome: () => void;
 }) {
   const { t, i18n } = useTranslation();
-  const [filter, setFilter] = useState<Filter>("all");
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +62,7 @@ export function HistoryPage({
     setError(null);
     try {
       const data = await fetchSessions({
-        mode: filter,
+        mode: "live",
         limit: PAGE_SIZE,
         offset: 0,
       });
@@ -89,7 +74,7 @@ export function HistoryPage({
       setError(reason instanceof Error ? reason.message : String(reason));
       setSessions([]);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
     void loadFirst();
@@ -100,7 +85,7 @@ export function HistoryPage({
     setLoadingMore(true);
     try {
       const data = await fetchSessions({
-        mode: filter,
+        mode: "live",
         limit: PAGE_SIZE,
         offset: sessions?.length ?? 0,
       });
@@ -111,7 +96,7 @@ export function HistoryPage({
     } finally {
       setLoadingMore(false);
     }
-  }, [filter, loadingMore, sessions?.length]);
+  }, [loadingMore, sessions?.length]);
 
   const loading = sessions === null && !error;
   const empty = !loading && !error && (sessions?.length ?? 0) === 0;
@@ -136,22 +121,12 @@ export function HistoryPage({
           detailId !== null && "hidden",
         )}
       >
-        {/* 与面试材料页同一套标签栏：同样的组件、同样的位置和内容宽度。 */}
+        {/* 只保留实时面试，不再提供模式筛选。 */}
         <div className="shrink-0 pt-4">
-          <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2 px-4">
-            <Tabs
-              value={filter}
-              onValueChange={(value) => setFilter(value as Filter)}
-            >
-              {/* p-0：滑块容器去掉默认的 3px 内边距，让选中块和下面的卡片左边缘对齐 */}
-              <TabsList className="h-8 overflow-hidden p-0">
-                {(["all", "live", "mock"] as const).map((value) => (
-                  <TabsTrigger key={value} value={value} className="px-2.5">
-                    {t(`history.filter.${value}`)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+          <div className="mx-auto flex w-full max-w-7xl items-center px-4">
+            <span className="text-sm font-medium">
+              {t("history.allInterviews")}
+            </span>
             {!loading && !error && (
               <span className="text-muted-foreground ml-auto text-xs tabular-nums">
                 {t("history.total", { count: total })}
@@ -209,23 +184,15 @@ export function HistoryPage({
                     onClick={() => setDetailId(session.id)}
                     className="hover:bg-accent/40 flex w-full items-start gap-3 px-4 py-3 text-left transition-colors"
                   >
-                    <ModeDot mode={session.mode} />
                     <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-1.5">
                         <span className="truncate text-sm font-medium">
-                          {session.mode === "mock"
-                            ? t("nav.mockInterview")
-                            : session.profileName ||
-                              t("history.untitledProfile")}
+                          {session.profileName ||
+                            t("history.untitledProfile")}
                         </span>
                         {session.status === "interrupted" && (
                           <span className="bg-destructive/10 text-destructive shrink-0 rounded px-1 py-0.5 text-[10px]">
                             {t("history.status.interrupted")}
-                          </span>
-                        )}
-                        {session.mode === "live" && (
-                          <span className="text-muted-foreground shrink-0 text-[11px]">
-                            {t("history.mode.live")}
                           </span>
                         )}
                       </span>
