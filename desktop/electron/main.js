@@ -31,8 +31,10 @@ const { createUrlPolicy, normalizeOrigin, safeExternalUrl } = require("./url-pol
 
 const IS_DEV = process.argv.includes("--dev");
 const BUILD_DIR = path.join(__dirname, "..", "build");
-const ICON_PATH = path.join(BUILD_DIR, "icon.png");
-const TRAY_ICON_PATH = path.join(BUILD_DIR, "tray.png");
+// 打包后 build/ 不会进 asar，图标由 extraResources 放到 resources 根目录。
+const ASSET_DIR = app.isPackaged ? process.resourcesPath : BUILD_DIR;
+const ICON_PATH = path.join(ASSET_DIR, "icon.png");
+const TRAY_ICON_PATH = path.join(ASSET_DIR, "tray.png");
 const PRELOAD_PATH = path.join(__dirname, "preload.js");
 
 // 开发端和安装版彻底分开：不同的 userData（日志、单实例锁）和默认端口。
@@ -245,7 +247,8 @@ function quitApp() {
 function createTray() {
   if (tray) return;
   const icon = nativeImage.createFromPath(TRAY_ICON_PATH);
-  tray = new Tray(icon);
+  // 兜底：托盘图标缺失时退回应用图标，避免托盘里出现一个空白占位。
+  tray = new Tray(icon.isEmpty() ? nativeImage.createFromPath(ICON_PATH) : icon);
   tray.setToolTip(APP_TITLE);
   tray.setContextMenu(
     Menu.buildFromTemplate([

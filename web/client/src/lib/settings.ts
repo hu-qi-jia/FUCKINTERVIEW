@@ -34,29 +34,30 @@ export interface AppSettings {
 
 export interface ProviderMeta {
   value: string;
-  label: string;
+  /** i18n key：供应商名称会随界面语言切换。 */
+  labelKey: string;
   models: string[];
 }
 
 export const ASR_PROVIDERS: ProviderMeta[] = [
   {
     value: "qwen",
-    label: "Qwen（百炼 DashScope）",
+    labelKey: "settings.providers.qwen",
     models: ["qwen3-asr-flash"],
   },
   {
     value: "minimax",
-    label: "MiniMax",
+    labelKey: "settings.providers.minimax",
     models: ["asr-1.0"],
   },
   {
     value: "deepgram",
-    label: "Deepgram",
+    labelKey: "settings.providers.deepgram",
     models: ["nova-3", "nova-2", "enhanced"],
   },
   {
     value: "openai",
-    label: "OpenAI Whisper（兼容接口）",
+    labelKey: "settings.providers.openaiWhisper",
     models: ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
   },
 ];
@@ -64,17 +65,17 @@ export const ASR_PROVIDERS: ProviderMeta[] = [
 export const LLM_PROVIDERS: ProviderMeta[] = [
   {
     value: "openai_compatible",
-    label: "OpenAI 兼容接口",
+    labelKey: "settings.providers.openaiCompatible",
     models: ["gpt-4o-mini", "gpt-4o", "deepseek-chat", "qwen-plus"],
   },
   {
     value: "qwen",
-    label: "Qwen（百炼 DashScope）",
+    labelKey: "settings.providers.qwen",
     models: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen3-max"],
   },
   {
     value: "anthropic",
-    label: "Anthropic Claude",
+    labelKey: "settings.providers.anthropic",
     models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
   },
 ];

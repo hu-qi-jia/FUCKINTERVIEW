@@ -524,6 +524,14 @@ const zh = {
       llm: "对话模型 LLM",
       embedding: "向量（问答库检索）",
     },
+    providers: {
+      qwen: "Qwen（百炼 DashScope）",
+      minimax: "MiniMax",
+      deepgram: "Deepgram",
+      openaiWhisper: "OpenAI Whisper（兼容接口）",
+      openaiCompatible: "OpenAI 兼容接口",
+      anthropic: "Anthropic Claude",
+    },
     fields: {
       provider: "供应商",
       model: "模型",
@@ -1315,6 +1323,14 @@ const en = {
       asr: "Speech to text",
       llm: "Language model",
       embedding: "Embeddings (question bank)",
+    },
+    providers: {
+      qwen: "Qwen (DashScope)",
+      minimax: "MiniMax",
+      deepgram: "Deepgram",
+      openaiWhisper: "OpenAI Whisper (compatible API)",
+      openaiCompatible: "OpenAI-compatible API",
+      anthropic: "Anthropic Claude",
     },
     fields: {
       provider: "Provider",

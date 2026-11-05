@@ -100,9 +100,14 @@ function ProviderSelect({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
+  const items = providers.map(({ value, labelKey }) => ({
+    value,
+    label: t(labelKey),
+  }));
   return (
     <Select
-      items={providers.map(({ value, label }) => ({ value, label }))}
+      items={items}
       value={value}
       onValueChange={(next) => onChange(String(next))}
     >
@@ -110,7 +115,7 @@ function ProviderSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={false}>
-        {providers.map(({ value, label }) => (
+        {items.map(({ value, label }) => (
           <SelectItem key={value} value={value}>
             {label}
           </SelectItem>
