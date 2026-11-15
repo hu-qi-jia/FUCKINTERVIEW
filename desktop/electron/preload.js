@@ -29,6 +29,5 @@ contextBridge.exposeInMainWorld("desktop", {
     get: () => ipcRenderer.invoke("app-icon:get"),
     set: (preset) => ipcRenderer.invoke("app-icon:set", String(preset || "")),
     pickImage: () => ipcRenderer.invoke("app-icon:pick-image"),
-    pickApp: () => ipcRenderer.invoke("app-icon:pick-app"),
   },
 });

@@ -164,20 +164,12 @@ function setCustomImage(image) {
   }
 }
 
-/**
- * 从本机文件取图标：图片直接读，.exe / .lnk 走 shell 图标，
- * 这样可以把 Chrome、微信这些装在本机的应用图标原样拿来用。
- */
-async function setFromFilePath(filePath) {
+/** 从图片文件取图标；读不出来返回 null，调用方保持原状。 */
+function setFromFilePath(filePath) {
   const target = String(filePath || "");
   if (!target || !fs.existsSync(target)) return null;
-  const ext = path.extname(target).toLowerCase();
   try {
-    const image =
-      ext === ".exe" || ext === ".lnk"
-        ? await app.getFileIcon(target, { size: "large" })
-        : nativeImage.createFromPath(target);
-    return setCustomImage(image);
+    return setCustomImage(nativeImage.createFromPath(target));
   } catch (error) {
     console.error("[app-icon] 读取图标失败", target, error);
     return null;

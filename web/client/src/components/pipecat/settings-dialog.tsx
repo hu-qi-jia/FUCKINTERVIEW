@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AppWindowIcon,
   FolderOpenIcon,
   ImagePlusIcon,
   SettingsIcon,
@@ -526,24 +525,14 @@ export function SettingsDialog({
                       );
                     })}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="outline"
-                      className="h-8"
-                      onClick={() => void appIcon.pickImage()}
-                    >
-                      <ImagePlusIcon />
-                      {t("settings.appIcon.upload")}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="h-8"
-                      onClick={() => void appIcon.pickApp()}
-                    >
-                      <AppWindowIcon />
-                      {t("settings.appIcon.fromApp")}
-                    </Button>
-                  </div>
+                  <Button
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => void appIcon.pickImage()}
+                  >
+                    <ImagePlusIcon />
+                    {t("settings.appIcon.upload")}
+                  </Button>
                 </div>
               )}
 

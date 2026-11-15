@@ -56,10 +56,5 @@ export function useAppIcon() {
     return commit(api.pickImage());
   }, [api, commit]);
 
-  const pickApp = useCallback(() => {
-    if (!api) return Promise.resolve(false);
-    return commit(api.pickApp());
-  }, [api, commit]);
-
-  return { supported, state, setPreset, pickImage, pickApp };
+  return { supported, state, setPreset, pickImage };
 }

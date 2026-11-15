@@ -577,7 +577,6 @@ const zh = {
     appIcon: {
       label: "应用图标",
       upload: "上传图片",
-      fromApp: "从本机应用提取",
       presets: {
         default: "默认",
         chrome: "Chrome",
@@ -1380,7 +1379,6 @@ const en = {
     appIcon: {
       label: "App icon",
       upload: "Upload image",
-      fromApp: "Extract from app",
       presets: {
         default: "Default",
         chrome: "Chrome",

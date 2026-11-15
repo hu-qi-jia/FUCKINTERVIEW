@@ -35,8 +35,6 @@ declare global {
         set: (preset: string) => Promise<AppIconState>;
         /** 弹文件框选图片；用户取消返回 null。 */
         pickImage: () => Promise<AppIconState | null>;
-        /** 弹文件框选 .exe / .lnk，从本机应用里取图标；取消返回 null。 */
-        pickApp: () => Promise<AppIconState | null>;
       };
     };
   }

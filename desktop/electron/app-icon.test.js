@@ -41,7 +41,6 @@ const electronStub = {
   app: {
     isPackaged: false,
     getPath: () => ctx.userData,
-    getFileIcon: async () => fakeImage(32),
   },
   nativeImage: {
     // 只有真实存在的文件才算有图，这样能模拟「还没上传自定义图」。

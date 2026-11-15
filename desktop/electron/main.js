@@ -306,18 +306,6 @@ function installWindowIpc() {
     if (info) appIcon.apply({ window: mainWindow, tray });
     return info;
   });
-  ipcMain.handle("app-icon:pick-app", async (event) => {
-    if (!isMainSender(event)) return null;
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: "从本机应用提取图标",
-      properties: ["openFile"],
-      filters: [{ name: "应用程序", extensions: ["exe", "lnk"] }],
-    });
-    if (canceled || !filePaths.length) return null;
-    const info = await appIcon.setFromFilePath(filePaths[0]);
-    if (info) appIcon.apply({ window: mainWindow, tray });
-    return info;
-  });
 }
 
 /**
