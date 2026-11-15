@@ -577,6 +577,8 @@ const zh = {
     appIcon: {
       label: "应用图标",
       upload: "上传图片",
+      restartHint: "托盘图标立即生效，任务栏图标重启后生效",
+      restart: "重新启动",
       presets: {
         default: "默认",
         chrome: "Chrome",
@@ -1378,6 +1380,8 @@ const en = {
     appIcon: {
       label: "App icon",
       upload: "Upload image",
+      restartHint: "The tray icon changes at once; the taskbar icon updates after a restart.",
+      restart: "Restart now",
       presets: {
         default: "Default",
         chrome: "Chrome",

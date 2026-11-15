@@ -16,6 +16,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app, nativeImage } = require("electron");
 
+const { applyTaskbarIcon } = require("./shortcut-icon");
+
 /** 设置页里能选的预设；"default" 就是应用自己的图标。 */
 const PRESETS = ["chrome", "wechat"];
 const DEFAULT = "default";
@@ -190,11 +192,27 @@ function apply({ window, tray } = {}) {
   }
 }
 
+/**
+ * 任务栏那一路要改快捷方式，而且重启后才生效。
+ * 「默认」就是把快捷方式指回 exe，也就是恢复出厂图标。
+ */
+async function applyTaskbar() {
+  const preset = getState().preset;
+  const image = preset === DEFAULT ? null : sourceImage(preset);
+  try {
+    return await applyTaskbarIcon(image);
+  } catch (error) {
+    console.error("[app-icon] 应用任务栏图标失败", error);
+    return 0;
+  }
+}
+
 module.exports = {
   PRESETS,
   DEFAULT,
   CUSTOM,
   apply,
+  applyTaskbar,
   describe,
   setFromFilePath,
   setCustomImage,

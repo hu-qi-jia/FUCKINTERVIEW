@@ -3,6 +3,7 @@
 import {
   FolderOpenIcon,
   ImagePlusIcon,
+  RotateCcwIcon,
   SettingsIcon,
   XIcon,
 } from "lucide-react";
@@ -533,6 +534,19 @@ export function SettingsDialog({
                     <ImagePlusIcon />
                     {t("settings.appIcon.upload")}
                   </Button>
+                  <div className="flex items-center gap-2">
+                    <p className="text-muted-foreground min-w-0 flex-1 text-xs leading-relaxed">
+                      {t("settings.appIcon.restartHint")}
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="h-8 shrink-0"
+                      onClick={() => void appIcon.relaunch()}
+                    >
+                      <RotateCcwIcon />
+                      {t("settings.appIcon.restart")}
+                    </Button>
+                  </div>
                 </div>
               )}
 
