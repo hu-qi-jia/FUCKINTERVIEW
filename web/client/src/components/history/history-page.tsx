@@ -136,7 +136,9 @@ export function HistoryPage({
         </div>
 
         <ScrollArea className="mt-3 min-h-0 flex-1">
-          <div className="mx-auto grid w-full max-w-7xl gap-3 px-4 pb-8">
+          {/* 顶部留白给卡片的 ring 腾位置：滚动容器是 overflow-hidden，
+              内容贴着上边缘的话，那条 1px 外描边会被裁掉。 */}
+          <div className="mx-auto grid w-full max-w-7xl gap-3 px-4 pt-1 pb-8">
             {loading && (
               <div className="grid gap-2">
                 {[0, 1, 2, 3].map((row) => (

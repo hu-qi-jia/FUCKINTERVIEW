@@ -96,7 +96,21 @@ def build_stt(section: dict[str, Any], session=None):
     if provider == "openai":
         from pipecat.services.openai.stt import OpenAISTTService
 
-        return OpenAISTTService(
+        endpoint = (
+            f"{(base_url or 'https://api.openai.com/v1').rstrip('/')}"
+            "/audio/transcriptions"
+        )
+
+        # 兼容接口最常见的失败是服务端压根没实现 /audio/transcriptions，
+        # 只回一个不带正文的 404；把请求地址带进报错才好判断错在配置还是服务端。
+        class ExplainedOpenAISTTService(OpenAISTTService):
+            async def _transcribe(self, audio: bytes):
+                try:
+                    return await super()._transcribe(audio)
+                except Exception as e:
+                    raise RuntimeError(f"{e}（请求 {endpoint}）") from e
+
+        return ExplainedOpenAISTTService(
             api_key=_require_key(section, "ASR (OpenAI)", "OPENAI_API_KEY"),
             base_url=base_url or None,
             settings=OpenAISTTService.Settings(

@@ -548,8 +548,6 @@ const zh = {
       baseUrl: "Base URL",
       apiKey: "API Key",
     },
-    builtinPrompts:
-      "提示词按场景内置：实时面试、面试材料各不相同，不需要在这里配置。",
     theme: {
       light: "浅色",
       dark: "深色",
@@ -566,21 +564,26 @@ const zh = {
     storage: {
       apply: "应用",
       pick: "选择文件夹",
-      hint: "切换时会把现有数据复制过去，旧文件保留备份；模型目录留空时会一起带过去。",
       saved: "已切换数据目录",
     },
     modelDir: {
       follow: "跟随数据目录",
-      hint: "留空则跟随数据目录；首次使用会自动下载向量模型（约 90MB）。",
       saved: "已切换模型目录",
     },
     embedding: {
-      hint: "模型在本地跑，不依赖任何 API，也不需要 torch。内置向量模型固定，不支持切换；首次使用会自动下载。",
       indexed: "已索引 {{ready}} / {{total}} 条",
       rebuild: "重建索引",
     },
-    contentProtection: {
-      hint: "开启后本窗口会从截屏、录屏和屏幕共享中隐藏，自己屏幕上仍正常显示；手机拍摄无法阻止。",
+    appIcon: {
+      label: "应用图标",
+      upload: "上传图片",
+      fromApp: "从本机应用提取",
+      presets: {
+        default: "默认",
+        chrome: "Chrome",
+        wechat: "微信",
+        custom: "自定义",
+      },
     },
     loading: "正在读取配置…",
     readFailed: "读取配置失败 (HTTP {{status}})",
@@ -1348,8 +1351,6 @@ const en = {
       baseUrl: "Base URL",
       apiKey: "API key",
     },
-    builtinPrompts:
-      "Prompts are built in per mode — live interview and interview materials each use their own. Nothing to configure here.",
     theme: {
       light: "Light",
       dark: "Dark",
@@ -1366,21 +1367,26 @@ const en = {
     storage: {
       apply: "Apply",
       pick: "Choose folder",
-      hint: "Switching copies the existing data over and keeps a backup; a followed model folder moves with it.",
       saved: "Data folder updated",
     },
     modelDir: {
       follow: "Follow data folder",
-      hint: "Leave empty to follow the data folder; the vector model downloads on first use (~90MB).",
       saved: "Model folder updated",
     },
     embedding: {
-      hint: "The model runs locally: no API key, no torch. The built-in embedding model is fixed and cannot be changed; it downloads on first use.",
       indexed: "{{ready}} of {{total}} entries indexed",
       rebuild: "Rebuild index",
     },
-    contentProtection: {
-      hint: "Hides this window from screenshots, recordings and screen sharing while keeping it visible to you. A phone camera is not covered.",
+    appIcon: {
+      label: "App icon",
+      upload: "Upload image",
+      fromApp: "Extract from app",
+      presets: {
+        default: "Default",
+        chrome: "Chrome",
+        wechat: "WeChat",
+        custom: "Custom",
+      },
     },
     loading: "Loading settings…",
     readFailed: "Failed to load settings (HTTP {{status}})",

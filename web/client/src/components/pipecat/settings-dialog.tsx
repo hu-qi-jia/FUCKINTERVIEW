@@ -1,6 +1,12 @@
 "use client";
 
-import { FolderOpenIcon, SettingsIcon, XIcon } from "lucide-react";
+import {
+  AppWindowIcon,
+  FolderOpenIcon,
+  ImagePlusIcon,
+  SettingsIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -24,6 +30,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { LANGUAGES, setLanguage, type AppLanguage } from "@/i18n";
+import { useAppIcon } from "@/lib/app-icon";
 import {
   fetchStorage,
   pickFolder,
@@ -160,6 +167,7 @@ export function SettingsDialog({
   const [modelFailed, setModelFailed] = useState(false);
   const [qaStatus, setQaStatus] = useState<QaStats | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
+  const appIcon = useAppIcon();
   const { t, i18n } = useTranslation();
 
   useEffect(() => {
@@ -362,6 +370,12 @@ export function SettingsDialog({
     ? "en"
     : "zh";
 
+  // 「自定义」是预设之外的第六块：有图就显示上传的那张，没有就摆个占位。
+  const iconState = appIcon.state;
+  const iconTiles = iconState
+    ? [...iconState.presets, { id: "custom", dataUrl: iconState.custom }]
+    : [];
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
@@ -462,15 +476,74 @@ export function SettingsDialog({
               />
 
               {contentProtectionSupported && onContentProtectionChange && (
-                <div className="grid gap-1.5">
-                  <SwitchRow
-                    label={t("settings.fields.contentProtection")}
-                    checked={contentProtection}
-                    onChange={onContentProtectionChange}
-                  />
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {t("settings.contentProtection.hint")}
-                  </p>
+                <SwitchRow
+                  label={t("settings.fields.contentProtection")}
+                  checked={contentProtection}
+                  onChange={onContentProtectionChange}
+                />
+              )}
+
+              {appIcon.supported && iconState && (
+                <div className="grid min-w-0 gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {t("settings.appIcon.label")}
+                  </span>
+                  <div className="grid grid-cols-4 gap-2">
+                    {iconTiles.map(({ id, dataUrl }) => {
+                      const selected = iconState.preset === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() =>
+                            // 还没有自定义图就点「自定义」：直接进选图，比按了没反应清楚。
+                            void (id === "custom" && !dataUrl
+                              ? appIcon.pickImage()
+                              : appIcon.setPreset(id))
+                          }
+                          className={`flex flex-col items-center gap-1.5 rounded-lg border p-2 text-center transition-colors ${
+                            selected
+                              ? "border-primary bg-primary/10"
+                              : "border-border hover:bg-muted/60"
+                          }`}
+                        >
+                          {dataUrl ? (
+                            <img
+                              src={dataUrl}
+                              alt=""
+                              className="size-9 rounded-md"
+                            />
+                          ) : (
+                            <span className="flex size-9 items-center justify-center rounded-md border border-dashed border-border">
+                              <ImagePlusIcon className="size-4 text-muted-foreground" />
+                            </span>
+                          )}
+                          <span className="text-[11px] text-muted-foreground">
+                            {t(`settings.appIcon.presets.${id}`)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => void appIcon.pickImage()}
+                    >
+                      <ImagePlusIcon />
+                      {t("settings.appIcon.upload")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => void appIcon.pickApp()}
+                    >
+                      <AppWindowIcon />
+                      {t("settings.appIcon.fromApp")}
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -516,9 +589,6 @@ export function SettingsDialog({
                     {t("settings.storage.apply")}
                   </Button>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t("settings.storage.hint")}
-                </p>
                 {storageMessage && (
                   <span
                     className={`text-xs ${
@@ -572,9 +642,6 @@ export function SettingsDialog({
                     {t("settings.storage.apply")}
                   </Button>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t("settings.modelDir.hint")}
-                </p>
                 {modelMessage && (
                   <span
                     className={`text-xs ${
@@ -710,30 +777,23 @@ export function SettingsDialog({
                       />
                     </Field>
 
-                    <Field label={t("settings.fields.disableThinking")}>
-                      <div className="flex h-8 items-center">
-                        <Switch
-                          checked={settings.llm.disable_thinking !== false}
-                          onCheckedChange={(next) =>
-                            setSettings((current) =>
-                              current
-                                ? {
-                                    ...current,
-                                    llm: {
-                                      ...current.llm,
-                                      disable_thinking: Boolean(next),
-                                    },
-                                  }
-                                : current,
-                            )
-                          }
-                        />
-                      </div>
-                    </Field>
-
-                    <p className="text-muted-foreground text-xs leading-relaxed">
-                      {t("settings.builtinPrompts")}
-                    </p>
+                    <SwitchRow
+                      label={t("settings.fields.disableThinking")}
+                      checked={settings.llm.disable_thinking !== false}
+                      onChange={(next) =>
+                        setSettings((current) =>
+                          current
+                            ? {
+                                ...current,
+                                llm: {
+                                  ...current.llm,
+                                  disable_thinking: Boolean(next),
+                                },
+                              }
+                            : current,
+                        )
+                      }
+                    />
                   </section>
 
                   <Separator />
@@ -750,9 +810,6 @@ export function SettingsDialog({
                         disabled
                       />
                     </Field>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      {t("settings.embedding.hint")}
-                    </p>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span>
                         {t("settings.embedding.indexed", {

@@ -19,7 +19,6 @@ const {
   dialog,
   desktopCapturer,
   ipcMain,
-  nativeImage,
   session,
   shell,
 } = require("electron");
@@ -27,14 +26,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { startBackend, stopAll, ROOT } = require("./backend");
+const appIcon = require("./app-icon");
 const { createUrlPolicy, normalizeOrigin, safeExternalUrl } = require("./url-policy");
 
 const IS_DEV = process.argv.includes("--dev");
-const BUILD_DIR = path.join(__dirname, "..", "build");
-// 打包后 build/ 不会进 asar，图标由 extraResources 放到 resources 根目录。
-const ASSET_DIR = app.isPackaged ? process.resourcesPath : BUILD_DIR;
-const ICON_PATH = path.join(ASSET_DIR, "icon.png");
-const TRAY_ICON_PATH = path.join(ASSET_DIR, "tray.png");
 const PRELOAD_PATH = path.join(__dirname, "preload.js");
 
 // 开发端和安装版彻底分开：不同的 userData（日志、单实例锁）和默认端口。
@@ -175,7 +170,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     title: APP_TITLE,
-    icon: ICON_PATH,
+    icon: appIcon.windowImage(),
     backgroundColor: "#0a0a0a",
     show: false,
     frame: false, // 标题栏由前端画
@@ -246,9 +241,8 @@ function quitApp() {
 
 function createTray() {
   if (tray) return;
-  const icon = nativeImage.createFromPath(TRAY_ICON_PATH);
   // 兜底：托盘图标缺失时退回应用图标，避免托盘里出现一个空白占位。
-  tray = new Tray(icon.isEmpty() ? nativeImage.createFromPath(ICON_PATH) : icon);
+  tray = new Tray(appIcon.trayImage());
   tray.setToolTip(APP_TITLE);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -259,6 +253,11 @@ function createTray() {
   );
   tray.on("click", () => showMainWindow());
   tray.on("double-click", () => showMainWindow());
+}
+
+/** 只接受主窗口自己的桌面能力请求；页面导航已被 URL 策略锁在本应用内。 */
+function isMainSender(event) {
+  return Boolean(mainWindow && event.sender === mainWindow.webContents);
 }
 
 function installWindowIpc() {
@@ -278,14 +277,46 @@ function installWindowIpc() {
   );
   ipcMain.handle("privacy:get-content-protection", () => contentProtection);
   ipcMain.handle("privacy:set-content-protection", (event, enabled) => {
-    // 只接受主窗口自己的请求；页面导航已被 URL 策略锁在本应用内。
-    if (!mainWindow || event.sender !== mainWindow.webContents) {
-      return contentProtection;
-    }
+    if (!isMainSender(event)) return contentProtection;
     contentProtection = Boolean(enabled);
     savePrivacySettings();
     applyContentProtection(mainWindow);
     return contentProtection;
+  });
+
+  // ---- 应用图标：预设切换 + 从本机图片 / 应用程序里取图标 ----
+  ipcMain.handle("app-icon:get", () => appIcon.describe());
+  ipcMain.handle("app-icon:set", (event, preset) => {
+    if (!isMainSender(event)) return appIcon.describe();
+    const info = appIcon.setPreset(preset);
+    appIcon.apply({ window: mainWindow, tray });
+    return info;
+  });
+  ipcMain.handle("app-icon:pick-image", async (event) => {
+    if (!isMainSender(event)) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: "选择图片作为应用图标",
+      properties: ["openFile"],
+      filters: [
+        { name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "ico", "bmp"] },
+      ],
+    });
+    if (canceled || !filePaths.length) return null;
+    const info = await appIcon.setFromFilePath(filePaths[0]);
+    if (info) appIcon.apply({ window: mainWindow, tray });
+    return info;
+  });
+  ipcMain.handle("app-icon:pick-app", async (event) => {
+    if (!isMainSender(event)) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: "从本机应用提取图标",
+      properties: ["openFile"],
+      filters: [{ name: "应用程序", extensions: ["exe", "lnk"] }],
+    });
+    if (canceled || !filePaths.length) return null;
+    const info = await appIcon.setFromFilePath(filePaths[0]);
+    if (info) appIcon.apply({ window: mainWindow, tray });
+    return info;
   });
 }
 
