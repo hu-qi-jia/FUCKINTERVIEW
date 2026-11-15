@@ -35,6 +35,11 @@ declare global {
         set: (preset: string) => Promise<AppIconState>;
         /** 弹文件框选图片；用户取消返回 null。 */
         pickImage: () => Promise<AppIconState | null>;
+        /**
+         * 重启应用。任务栏图标要等按钮重建才认，
+         * 所以换完图标给个「立即重启」的入口。
+         */
+        relaunch: () => Promise<boolean>;
       };
     };
   }

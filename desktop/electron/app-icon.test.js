@@ -132,3 +132,37 @@ test("窗体图标和托盘图标都取得到", () => {
   assert.equal(appIcon.windowImage().isEmpty(), false);
   assert.equal(appIcon.trayImage().isEmpty(), false);
 });
+
+// ---- .ico 容器 ----
+
+test("打出来的 .ico 是合法容器：头部、目录项、数据偏移都对得上", () => {
+  const { writeIco } = require("./shortcut-icon");
+  const out = path.join(ctx.userData, "container-test.ico");
+
+  // 假图：resize 后 toPNG 给一个确定长度的字节块，方便校验偏移。
+  const fake = {
+    isEmpty: () => false,
+    resize: ({ width }) => ({
+      toPNG: () => Buffer.alloc(100 + width, 0x89),
+    }),
+  };
+  writeIco(fake, out);
+
+  const buf = fs.readFileSync(out);
+  const count = buf.readUInt16LE(4);
+  assert.equal(buf.readUInt16LE(0), 0, "reserved 必须是 0");
+  assert.equal(buf.readUInt16LE(2), 1, "type 必须是 icon");
+  assert.ok(count > 0, "至少要有一个尺寸");
+
+  let cursor = 6 + 16 * count;
+  for (let i = 0; i < count; i += 1) {
+    const entry = 6 + 16 * i;
+    const size = buf.readUInt8(entry) || 256;
+    const bytes = buf.readUInt32LE(entry + 8);
+    const offset = buf.readUInt32LE(entry + 12);
+    assert.equal(offset, cursor, `第 ${i} 个图像的偏移要接在上一个后面`);
+    assert.equal(bytes, 100 + size, "数据长度要和实际写进去的一致");
+    cursor += bytes;
+  }
+  assert.equal(buf.length, cursor, "文件总长要刚好等于所有数据之和");
+});

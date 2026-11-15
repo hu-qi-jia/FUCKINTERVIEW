@@ -56,5 +56,11 @@ export function useAppIcon() {
     return commit(api.pickImage());
   }, [api, commit]);
 
-  return { supported, state, setPreset, pickImage };
+  /** 重启应用，让任务栏图标重新读快捷方式。 */
+  const relaunch = useCallback(() => {
+    if (!api) return Promise.resolve(false);
+    return api.relaunch().catch(() => false);
+  }, [api]);
+
+  return { supported, state, setPreset, pickImage, relaunch };
 }

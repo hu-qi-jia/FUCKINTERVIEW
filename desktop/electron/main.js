@@ -284,12 +284,14 @@ function installWindowIpc() {
     return contentProtection;
   });
 
-  // ---- 应用图标：预设切换 + 从本机图片 / 应用程序里取图标 ----
+  // ---- 应用图标：预设切换 + 上传图片 ----
+  // 窗体和托盘当场就换；任务栏那一路要改快捷方式，重启后才生效。
   ipcMain.handle("app-icon:get", () => appIcon.describe());
-  ipcMain.handle("app-icon:set", (event, preset) => {
+  ipcMain.handle("app-icon:set", async (event, preset) => {
     if (!isMainSender(event)) return appIcon.describe();
     const info = appIcon.setPreset(preset);
     appIcon.apply({ window: mainWindow, tray });
+    await appIcon.applyTaskbar();
     return info;
   });
   ipcMain.handle("app-icon:pick-image", async (event) => {
@@ -303,8 +305,18 @@ function installWindowIpc() {
     });
     if (canceled || !filePaths.length) return null;
     const info = await appIcon.setFromFilePath(filePaths[0]);
-    if (info) appIcon.apply({ window: mainWindow, tray });
+    if (info) {
+      appIcon.apply({ window: mainWindow, tray });
+      await appIcon.applyTaskbar();
+    }
     return info;
+  });
+  // 任务栏图标要按钮重建才认，所以给个「立即重启」的口子。
+  ipcMain.handle("app-icon:relaunch", (event) => {
+    if (!isMainSender(event)) return false;
+    app.relaunch();
+    quitApp();
+    return true;
   });
 }
 
