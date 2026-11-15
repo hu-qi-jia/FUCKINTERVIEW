@@ -625,7 +625,6 @@ const zh = {
       general: "通用",
       behavioral: "行为面",
       knowledge: "知识",
-      project: "项目技术",
     },
     filters: {
       allTypes: "全部类型",
@@ -1427,7 +1426,6 @@ const en = {
       general: "General",
       behavioral: "Behavioral",
       knowledge: "Knowledge",
-      project: "Project",
     },
     filters: {
       allTypes: "All types",

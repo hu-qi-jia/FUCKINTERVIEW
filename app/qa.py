@@ -21,9 +21,11 @@ from typing import Any, Iterable
 from app.materials import data_dir
 
 QA_FILENAME = "qa.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
-TYPE_VALUES = ("general", "behavioral", "knowledge", "project")
+# 只有这三类会参与「命中即直出」；「项目技术」已经移除——它在实时面试里
+# 本来就一条都用不上（既不直出，内容也不进提示词）。
+TYPE_VALUES = ("general", "behavioral", "knowledge")
 INDEX_STATES = ("pending", "indexing", "ready", "failed")
 VECTOR_KINDS = ("question", "alias", "answer")
 
@@ -74,7 +76,7 @@ CREATE TABLE IF NOT EXISTS qa (
   question_key TEXT NOT NULL,
   answer       TEXT NOT NULL,
   type         TEXT NOT NULL DEFAULT 'general'
-               CHECK (type IN ('general','behavioral','knowledge','project')),
+               CHECK (type IN ('general','behavioral','knowledge')),
   proficiency  INTEGER NOT NULL DEFAULT 3 CHECK (proficiency BETWEEN 1 AND 5),
   enabled      INTEGER NOT NULL DEFAULT 1,
   source       TEXT NOT NULL DEFAULT 'manual',
@@ -188,6 +190,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     version = int(row[0]) if row and str(row[0]).isdigit() else 0
     if version < 2:
         _migrate_to_v2(conn)
+    if version < 3:
+        _migrate_to_v3(conn)
     conn.execute(
         "INSERT INTO meta(key, value) VALUES ('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -220,6 +224,20 @@ def _migrate_to_v2(conn: sqlite3.Connection) -> None:
             "INSERT INTO qa_fts(rowid, question, answer, aliases) VALUES (?,?,?,?)",
             (row[0], row[1], row[2], row[3] or ""),
         )
+
+
+def _migrate_to_v3(conn: sqlite3.Connection) -> None:
+    """v3：去掉「项目技术」类型，历史条目改记成「通用」。
+
+    这一类在实时面试里一条都用不上（既不参与直出，内容也不进提示词），
+    留着只会让人以为写了会被用到。库里本来就一条都没有，这一步只是给别处
+    的旧库兜底。
+
+    注：老库 CHECK 约束里还留着 'project'。改它要整表重建，而 qa_aliases /
+    qa_vectors 的外键都指着这张表，为一个写不进去的值冒这个险不值；
+    TYPE_VALUES 已经不接受它，正确性不受影响。
+    """
+    conn.execute("UPDATE qa SET type = 'general' WHERE type = 'project'")
 
 
 def reset_cache() -> None:

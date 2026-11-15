@@ -34,9 +34,8 @@ _TYPE_ALIASES = {
     "原理": "knowledge",
     "知识原理": "knowledge",
     "knowledge": "knowledge",
-    "项目": "project",
-    "项目技术": "project",
-    "project": "project",
+    # 「项目技术」类型已移除，别名不再认它：老文件里再写这个值会被判成
+    # 非法类型，回落到「通用」并在预览里标黄。
 }
 
 _HEADER_ALIASES = {
@@ -226,7 +225,7 @@ _META_KEYS = {
 def parse_markdown(raw: bytes) -> list[dict[str, Any]]:
     """``##`` 主问题、紧跟标题的 ``> 键: 值`` 是元数据，其余是答案。
 
-    ``#`` 一级标题如果写的是类型名（通用 / 行为面 / 知识 / 项目技术），
+    ``#`` 一级标题如果写的是类型名（通用 / 行为面 / 知识），
     它下面的问题都归到这一类型；写别的一律忽略。
     """
     text = _decode(raw).replace("\r\n", "\n").replace("\r", "\n")

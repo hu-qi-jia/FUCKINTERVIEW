@@ -2,11 +2,11 @@
 
 import i18n from "@/i18n";
 
-export type QaType = "general" | "behavioral" | "knowledge" | "project";
+export type QaType = "general" | "behavioral" | "knowledge";
 export type QaIndexStatus = "pending" | "indexing" | "ready" | "failed";
 export type QaDecision = "insert" | "update" | "skip";
 
-export const QA_TYPES: QaType[] = ["general", "behavioral", "knowledge", "project"];
+export const QA_TYPES: QaType[] = ["general", "behavioral", "knowledge"];
 
 export interface QaItem {
   id: number;

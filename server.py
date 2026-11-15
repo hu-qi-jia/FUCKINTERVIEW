@@ -1092,11 +1092,6 @@ def _live_profile(body: dict) -> dict | None:
     return latest_profile()
 
 
-# 命中问答库后可以直接贴原文的类型。项目技术类必须走 LLM + 档案：
-# 库里的标准答案会盖掉你项目卡里更具体的细节。
-DIRECT_QA_TYPES = ("general", "behavioral", "knowledge")
-
-
 def _last_user_text(context: LLMContext) -> str:
     """上下文里最后一条用户消息——也就是面试官刚问的那句。"""
     for message in reversed(getattr(context, "messages", None) or []):
@@ -1116,7 +1111,7 @@ class QaAnswer(FrameProcessor):
     """实时面试：面试官的问题先过一遍问答库。
 
     放在用户聚合器和 LLM 之间，拦住那个触发推理的 LLMContextFrame：
-    命中（相似度 >= 阈值，且类型不在「项目技术」）就把库里的答案原样推出去，
+    命中（相似度 >= 阈值）就把库里的答案原样推出去，
     这一轮**不跑 LLM**；没命中才放行，让 LLM 用面试档案回答。
 
     模型没下载、检索报错一律当作没命中——面试不能因为问答库挂掉而中断。
@@ -1145,9 +1140,8 @@ class QaAnswer(FrameProcessor):
         if not text:
             return None
         try:
-            result = await run_in_threadpool(
-                qa_index.search, text, 3, list(DIRECT_QA_TYPES), None
-            )
+            # 类型不再筛：库里所有条目都参与直出。
+            result = await run_in_threadpool(qa_index.search, text, 3, None, None)
         except Exception as error:
             logger.warning(f"问答库检索失败，这一轮交给 LLM：{error}")
             return None

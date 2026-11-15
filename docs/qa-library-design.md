@@ -70,7 +70,7 @@ CREATE TABLE qa (
   question_key TEXT NOT NULL,         -- 归一化后（去空白/全半角/标点/大小写），用于去重
   answer       TEXT NOT NULL,
   type         TEXT NOT NULL DEFAULT 'general'
-               CHECK (type IN ('general','behavioral','knowledge','project')),
+               CHECK (type IN ('general','behavioral','knowledge')),
   proficiency  INTEGER NOT NULL DEFAULT 3 CHECK (proficiency BETWEEN 1 AND 5), -- 界面已不使用
   enabled      INTEGER NOT NULL DEFAULT 1,                                    -- 界面已不使用
   source       TEXT NOT NULL DEFAULT 'manual', -- manual | import
@@ -200,9 +200,13 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 
 ### 命中之后怎么用（已实现）
 
-- `type in ('general','behavioral','knowledge')` 且余弦 ≥ 0.75 → **原文直出**，不经过 LLM
-- `type = 'project'` → **永远走 LLM + 档案**，库里的条目只当参考，不直接贴
+- 余弦 ≥ 0.75 → **原文直出**，不经过 LLM（三种类型都参与）
 - 未命中 → LLM + 档案（档案本来就是全量塞进 system prompt 的，不存在「档案检索不到」这一步）
+
+> 曾经有个「项目技术」类型，并且被排除在直出之外：库里的标准答案会盖掉经历卡里
+> 更具体的项目细节。但问答库内容本来就不进提示词，那一类等于永远用不上，现已整个
+> 移除。也就是说现在写进问答库的每一条，只要相似度够高就会被原样念出来——项目相关的
+> 问答要自己掂量。
 
 实现上是用户聚合器和 LLM 之间的一个 `QaAnswer` 处理器：它拦住触发推理的
 `LLMContextFrame`，命中就自己推 `LLMFullResponseStart / LLMText / LLMFullResponseEnd`
@@ -223,7 +227,7 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 | 问题 | 是 | 主问题 |
 | 答案 | 是 | 答案正文，可多行 |
 | 别名 | 否 | 多个用 `\|` 或 `;` 分隔 |
-| 类型 | 否 | `通用` / `行为面` / `知识` / `项目技术`，也接受 `general` 等英文枚举，空 = 通用 |
+| 类型 | 否 | `通用` / `行为面` / `知识`，也接受 `general` 等英文枚举，空 = 通用 |
 
 读 xlsx 用 `openpyxl`（纯 Python，约 1MB，不需要 pandas）。
 
@@ -249,8 +253,8 @@ FTS5 的 `trigram` 分词器要求查询串至少 3 个字符，中文两字词�
 - `##` 之后到下一个 `##` / `#` 之前是答案正文
 - 紧跟标题的 `> 别名:` / `> 类型:` 算元数据；不在白名单里的 `>` 行一律按正文处理
   （`> 熟练度:` 仍被识别，但值被忽略）
-- `#` 一级标题匹配类型名（通用 / 行为面 / 知识 / 项目技术）时，作为下面各题的默认类型；
-  写别的标题会被忽略。单条也可以用 `> 类型: 项目技术` 覆盖
+- `#` 一级标题匹配类型名（通用 / 行为面 / 知识）时，作为下面各题的默认类型；
+  写别的标题会被忽略。单条也可以用 `> 类型: 行为面` 覆盖
 
 ### 6.3 模板下载
 
