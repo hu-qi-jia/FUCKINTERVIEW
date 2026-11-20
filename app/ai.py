@@ -101,6 +101,18 @@ def _thinking_extras(section: dict[str, Any]) -> dict[str, Any]:
     return {"reasoning_effort": effort}
 
 
+def _sampling_extras(section: dict[str, Any]) -> dict[str, Any]:
+    """采样参数。
+
+    和语音管线（app/providers.py）读的是同一个配置项 ``llm.temperature``，
+    两边一个旋钮。不填就整个字段不传，走供应商默认——DeepSeek 默认是 1。
+    """
+    temperature = section.get("temperature")
+    if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
+        return {"temperature": float(temperature)}
+    return {}
+
+
 def _rejects_reasoning_effort(body: str) -> bool:
     """400 的原因是不是「不认识 / 不接受 reasoning_effort」。"""
     lowered = body.lower()
@@ -208,6 +220,7 @@ def _anthropic_payload(
         "max_tokens": max_tokens or ANTHROPIC_MAX_OUTPUT,
         "messages": conversation,
     }
+    payload.update(_sampling_extras(section))
     if system:
         payload["system"] = system
     return payload
@@ -224,9 +237,9 @@ async def _openai_compatible(
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "temperature": 0.3,
         "stream": False,
     }
+    payload.update(_sampling_extras(section))
     payload.update(_thinking_extras(section))
     if max_tokens:
         payload["max_tokens"] = max_tokens
@@ -380,9 +393,9 @@ async def _openai_stream(
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "temperature": 0.3,
         "stream": True,
     }
+    payload.update(_sampling_extras(section))
     payload.update(_thinking_extras(section))
     if max_tokens:
         payload["max_tokens"] = max_tokens

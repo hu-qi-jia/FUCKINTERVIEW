@@ -67,6 +67,11 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         # 能削掉 0.7s 以上的首字延迟，所以这条路一直关思考。
         # 换到不认 reasoning_effort 的供应商时，这里改成 false。
         "disable_thinking": True,
+        # 采样温度。语音回答和经历卡生成共用这一个旋钮（app/providers.py 与
+        # app/ai.py 都读它）。DeepSeek 的默认值是 1，偏高，容易把没写的东西
+        # 说圆；压到 0 会开始复读同一套话术。0.8 是「说得活、但不离谱」。
+        # 不填（None / 空串）就整个字段不传，走供应商默认。
+        "temperature": 0.8,
         # 经历卡生成专用（app/ai.py 的 generate_card_stream）。
         # 卡片是要交给候选人照着说的内容，值得多想一会儿；而规划、简历整合、
         # 教练问答都在用户的等待路径上，思考实测要慢好几倍、输出量却没变化，

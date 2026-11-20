@@ -9,8 +9,13 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from loguru import logger
 from pipecat.frames.frames import (
+    AggregatedTextFrame,
     LLMContextFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
     OutputTransportMessageFrame,
     TranscriptionFrame,
 )
@@ -18,7 +23,15 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.tests.utils import run_test
 
 import app.terms as terms
-from server import GlossaryPrompt, TermCorrector, TextOnlyOutput, _apply_system_prompt
+from server import (
+    HISTORY_MESSAGES,
+    AnswerClock,
+    GlossaryPrompt,
+    LiveTurnTracker,
+    TermCorrector,
+    TextOnlyOutput,
+    _apply_system_prompt,
+)
 
 
 @pytest.fixture()
@@ -117,14 +130,19 @@ def test_term_without_definition_is_not_injected(store):
 
 
 def test_history_is_trimmed_to_the_recent_turns(store):
+    """裁到最近 N 条消息，也就是 N/2 轮一问一答；更早的直接丢，不摘要。"""
     llm = _FakeLLM()
     processor = GlossaryPrompt(llm, lambda glossary: glossary or "SYS", [])
-    context = LLMContext([{"role": "user", "content": f"第 {i} 轮"} for i in range(30)])
+    overflow = 10
+    total = HISTORY_MESSAGES + overflow
+    context = LLMContext([{"role": "user", "content": f"第 {i} 轮"} for i in range(total)])
 
     asyncio.run(run_test(processor, frames_to_send=[LLMContextFrame(context=context)]))
 
-    assert len(context.messages) == 20
-    assert context.messages[-1]["content"] == "第 29 轮"
+    assert len(context.messages) == HISTORY_MESSAGES
+    # 丢的是最旧的 overflow 条，最新的那条一定还在。
+    assert context.messages[0]["content"] == f"第 {overflow} 轮"
+    assert context.messages[-1]["content"] == f"第 {total - 1} 轮"
 
 
 def test_apply_system_prompt_keeps_composed_instructions():
@@ -159,3 +177,58 @@ def test_text_processor_still_aggregates_by_sentence():
 
     aggregated = [frame.text for frame in down if isinstance(frame, AggregatedTextFrame)]
     assert aggregated == ["第一句。", "第二句。"]
+
+
+# --------------------------------------------------------------------------
+# 回答的首尾时刻
+# --------------------------------------------------------------------------
+def _capture_logs():
+    lines: list[str] = []
+    sink = logger.add(lambda msg: lines.append(str(msg)), level="INFO")
+    return lines, sink
+
+
+def test_answer_clock_marks_answer_boundaries():
+    """回答的首尾时刻与字数要记下来——追问融合的间隔全靠它。"""
+    lines, sink = _capture_logs()
+    try:
+        tracker = LiveTurnTracker()
+        asyncio.run(
+            run_test(
+                AnswerClock(tracker),
+                frames_to_send=[
+                    LLMFullResponseStartFrame(),
+                    LLMTextFrame(text="先给结论。"),
+                    LLMTextFrame(text="再给机制。"),
+                    LLMFullResponseEndFrame(),
+                ],
+            )
+        )
+        assert tracker.answer_open is False
+        assert tracker.answer_done_at > 0
+        assert tracker.answer_chars == len("先给结论。") + len("再给机制。")
+        joined = "\n".join(lines)
+        assert "live.answer.first_token" in joined
+        assert "live.answer.done" in joined
+    finally:
+        logger.remove(sink)
+
+
+def test_answer_clock_counts_text_after_the_text_processor():
+    """LLMTextProcessor 会把 LLMTextFrame 收成 AggregatedTextFrame，两种都得数得着。"""
+    lines, sink = _capture_logs()
+    try:
+        tracker = LiveTurnTracker()
+        asyncio.run(
+            run_test(
+                AnswerClock(tracker),
+                frames_to_send=[
+                    LLMFullResponseStartFrame(),
+                    AggregatedTextFrame(text="收拢之后的一句。", text_type="sentence"),
+                    LLMFullResponseEndFrame(),
+                ],
+            )
+        )
+        assert tracker.answer_chars == len("收拢之后的一句。")
+    finally:
+        logger.remove(sink)

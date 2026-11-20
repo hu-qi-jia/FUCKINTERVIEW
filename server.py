@@ -10,6 +10,7 @@ import contextlib
 import json
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -60,6 +61,7 @@ from app.config import (
     save_settings,
 )
 from app import documents as documents_store
+from app import obs
 from app import qa as qa_store
 from app import qa_import, qa_index
 from app import security
@@ -1311,30 +1313,119 @@ class TextOnlyOutput(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
+class LiveTurnTracker:
+    """一问一答的流转状态：时间戳、trace、上一轮直出过哪条。
+
+    pipeline 里好几个节点都要往这里读写（ASR 记开口、回答记首尾、检索记命中），
+    所以集中放一处，别散在各处理器里各记各的——那样日志没法归拢成一条链。
+    """
+
+    def __init__(self) -> None:
+        self.turn = 0
+        self.trace = ""
+        self.answer_open = False
+        self.answer_started_at = 0.0
+        self.answer_done_at = 0.0
+        self.answer_chars = 0
+        self.question_started_at = 0.0
+        self.last_direct_hit = ""
+
+    def note_speech(self) -> None:
+        """ASR 出了一句话。上一答之后的第一句，就是下一问的开口。"""
+        if self.question_started_at <= self.answer_done_at:
+            self.question_started_at = time.monotonic()
+
+    def note_answer_start(self) -> None:
+        self.answer_open = True
+        self.answer_started_at = time.monotonic()
+        self.answer_chars = 0
+
+    def note_answer_char(self, count: int) -> None:
+        self.answer_chars += count
+        if self.answer_started_at and not self.answer_open:
+            self.note_answer_start()
+
+    def note_answer_done(self) -> None:
+        self.answer_open = False
+        self.answer_done_at = time.monotonic()
+        # 下一句转写就是下一问的开口。
+        self.question_started_at = 0.0
+
+    def begin_turn(self) -> str:
+        self.turn += 1
+        self.trace = obs.new_trace_id()
+        return self.trace
+
+    def fusion_reason(
+        self, question: str, prev_answer: str = "", prev_question: str = ""
+    ) -> str:
+        """这一问是不是追问；返回触发原因，不是就返回空串。
+
+        四条判据，命中任意一条就算追问：
+
+        * ``cutoff`` 上一答还在生成就有新问题——面试官一句话被断句切成两段。
+        * ``window`` 上一答说完到这一问开口不到 ``FUSION_WINDOW_SECS``。
+        * ``short``  这一问短到不可能是完整提问（"那并发呢""后来呢"）。
+        * ``brief``  上一答只有一小句就又被追问。
+
+        后三条是补时间窗口的漏：追问常常夹在一段回答后面。误融合的代价很低
+        （检索串多一句，落空还会退回单问），漏融合的代价是这一问答错方向。
+
+        没有上一问就不算追问——场上第一问永远不融合。
+        """
+        text = (question or "").strip()
+        if not text or not (prev_question or "").strip():
+            return ""
+        if self.answer_open:
+            return "cutoff"
+        if self.answer_done_at and self.question_started_at:
+            gap = self.question_started_at - self.answer_done_at
+            if 0 <= gap < FUSION_WINDOW_SECS:
+                return f"window:{gap:.1f}s"
+        if len(text) <= FUSION_MAX_SHORT_CHARS:
+            return f"short:{len(text)}"
+        reply = (prev_answer or "").strip()
+        if 0 < len(reply) <= FUSION_BRIEF_ANSWER_CHARS:
+            return f"brief:{len(reply)}"
+        return ""
+
+
 class TermCorrector(FrameProcessor):
     """把转写里被 ASR 听错的术语改回规范写法。
 
-    放在 STT 和用户聚合器之间：聚合器、问答库检索和模型拿到的都是改好的文本，
-    而且改写在发出之前完成，前端看到的转写也是规范写法。原文不再保留——
-    改了什么通过下面那条 server message 告诉界面。
+    节点位置：STT → **这里** → 用户聚合器。放在最前面，聚合器、问答库检索和
+    模型拿到的都是改好的文本，而且改写在发出之前完成，前端看到的转写也是
+    规范写法。原文不再保留——改了什么通过下面那条 server message 告诉界面。
+
+    顺手把「这一问是几点开口的」记进 tracker：追问融合量的是
+    「上一答说完 → 下一问开口」，开口时刻只有这一层看得见。
     """
 
-    def __init__(self):
+    def __init__(self, tracker: LiveTurnTracker | None = None):
         super().__init__()
         # 本场说过的所有话：术语释义按（改写后的）它来筛选，
         # 离线找疑似别名时用原始转写——改写过就找不到近似词了。
         self.transcript: list[str] = []
         self.raw: list[str] = []
         self.hits: list[dict[str, str]] = []
+        self._tracker = tracker
 
     async def process_frame(self, frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame) and direction == FrameDirection.DOWNSTREAM:
+            if self._tracker is not None:
+                self._tracker.note_speech()
             text, hits = terms_store.correct(frame.text)
             self.raw.append(frame.text)
             self.hits += hits
             if hits:
                 frame.text = text
+                obs.event(
+                    "live.term.correct",
+                    trace=self._tracker.trace if self._tracker else None,
+                    hits=len(hits),
+                    chars=len(text),
+                )
             self.transcript.append(text)
             if hits:
                 await self.push_frame(
@@ -1348,8 +1439,9 @@ class TermCorrector(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
-# 每回合保留的对话消息条数：一问一答算两条。
-HISTORY_MESSAGES = 20
+# 每回合保留的对话消息条数：一问一答算两条，所以 30 条 = 15 轮。
+# 再多就开始拖首字延迟了——每轮都要把整段历史发一遍。
+HISTORY_MESSAGES = 30
 
 
 def _apply_system_prompt(llm, prompt: str) -> None:
@@ -1415,8 +1507,17 @@ def _live_profile(body: dict) -> dict | None:
 
 def _last_user_text(context: LLMContext) -> str:
     """上下文里最后一条用户消息——也就是面试官刚问的那句。"""
+    return _last_text(context, "user")
+
+
+def _last_assistant_text(context: LLMContext) -> str:
+    """上下文里最后一条 AI 回答——也就是候选人才说过的那句。"""
+    return _last_text(context, "assistant")
+
+
+def _last_text(context: LLMContext, role: str) -> str:
     for message in reversed(getattr(context, "messages", None) or []):
-        if message.get("role") != "user":
+        if message.get("role") != role:
             continue
         content = message.get("content")
         if isinstance(content, str):
@@ -1428,36 +1529,168 @@ def _last_user_text(context: LLMContext) -> str:
     return ""
 
 
+# --------------------------------------------------------------------------
+# 实时面试的「一问一答」流转
+#
+# 每个环节一个节点，每个节点一条稳定的 key=value 日志，一问一个 trace_id。
+# 任何一问都能从日志里原样回放出：谁在什么时候说了什么、判没判成追问、
+# 走的问答库还是模型、多久出的字。约定见 app/obs.py。
+#
+# 节点图（一问走一遍）：
+#   live.turn.start        断句完成，一问成立，发 trace
+#     ├ live.fuse          追问判定（cutoff / window / short / brief / none）
+#     ├ live.qa.lookup     检索（融合串 或 单问）
+#     │   ├ live.qa.hit    命中 → 直出，本轮不跑 LLM
+#     │   ├ live.qa.skip_repeat  命中的正是上一轮直出过的那条 → 作废
+#     │   └ live.qa.miss   落空 → 放行给 LLM
+#     ├ live.llm.first_token / live.answer.done   模型产出
+#     └ live.answer.direct 问答库直出产出
+# --------------------------------------------------------------------------
+FUSION_WINDOW_SECS = 6.0
+FUSION_MAX_SHORT_CHARS = 14
+FUSION_BRIEF_ANSWER_CHARS = 60
+# 这两类追问要把两问并起来一起答（作答层融合）：一句被断句切成两段、
+# 或者两问压着问。另两类（short / brief）是完整问答之后的真追问——
+# 并起来会把上一答重说一遍，只在检索层带上去即可，作答交给提示词里的接续规则。
+MERGE_TRIGGERS = ("cutoff", "window")
+
+
+class AnswerClock(FrameProcessor):
+    """把回答的首尾时刻与字数记进 tracker，并落两条节点日志。
+
+    放在 LLM 之后：问答库直出的那几帧从 QaAnswer 推出来也会流经这里，
+    所以两条产回答的路子共用同一个记时刻的地方，间隔才算得准。
+
+    ``LLMTextFrame`` 和 ``AggregatedTextFrame`` 都认：LLMTextProcessor 会把前者
+    收成后者，这个处理器放在它前还是后都得数得着字。
+    """
+
+    _TEXT_FRAMES = ("LLMTextFrame", "AggregatedTextFrame")
+
+    def __init__(self, tracker: LiveTurnTracker):
+        super().__init__()
+        self._tracker = tracker
+        self._first_token_ms: int | None = None
+
+    async def process_frame(self, frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if direction == FrameDirection.DOWNSTREAM:
+            name = type(frame).__name__
+            if isinstance(frame, LLMFullResponseStartFrame):
+                self._tracker.note_answer_start()
+                self._first_token_ms = None
+            elif name in self._TEXT_FRAMES:
+                text = getattr(frame, "text", "") or ""
+                if text:
+                    if self._first_token_ms is None:
+                        self._first_token_ms = int(
+                            (time.monotonic() - self._tracker.answer_started_at) * 1000
+                        )
+                        obs.event(
+                            "live.answer.first_token",
+                            trace=self._tracker.trace,
+                            ms=self._first_token_ms,
+                        )
+                    self._tracker.note_answer_char(len(text))
+            elif isinstance(frame, LLMFullResponseEndFrame):
+                self._tracker.note_answer_done()
+                obs.event(
+                    "live.answer.done",
+                    trace=self._tracker.trace,
+                    ms=int((time.monotonic() - self._tracker.answer_started_at) * 1000),
+                    chars=self._tracker.answer_chars,
+                    first_ms=self._first_token_ms,
+                )
+        await self.push_frame(frame, direction)
+
+
 class QaAnswer(FrameProcessor):
     """实时面试：面试官的问题先过一遍问答库。
 
-    放在用户聚合器和 LLM 之间，拦住那个触发推理的 LLMContextFrame：
-    命中（相似度 >= 阈值）就把库里的答案原样推出去，
-    这一轮**不跑 LLM**；没命中才放行，让 LLM 用面试档案回答。
+    节点位置：用户聚合器 → **这里** → 提示词刷新 → LLM。
+    拦住那个触发推理的 LLMContextFrame：命中（相似度 >= 阈值）就把库里的答案
+    原样推出去，这一轮**不跑 LLM**；没命中才放行，让 LLM 用面试档案回答。
+
+    这里同时负责**多轮融合**的判定与执行：追问要带着上一问一起去检索，
+    切碎 / 连问这两类还要带着上一问一起去作答（把上下文里这一条用户消息
+    改写成两问）。
 
     模型没下载、检索报错一律当作没命中——面试不能因为问答库挂掉而中断。
     """
 
-    def __init__(self, settings: dict):
+    def __init__(self, settings: dict, tracker: LiveTurnTracker | None = None):
         super().__init__()
         embedding = settings.get("embedding") or {}
         try:
             self._threshold = float(embedding.get("relevance_threshold") or 0.75)
         except (TypeError, ValueError):
             self._threshold = 0.75
+        self._tracker = tracker or LiveTurnTracker()
+        self._last_question = ""
+
+    @property
+    def tracker(self) -> LiveTurnTracker:
+        return self._tracker
 
     async def process_frame(self, frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, LLMContextFrame) and direction == FrameDirection.DOWNSTREAM:
-            answer = await self._lookup(_last_user_text(frame.context))
-            if answer:
-                await self.push_frame(LLMFullResponseStartFrame())
-                await self.push_frame(LLMTextFrame(text=answer))
-                await self.push_frame(LLMFullResponseEndFrame())
-                return
+            if await self._handle(frame.context):
+                return  # 已直出：这一轮不放行给 LLM
         await self.push_frame(frame, direction)
 
-    async def _lookup(self, text: str) -> str | None:
+    async def _handle(self, context: LLMContext) -> bool:
+        """处理一问；返回 True 表示已从问答库直出，不用再走 LLM。"""
+        trace = self._tracker.begin_turn()
+        question = _last_user_text(context)
+        prev_answer = _last_assistant_text(context)
+        prev_question = self._last_question
+
+        reason = self._tracker.fusion_reason(question, prev_answer, prev_question)
+        trigger = reason.split(":", 1)[0] if reason else "none"
+        merged = bool(reason and trigger in MERGE_TRIGGERS)
+        fused = f"{prev_question}\n{question}" if (reason and prev_question) else question
+
+        obs.event(
+            "live.turn.start",
+            trace=trace,
+            turn=self._tracker.turn,
+            chars=len(question),
+            fuse=trigger,
+            detail=reason or None,
+        )
+        if reason:
+            obs.event(
+                "live.fuse",
+                trace=trace,
+                trigger=trigger,
+                merge=merged,
+                prev_chars=len(prev_question),
+                curr_chars=len(question),
+            )
+
+        # 作答层融合：把上下文里这一条用户消息改写成两问，模型才答得全。
+        # 只在切碎 / 连问这两类做；真追问并起来会把上一答重说一遍。
+        if merged:
+            _merge_user_message(context, fused)
+
+        # 检索层融合：融合串更长，余弦相似度会被稀释，可能反而压到阈值以下。
+        # 融合没命中就退回单问再查一次——本地检索，多一次是毫秒级。
+        answer = await self._lookup(fused, trace=trace)
+        if answer is None and fused != question:
+            answer = await self._lookup(question, trace=trace)
+        if answer is None:
+            self._last_question = question
+            return False
+
+        obs.event("live.answer.direct", trace=trace, chars=len(answer))
+        await self.push_frame(LLMFullResponseStartFrame())
+        await self.push_frame(LLMTextFrame(text=answer))
+        await self.push_frame(LLMFullResponseEndFrame())
+        self._last_question = question
+        return True
+
+    async def _lookup(self, text: str, *, trace: str = "-") -> str | None:
         if not text:
             return None
         try:
@@ -1465,6 +1698,7 @@ class QaAnswer(FrameProcessor):
             result = await run_in_threadpool(qa_index.search, text, 3, None, None)
         except Exception as error:
             logger.warning(f"问答库检索失败，这一轮交给 LLM：{error}")
+            obs.event("live.qa.error", trace=trace, error=str(error)[:120])
             return None
 
         # 结果是按 RRF 排的，不是按余弦分数；纯关键词命中的 score 还是 0。
@@ -1482,11 +1716,39 @@ class QaAnswer(FrameProcessor):
                 continue
             if best is None or score > best[0]:
                 best = (score, answer, str(item.get("question") or ""))
-        if best is not None:
-            score, answer, question = best
-            logger.info(f"问答库命中「{question}」score={score:.2f}，直接贴原文")
-            return answer
-        return None
+        if best is None:
+            obs.event("live.qa.miss", trace=trace, chars=len(text))
+            return None
+
+        score, answer, question = best
+        # 融合串里的上一问会把相似度拉向它自己上一轮已经直出过的那条，
+        # 命中的还是同一条就作废，否则面试官会连着听两遍一样的话。
+        if question and question == self._tracker.last_direct_hit:
+            obs.event(
+                "live.qa.skip_repeat", trace=trace, hit=question, score=round(score, 2)
+            )
+            return None
+        self._tracker.last_direct_hit = question
+        obs.event(
+            "live.qa.hit",
+            trace=trace,
+            hit=question,
+            score=round(score, 2),
+            chars=len(text),
+        )
+        return answer
+
+
+def _merge_user_message(context: LLMContext, merged: str) -> None:
+    """把上下文里最后一条用户消息改写成融合后的两问。
+
+    只影响模型看到的输入；界面和会话记录走的是 STT 转写，不受影响。
+    """
+    messages = getattr(context, "messages", None) or []
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            message["content"] = merged
+            return
 
 
 async def _warm_qa_model() -> None:
@@ -1601,7 +1863,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             warm_task = asyncio.create_task(_warm_qa_model())
 
         context = LLMContext()
-        corrector = TermCorrector()
+        tracker = LiveTurnTracker()
+        corrector = TermCorrector(tracker)
         processors = [transport.input(), stt, corrector]
 
         if mode != "listen":
@@ -1611,7 +1874,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             )
             processors.append(user_aggregator)
             # 面试官的问题先查问答库：命中就直接贴原文，这一轮不跑 LLM。
-            processors.append(QaAnswer(settings))
+            processors.append(QaAnswer(settings, tracker))
             if prompt_builder is not None:
                 processors.append(
                     GlossaryPrompt(llm, prompt_builder, corrector.transcript)
@@ -1620,6 +1883,11 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             # 实时面试只把文本转成 AggregatedTextFrame，由 RTVIObserver
             # 作为 BotOutput 发给前端，不合成语音。
             processors.append(TextOnlyOutput())
+            # 回答的首尾时刻在这里记（直出和模型两条路都流经它），
+            # 追问融合的间隔才算得准。必须在 LLMTextProcessor 之前——
+            # 那个处理器会把 LLMTextFrame 吞掉换成 AggregatedTextFrame，
+            # 放它后面就再也看不到字了。
+            processors.append(AnswerClock(tracker))
             processors.append(LLMTextProcessor())
             processors += [transport.output(), assistant_aggregator]
         else:

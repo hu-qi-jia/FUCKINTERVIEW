@@ -128,6 +128,13 @@ def build_llm(section: dict[str, Any]):
     base_url = (section.get("base_url") or "").strip()
     system_prompt = (section.get("system_prompt") or "").strip() or DEFAULT_SYSTEM_PROMPT
 
+    # 采样参数：不填就整个不传，走供应商默认。三家的 Settings 都叫 temperature，
+    # 所以可以共用一份取值，别在分支里各写各的。
+    sampling: dict[str, Any] = {}
+    temperature = section.get("temperature")
+    if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
+        sampling["temperature"] = float(temperature)
+
     if provider == "anthropic":
         from pipecat.services.anthropic.llm import AnthropicLLMService
 
@@ -136,6 +143,7 @@ def build_llm(section: dict[str, Any]):
             settings=AnthropicLLMService.Settings(
                 model=model or "claude-sonnet-5-5",
                 system_instruction=system_prompt,
+                **sampling,
             ),
         )
 
@@ -148,6 +156,7 @@ def build_llm(section: dict[str, Any]):
             settings=QwenLLMService.Settings(
                 model=model or "qwen-plus",
                 system_instruction=system_prompt,
+                **sampling,
             ),
         )
 
@@ -169,6 +178,7 @@ def build_llm(section: dict[str, Any]):
             model=model or "gpt-4o-mini",
             system_instruction=system_prompt,
             extra=extra,
+            **sampling,
         ),
     )
 
