@@ -20,8 +20,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   consolidateMaterial,
+  type CardPatch,
   type CoachSlots,
-  type ExperienceCard,
   type InterviewLanguage,
   type InterviewProfile,
   type MaterialKind,
@@ -50,7 +50,7 @@ export function ProfileFlow({
   focusNameToken: number;
   onPatch: (patch: ProfilePatch) => void;
   onReplace: (profile: InterviewProfile) => void;
-  onApplyCard: (card: ExperienceCard) => void;
+  onApplyCard: (card: CardPatch, dropAi?: boolean) => void;
   onApplyCoachSlots: (slots: CoachSlots) => void;
   onFlush: () => Promise<void>;
   onBusyChange: (busy: boolean) => void;

@@ -2,6 +2,12 @@
 
 只用 aiohttp：OpenAI 兼容（含 Qwen 的 compatible-mode）走 /chat/completions，
 Anthropic 走 /v1/messages。这里只负责拿到文本；结构化输出由调用方解析。
+
+两条加速约定，改这里的时候别丢：
+1. 整个进程共用一个 aiohttp 连接池。一次生成十张经历卡会并发打十个请求，
+   每次新建 TCP + TLS 会话光握手就要几百毫秒。
+2. 「关思考」和语音管线（app/providers.py 的 build_llm）读同一个
+   disable_thinking 设置，默认关。
 """
 
 from __future__ import annotations
@@ -10,7 +16,7 @@ import asyncio
 import json
 import os
 import re
-from typing import Any
+from typing import Any, AsyncIterator
 
 import aiohttp
 from loguru import logger
@@ -20,6 +26,32 @@ DEFAULT_TIMEOUT_SECONDS = 120
 # Anthropic 的 max_tokens 是必填项，只能给一个够大的值；
 # OpenAI 兼容接口则不传这个字段，让服务商自己按模型上限决定。
 ANTHROPIC_MAX_OUTPUT = 8192
+
+# 并发上限：默认 10 张卡会同时开跑，连接池要放得下。
+_CONNECTOR_LIMIT = 32
+
+_session: aiohttp.ClientSession | None = None
+
+
+async def _get_session() -> aiohttp.ClientSession:
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                limit=_CONNECTOR_LIMIT,
+                ttl_dns_cache=300,
+                enable_cleanup_closed=True,
+            ),
+        )
+    return _session
+
+
+async def close() -> None:
+    """进程退出前收掉连接池（server.py 的 shutdown 钩子里调用）。"""
+    global _session
+    if _session is not None and not _session.closed:
+        await _session.close()
+    _session = None
 
 
 class LLMError(RuntimeError):
@@ -35,6 +67,18 @@ def _require_key(section: dict[str, Any], label: str, env: str) -> str:
     if not key:
         raise LLMError(f"{label} 的 API Key 未配置，请先在设置页填写")
     return key
+
+
+def _thinking_extras(section: dict[str, Any]) -> dict[str, Any]:
+    """关掉推理模型的思考（Reasoning / Thinking）。
+
+    DeepSeek 实测思考占了首字延迟的 84%，而这里调的都是「把材料整理成结构化
+    文本」，不需要链式推理。和 app/providers.py 的 build_llm 保持同一套规则：
+    走 reasoning_effort=none，DeepSeek / Qwen / OpenAI 的新模型都认。
+    """
+    if not section.get("disable_thinking", True):
+        return {}
+    return {"reasoning_effort": "none"}
 
 
 async def complete(
@@ -79,13 +123,13 @@ async def _complete_once(
     return await _openai_compatible(section, messages, timeout=timeout, max_tokens=max_tokens)
 
 
-async def _openai_compatible(
-    section: dict[str, Any],
-    messages: list[dict[str, str]],
-    *,
-    timeout: float,
-    max_tokens: int | None,
-) -> str:
+# --------------------------------------------------------------------------
+# 供应商参数：非流式和流式共用同一份 payload 构造，别各写一份。
+# --------------------------------------------------------------------------
+
+
+def _openai_target(section: dict[str, Any]) -> tuple[str, str, str]:
+    """返回 (api_key, chat/completions 地址, model)。"""
     provider = str(section.get("provider") or "openai_compatible")
     if provider == "qwen":
         key = _require_key(section, "LLM (Qwen)", "DASHSCOPE_API_KEY")
@@ -101,13 +145,58 @@ async def _openai_compatible(
     url = base_url.rstrip("/")
     if not url.endswith("/chat/completions"):
         url = f"{url}/chat/completions"
+    return key, url, model
 
+
+def _anthropic_target(section: dict[str, Any]) -> tuple[str, str, str]:
+    key = _require_key(section, "LLM (Anthropic)", "ANTHROPIC_API_KEY")
+    base_url = str(section.get("base_url") or "").strip() or "https://api.anthropic.com"
+    model = str(section.get("model") or "").strip() or "claude-sonnet-5-5"
+
+    url = base_url.rstrip("/")
+    if not url.endswith("/v1/messages"):
+        url = f"{url}/v1/messages"
+    return key, url, model
+
+
+def _anthropic_payload(
+    messages: list[dict[str, str]], max_tokens: int | None
+) -> dict[str, Any]:
+    system = "\n\n".join(
+        str(message.get("content") or "")
+        for message in messages
+        if message.get("role") == "system"
+    )
+    conversation = [
+        {"role": message["role"], "content": message["content"]}
+        for message in messages
+        if message.get("role") in ("user", "assistant")
+    ]
+    payload: dict[str, Any] = {
+        # 这个字段在 Anthropic 上是必填的，不限制时给一个足够大的值。
+        "max_tokens": max_tokens or ANTHROPIC_MAX_OUTPUT,
+        "messages": conversation,
+    }
+    if system:
+        payload["system"] = system
+    return payload
+
+
+async def _openai_compatible(
+    section: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    timeout: float,
+    max_tokens: int | None,
+) -> str:
+    key, url, model = _openai_target(section)
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": 0.3,
         "stream": False,
     }
+    payload.update(_thinking_extras(section))
     if max_tokens:
         payload["max_tokens"] = max_tokens
     headers = {
@@ -115,7 +204,7 @@ async def _openai_compatible(
         "Content-Type": "application/json",
     }
 
-    data = await _post_json(url, payload, headers, timeout, "LLM")
+    data = await _post_json(url, payload, headers, timeout, "LLM", section=section)
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
         # 兼容接口偶尔回 200 但 choices 为空，和空正文一样按抖动处理。
@@ -147,33 +236,9 @@ async def _anthropic(
     timeout: float,
     max_tokens: int | None,
 ) -> str:
-    key = _require_key(section, "LLM (Anthropic)", "ANTHROPIC_API_KEY")
-    base_url = str(section.get("base_url") or "").strip() or "https://api.anthropic.com"
-    model = str(section.get("model") or "").strip() or "claude-sonnet-5-5"
-
-    url = base_url.rstrip("/")
-    if not url.endswith("/v1/messages"):
-        url = f"{url}/v1/messages"
-
-    system = "\n\n".join(
-        str(message.get("content") or "")
-        for message in messages
-        if message.get("role") == "system"
-    )
-    conversation = [
-        {"role": message["role"], "content": message["content"]}
-        for message in messages
-        if message.get("role") in ("user", "assistant")
-    ]
-
-    payload: dict[str, Any] = {
-        "model": model,
-        # 这个字段在 Anthropic 上是必填的，不限制时给一个足够大的值。
-        "max_tokens": max_tokens or ANTHROPIC_MAX_OUTPUT,
-        "messages": conversation,
-    }
-    if system:
-        payload["system"] = system
+    key, url, model = _anthropic_target(section)
+    payload = _anthropic_payload(messages, max_tokens)
+    payload["model"] = model
     headers = {
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
@@ -206,23 +271,212 @@ async def _post_json(
     headers: dict[str, str],
     timeout: float,
     label: str,
+    *,
+    section: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as session:
-            async with session.post(url, json=payload, headers=headers) as response:
-                text = await response.text()
-                if response.status >= 400:
-                    raise LLMError(f"{label} 请求失败（HTTP {response.status}）：{text[:300]}")
-                try:
-                    return json.loads(text)
-                except json.JSONDecodeError as error:
-                    raise LLMError(f"{label} 返回的不是 JSON：{text[:300]}") from error
+        session = await _get_session()
+        async with session.post(
+            url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as response:
+            text = await response.text()
+            if response.status >= 400:
+                # 少数供应商不认识 reasoning_effort 会整个拒绝请求。
+                # 带着这个字段被拒时，去掉再试一次，免得换个模型就全挂。
+                if (
+                    response.status == 400
+                    and section is not None
+                    and _thinking_extras(section)
+                ):
+                    stripped = {
+                        key: value
+                        for key, value in payload.items()
+                        if key not in _thinking_extras(section)
+                    }
+                    logger.warning(f"{label} 拒绝了 reasoning_effort，去掉后重试")
+                    return await _post_json(url, stripped, headers, timeout, label)
+                raise LLMError(f"{label} 请求失败（HTTP {response.status}）：{text[:300]}")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as error:
+                raise LLMError(f"{label} 返回的不是 JSON：{text[:300]}") from error
     except aiohttp.ClientError as error:
         raise LLMError(f"{label} 连接失败：{error}") from error
     except TimeoutError as error:
         raise LLMError(f"{label} 请求超时（{int(timeout)} 秒）") from error
+
+
+# --------------------------------------------------------------------------
+# 流式：逐段把模型输出的文本增量 yield 出去。
+#
+# 调用方（app/materials_ai.py）按行解析，一行一个完整 JSON 对象，
+# 所以哪怕被 max_tokens 截断，已经到手的字段也都能用——这一点是 JSON 做不到的。
+# --------------------------------------------------------------------------
+
+
+async def complete_stream(
+    section: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_tokens: int | None = None,
+) -> AsyncIterator[str]:
+    """流式调用模型，逐段 yield 文本增量。
+
+    不在这里做重试：流已经吐了一半再重来会把输出拼成两份，重试交给调用方。
+    """
+    provider = str(section.get("provider") or "openai_compatible")
+    if provider == "anthropic":
+        async for chunk in _anthropic_stream(
+            section, messages, timeout=timeout, max_tokens=max_tokens
+        ):
+            yield chunk
+    else:
+        async for chunk in _openai_stream(
+            section, messages, timeout=timeout, max_tokens=max_tokens
+        ):
+            yield chunk
+
+
+async def _openai_stream(
+    section: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    timeout: float,
+    max_tokens: int | None,
+) -> AsyncIterator[str]:
+    key, url, model = _openai_target(section)
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.3,
+        "stream": True,
+    }
+    payload.update(_thinking_extras(section))
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+    async with _stream_response(url, payload, headers, timeout, "LLM") as response:
+        async for line in _sse_lines(response):
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if not data or data == "[DONE]":
+                continue
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            choices = chunk.get("choices") if isinstance(chunk, dict) else None
+            if not isinstance(choices, list) or not choices:
+                continue
+            delta = (choices[0] or {}).get("delta") or {}
+            text = delta.get("content")
+            if isinstance(text, str) and text:
+                yield text
+
+
+async def _anthropic_stream(
+    section: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    timeout: float,
+    max_tokens: int | None,
+) -> AsyncIterator[str]:
+    key, url, model = _anthropic_target(section)
+    payload = _anthropic_payload(messages, max_tokens)
+    payload["model"] = model
+    payload["stream"] = True
+    headers = {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+
+    async with _stream_response(
+        url, payload, headers, timeout, "LLM (Anthropic)"
+    ) as response:
+        async for line in _sse_lines(response):
+            if not line.startswith("data:"):
+                continue
+            try:
+                event = json.loads(line[5:].strip())
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("type") != "content_block_delta":
+                continue
+            delta = event.get("delta") or {}
+            if delta.get("type") == "text_delta":
+                text = delta.get("text")
+                if isinstance(text, str) and text:
+                    yield text
+
+
+class _stream_response:
+    """流式请求的上下文：统一错误处理，并在调用方提前退出时关掉连接。"""
+
+    def __init__(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        timeout: float,
+        label: str,
+    ) -> None:
+        self._url = url
+        self._payload = payload
+        self._headers = headers
+        self._timeout = timeout
+        self._label = label
+        self._response: aiohttp.ClientResponse | None = None
+
+    async def __aenter__(self) -> aiohttp.ClientResponse:
+        session = await _get_session()
+        try:
+            self._response = await session.post(
+                self._url,
+                json=self._payload,
+                headers=self._headers,
+                timeout=aiohttp.ClientTimeout(total=self._timeout),
+            )
+        except aiohttp.ClientError as error:
+            raise LLMError(f"{self._label} 连接失败：{error}") from error
+        except TimeoutError as error:
+            raise LLMError(f"{self._label} 请求超时（{int(self._timeout)} 秒）") from error
+
+        if self._response.status >= 400:
+            text = await self._response.text()
+            self._response.release()
+            raise LLMError(
+                f"{self._label} 请求失败（HTTP {self._response.status}）：{text[:300]}"
+            )
+        return self._response
+
+    async def __aexit__(self, *_: Any) -> None:
+        if self._response is not None and not self._response.closed:
+            self._response.close()
+
+
+async def _sse_lines(response: aiohttp.ClientResponse) -> AsyncIterator[str]:
+    """把 SSE 的字节流按行切开。
+
+    response.content 迭代出来的是任意大小的块，不是行，所以自己攒缓冲。
+    """
+    buffer = b""
+    async for chunk in response.content.iter_any():
+        buffer += chunk
+        while b"\n" in buffer:
+            raw, buffer = buffer.split(b"\n", 1)
+            line = raw.decode("utf-8", "replace").strip("\r")
+            if line:
+                yield line
+    tail = buffer.decode("utf-8", "replace").strip()
+    if tail:
+        yield tail
 
 
 def _short(value: Any) -> str:

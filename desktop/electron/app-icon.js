@@ -29,6 +29,16 @@ const TRAY_SIZE = 32;
 /** 自定义图最大边长，再大就缩下来，免得 userData 里躺一张 4K 图。 */
 const MAX_EDGE = 256;
 
+/**
+ * 设置页预览缩略图的边长。
+ *
+ * 早先 describe() 把**原图整张**转 base64 塞进 React state：默认图标是
+ * 512×512，光它就约 220KB，而界面上只画 36px 的方块。更要命的是点一次图标
+ * 就把三张图全部重新读盘、解码、编码一遍——这就是设置页点图标卡顿的来源。
+ * 缩到 64px 足够任何 DPI 下画 36px 的方块，体积小两个数量级。
+ */
+const THUMB_EDGE = 64;
+
 const ASSET_DIR = app.isPackaged
   ? process.resourcesPath
   : path.join(__dirname, "..", "build");
@@ -88,11 +98,55 @@ function getState() {
   return state;
 }
 
+// 原图按 preset 缓存：apply()、applyTaskbar()、describe() 都要用，
+// 每次都去读盘解码太浪费。写入自定义图时把 custom 那条清掉。
+const imageCache = new Map();
+// 缩略图只在自定义图变化时重建；预设图是随包发布的，从不变。
+let thumbCache = null;
+
+function invalidateImages() {
+  imageCache.delete(CUSTOM);
+  thumbCache = null;
+}
+
 /** 预设 id（或 custom）对应的原图。 */
 function sourceImage(preset) {
-  if (preset === CUSTOM) return loadImage(customFile());
-  if (preset === DEFAULT) return loadImage(builtinPath("icon"));
-  return loadImage(path.join(presetDir(), `${preset}.png`));
+  if (imageCache.has(preset)) return imageCache.get(preset);
+  let image = null;
+  if (preset === CUSTOM) image = loadImage(customFile());
+  else if (preset === DEFAULT) image = loadImage(builtinPath("icon"));
+  else image = loadImage(path.join(presetDir(), `${preset}.png`));
+  imageCache.set(preset, image);
+  return image;
+}
+
+function thumbDataUrl(image) {
+  if (!image) return null;
+  const { width, height } = image.getSize();
+  const longest = Math.max(width, height);
+  const scaled =
+    longest > THUMB_EDGE
+      ? image.resize(
+          width >= height
+            ? { width: THUMB_EDGE, quality: "good" }
+            : { height: THUMB_EDGE, quality: "good" }
+        )
+      : image;
+  return scaled.toDataURL();
+}
+
+function thumbnails() {
+  if (thumbCache) return thumbCache;
+  const customImage = loadImage(customFile());
+  thumbCache = {
+    presets: [DEFAULT, ...PRESETS].map((id) => ({
+      id,
+      dataUrl: thumbDataUrl(sourceImage(id)),
+    })),
+    custom: thumbDataUrl(customImage),
+    hasCustom: Boolean(customImage),
+  };
+  return thumbCache;
 }
 
 /** 窗体 / 任务栏用的大图。 */
@@ -111,22 +165,18 @@ function trayImage() {
   return image.resize({ width: TRAY_SIZE, quality: "best" });
 }
 
-/** 发给设置页的预览：预设缩略图 + 当前自定义图。 */
+/**
+ * 发给设置页的预览：预设缩略图 + 当前自定义图。
+ *
+ * 缩略图是缓存的，所以 dataUrl 每次都是同一串字符——渲染进程那边 `<img>`
+ * 的 src 不变就不会重新解码重绘。只有 preset 会变，那是我们要的。
+ */
 function describe() {
-  const presets = [DEFAULT, ...PRESETS].map((id) => {
-    const image =
-      id === DEFAULT
-        ? loadImage(builtinPath("icon"))
-        : loadImage(path.join(presetDir(), `${id}.png`));
-    return { id, dataUrl: image ? image.toDataURL() : null };
-  });
+  const thumbs = thumbnails();
   return {
     preset: getState().preset,
-    presets,
-    custom: (() => {
-      const image = loadImage(customFile());
-      return image ? image.toDataURL() : null;
-    })(),
+    presets: thumbs.presets,
+    custom: thumbs.custom,
   };
 }
 
@@ -134,7 +184,7 @@ function setPreset(id) {
   const value = String(id || "");
   if (!VALID.has(value)) return describe();
   // 还没上传过自定义图就别切过去，避免图标变回默认却以为选中了自定义。
-  if (value === CUSTOM && !loadImage(customFile())) return describe();
+  if (value === CUSTOM && !thumbnails().hasCustom) return describe();
   state = { preset: value };
   saveState(state);
   return describe();
@@ -159,6 +209,7 @@ function setCustomImage(image) {
     fs.writeFileSync(file, scaled.toPNG());
     state = { preset: CUSTOM };
     saveState(state);
+    invalidateImages();
     return describe();
   } catch (error) {
     console.error("[app-icon] 保存自定义图标失败", error);
@@ -178,33 +229,44 @@ function setFromFilePath(filePath) {
   }
 }
 
-/** 把当前图标套到窗体和托盘上；两者可能有一个还没建好。 */
-function apply({ window, tray } = {}) {
+/**
+ * 把当前图标套到窗体上（Alt-Tab / 标题栏那个，立即生效）。
+ *
+ * **托盘不在这里**：换图标时托盘保持原样，重启后才变。托盘常驻在投屏视野里，
+ * 改它的那一刻反而最容易暴露；而 createTray() 启动时本来就是从持久化状态读
+ * 图的，不往里传它，自然就变成「重启后生效」。
+ */
+function apply({ window } = {}) {
   try {
     if (window && !window.isDestroyed()) window.setIcon(windowImage());
   } catch (error) {
     console.error("[app-icon] 应用窗体图标失败", error);
-  }
-  try {
-    if (tray) tray.setImage(trayImage());
-  } catch (error) {
-    console.error("[app-icon] 应用托盘图标失败", error);
   }
 }
 
 /**
  * 任务栏那一路要改快捷方式，而且重启后才生效。
  * 「默认」就是把快捷方式指回 exe，也就是恢复出厂图标。
+ *
+ * 这活儿要起 PowerShell（冷启动 300ms 起）再走 COM，慢。放在点击的关键路径
+ * 上会让界面卡住半秒到两秒，所以调用方**不要 await** 它。这里再把调用串成
+ * 一列：连着点几下只会有一个 PowerShell 在跑，而且每次都取当下的状态——
+ * 跑得慢的旧任务最终也落到最新那个图标上。
  */
-async function applyTaskbar() {
-  const preset = getState().preset;
-  const image = preset === DEFAULT ? null : sourceImage(preset);
-  try {
-    return await applyTaskbarIcon(image);
-  } catch (error) {
-    console.error("[app-icon] 应用任务栏图标失败", error);
-    return 0;
-  }
+let taskbarQueue = Promise.resolve();
+
+function applyTaskbar() {
+  taskbarQueue = taskbarQueue.then(async () => {
+    const preset = getState().preset;
+    const image = preset === DEFAULT ? null : sourceImage(preset);
+    try {
+      return await applyTaskbarIcon(image);
+    } catch (error) {
+      console.error("[app-icon] 应用任务栏图标失败", error);
+      return 0;
+    }
+  });
+  return taskbarQueue;
 }
 
 module.exports = {

@@ -17,21 +17,33 @@ function formatElapsed(ms: number): string {
 }
 
 /**
- * 面试计时器：挂载即开始，精确到秒。
+ * 面试计时器。
+ *
+ * 从 `startAt` 那一刻开始计，精确到秒；没连上之前一直是 00:00——
+ * 早先是从进页面就开始计，把连接那十几秒也算成了「面试时长」，看着吓人
+ * 也没法用来对会话记录。
  *
  * 每场面试换一个 key 重新挂载，所以「开始面试」会自然归零；
  * 它只是给候选人看的，不参与任何记录或统计。
  */
-export function InterviewTimer({ className }: { className?: string }) {
-  const startedAt = React.useRef(Date.now());
-  const [elapsed, setElapsed] = React.useState(0);
+export function InterviewTimer({
+  className,
+  startAt,
+}: {
+  className?: string;
+  /** 开始计时的时刻（毫秒时间戳）；null / undefined 表示还没连上。 */
+  startAt?: number | null;
+}) {
+  const [now, setNow] = React.useState(Date.now());
 
   React.useEffect(() => {
-    const tick = () => setElapsed(Date.now() - startedAt.current);
+    const tick = () => setNow(Date.now());
     tick();
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const elapsed = startAt ? now - startAt : 0;
 
   return (
     <span

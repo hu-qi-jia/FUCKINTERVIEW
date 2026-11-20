@@ -285,13 +285,16 @@ function installWindowIpc() {
   });
 
   // ---- 应用图标：预设切换 + 上传图片 ----
-  // 窗体和托盘当场就换；任务栏那一路要改快捷方式，重启后才生效。
+  // 点一下只做「写盘 + 换窗体图标 + 立刻回话」，设置页的选中态当场就变。
+  // 任务栏那一路要起 PowerShell 改快捷方式，**不等它**——放在关键路径上会让
+  // 界面卡住半秒到两秒，而它本来就是重启后才生效的，晚一点落地没有任何代价。
+  // 托盘更是一动不动：重启后才换（见 app-icon.apply 的注释）。
   ipcMain.handle("app-icon:get", () => appIcon.describe());
-  ipcMain.handle("app-icon:set", async (event, preset) => {
+  ipcMain.handle("app-icon:set", (event, preset) => {
     if (!isMainSender(event)) return appIcon.describe();
     const info = appIcon.setPreset(preset);
-    appIcon.apply({ window: mainWindow, tray });
-    await appIcon.applyTaskbar();
+    appIcon.apply({ window: mainWindow });
+    void appIcon.applyTaskbar();
     return info;
   });
   ipcMain.handle("app-icon:pick-image", async (event) => {
@@ -304,10 +307,10 @@ function installWindowIpc() {
       ],
     });
     if (canceled || !filePaths.length) return null;
-    const info = await appIcon.setFromFilePath(filePaths[0]);
+    const info = appIcon.setFromFilePath(filePaths[0]);
     if (info) {
-      appIcon.apply({ window: mainWindow, tray });
-      await appIcon.applyTaskbar();
+      appIcon.apply({ window: mainWindow });
+      void appIcon.applyTaskbar();
     }
     return info;
   });

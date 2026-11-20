@@ -37,6 +37,7 @@ import {
 
 import { BotAudioOutput } from "@/components/pipecat/bot-audio";
 import { ConnectButton } from "@/components/pipecat/connect-button";
+import { InterviewControls } from "@/components/pipecat/interview-controls";
 import { ConsoleAnswerPanel } from "@/components/pipecat/console/answer-panel";
 import { ConsoleBotAudioPanel } from "@/components/pipecat/console/bot-audio-panel";
 import { ConsoleBotVideoPanel } from "@/components/pipecat/console/bot-video-panel";
@@ -80,6 +81,7 @@ import {
 import { usePipecatEventStream } from "@/hooks/use-pipecat-event-stream";
 import { usePipecatMetricValue } from "@/hooks/use-pipecat-metrics";
 import type { LiveMessage } from "@/lib/live-message";
+import { newTraceId, report, startTimer } from "@/lib/obs";
 import type {
   TransportFactory,
   TransportOptions,
@@ -168,7 +170,11 @@ export interface ConsoleProps {
    * captures system audio here, while the click still counts as a user
    * gesture.
    */
-  beforeConnect?: () => Promise<void>;
+  /**
+   * 连接前的准备。返回的 `micReady` 是另一路会话（麦克风）的连接结果：
+   * 这里**不等它**，和本路一起并行跑完，两路管线才不会串成一列。
+   */
+  beforeConnect?: () => Promise<{ micReady?: Promise<void> } | undefined>;
   /**
    * Interview layout: the candidate's transcript, collected from the second
    * (microphone) session and merged into the left-hand conversation.
@@ -524,6 +530,12 @@ function ConsoleShell({
     React.useState(collapseEventsPanel);
   const [connectError, setConnectError] = React.useState<string | null>(null);
   const [isPreparing, setIsPreparing] = React.useState(false);
+  // 面试页的连接是进页面就自动发起的，但用户能中途「取消」。
+  // attempted 区分「还没发起过」和「失败/取消过」，后者才显示「重试」；
+  // cancelledRef 拦住还开着的系统音频选择框返回后继续往下走。
+  const [attempted, setAttempted] = React.useState(false);
+  const cancelledRef = React.useRef(false);
+  const traceRef = React.useRef<string | undefined>(undefined);
 
   // The live page bumps this when system-audio sharing ends outside the app.
   const handledDisconnectSignal = React.useRef(0);
@@ -625,16 +637,45 @@ function ConsoleShell({
     else handle.collapse();
   };
 
+  /**
+   * 连接一次面试。
+   *
+   * 两件事在这里一起做，都是为了让进面试页不那么慢：
+   * - `beforeConnect` 返回的候选人那路**不等它跑完**，和面试官那路一起
+   *   `Promise.all`——早先是候选人那路一路跑到 bot-ready 才起面试官那路，
+   *   两次完整的管线组装排成一列；
+   * - 每一段耗时都报到 `/api/obs`，和后端 span 共用同一个 traceId，
+   *   排障时一份 backend.log 就能看全链路。
+   */
   const handleConnect = async () => {
     // beforeConnect can hold a system-audio picker open for a while; without
     // this guard a second click would start a second capture and session.
     if (isPreparing) return;
     setIsPreparing(true);
     setConnectError(null);
+    setAttempted(true);
+    cancelledRef.current = false;
+
+    const trace = newTraceId();
+    traceRef.current = trace;
+    const stop = startTimer("interview.connect", trace);
+    const stopPicker = startTimer("interview.pickScreen", trace);
+
     try {
-      await beforeConnect?.();
-      await app.connect();
+      const prepared = await beforeConnect?.();
+      stopPicker();
+      if (cancelledRef.current) {
+        // 用户在系统音频选择框开着的时候按了「取消」：别再往下走了。
+        stop({ cancelled: true });
+        return;
+      }
+      await Promise.all([
+        app.connect(),
+        prepared?.micReady ?? Promise.resolve(),
+      ]);
+      stop({ ok: true });
     } catch (error) {
+      stop({ failed: true });
       setConnectError(error instanceof Error ? error.message : String(error));
       onConnectError?.(error);
     } finally {
@@ -642,17 +683,35 @@ function ConsoleShell({
     }
   };
 
-  const connectButton = (
-    <ConnectButton
-      size="sm"
-      onConnect={handleConnect}
-      onDisconnect={() => {
-        onEnd?.();
-        void Promise.resolve(app.disconnect()).finally(() =>
-          onDisconnected?.()
-        );
-      }}
+  /**
+   * 连接过程中的「取消」：直接回首页。
+   *
+   * 它是**独立的一个按钮**，不和「结束面试」共用那个变形按钮，而且连上之后
+   * 就消失了——连接过程中和面试中的操作要一眼分得开。
+   */
+  const handleCancel = () => {
+    cancelledRef.current = true;
+    report("interview.cancel", {}, traceRef.current);
+    void Promise.resolve(app.disconnect()).catch(() => {});
+    onDisconnected?.();
+  };
+
+  const handleDisconnect = () => {
+    report("interview.end", {}, traceRef.current);
+    onEnd?.();
+    void Promise.resolve(app.disconnect()).finally(() => onDisconnected?.());
+  };
+
+  const connectButton = isInterviewLayout ? (
+    <InterviewControls
+      isPreparing={isPreparing}
+      attempted={attempted}
+      onConnect={() => void handleConnect()}
+      onCancel={handleCancel}
+      onDisconnect={handleDisconnect}
     />
+  ) : (
+    <ConnectButton size="sm" onConnect={handleConnect} onDisconnect={handleDisconnect} />
   );
 
   // 首页确认档案后跳过来：等 Console 真正挂载、client 就绪，再发起连接。

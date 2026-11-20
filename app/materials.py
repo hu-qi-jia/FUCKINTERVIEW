@@ -29,12 +29,15 @@ SCHEMA_VERSION = 1
 PROFILES_FILENAME = "profiles.json"
 CARDS_MAX = 10
 LANGUAGES = ("zh", "en")
+# 字段顺序就是界面上的顺序，和 app/materials_ai.py 的 CARD_FIELD_ORDER 保持一致。
 CARD_BODY_KEYS = (
     "facts",
+    "pitfalls",
     "defense",
     "pushback",
     "boundaries",
     "depth",
+    "transferable",
     "nextQuestion",
 )
 
@@ -199,7 +202,33 @@ def _sanitize_card(raw: Any, position: int) -> dict[str, Any]:
         "position": position,
         "createdAt": str(raw.get("createdAt") or _now()),
         "updatedAt": _now(),
+        # 追溯：这张卡是哪次调用、哪个模型、多久生成的。
+        # 手动新增的卡没有 meta，保持 None。
+        "meta": _sanitize_card_meta(raw.get("meta")),
     }
+
+
+# meta 里只留这些标量，别让模型输出的任何东西从这里混进档案。
+CARD_META_KEYS = ("traceId", "prompt", "model", "provider", "generatedAt", "durationMs", "outputChars", "truncated")
+
+
+def _sanitize_card_meta(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    meta: dict[str, Any] = {}
+    for key in CARD_META_KEYS:
+        if key not in raw or raw[key] is None:
+            continue
+        if key in ("durationMs", "outputChars"):
+            try:
+                meta[key] = int(raw[key])
+            except (TypeError, ValueError):
+                continue
+        elif key == "truncated":
+            meta[key] = bool(raw[key])
+        else:
+            meta[key] = str(raw[key])[:80]
+    return meta or None
 
 
 def _sanitize_cards(raw_cards: Any) -> list[dict[str, Any]]:
@@ -345,6 +374,72 @@ def delete_profile(profile_id: str) -> None:
             profile for profile in store["profiles"] if profile.get("id") != profile_id
         ]
         _write_store(store)
+
+
+def begin_plan(profile_id: str) -> list[dict[str, Any]]:
+    """开始一次新规划：清掉旧的 AI 卡，保留手动卡，返回被清掉的旧 AI 卡。
+
+    为什么要返回旧卡：规划是流式的，第一个单元才落地时就动了用户的档案。
+    万一一上来就失败、一张新卡都没出来，调用方可以把旧卡原样放回去——
+    否则用户点一次「重新生成」就把自己攒的卡弄丢了。
+    """
+    with _lock:
+        store = _read_store()
+        profile = _find(store, profile_id)
+        removed = [card for card in profile["cards"] if card.get("source") != "manual"]
+        manual = [card for card in profile["cards"] if card.get("source") == "manual"]
+        profile["cards"] = manual
+        live = {str(card.get("slug")) for card in manual}
+        profile["coachSlots"] = {
+            slug: slots
+            for slug, slots in (profile.get("coachSlots") or {}).items()
+            if slug in live
+        }
+        profile["updatedAt"] = _now()
+        _write_store(store)
+        return removed
+
+
+def append_plan_unit(profile_id: str, unit: dict[str, Any]) -> dict[str, Any]:
+    """规划出一个单元就落一张 pending 卡，返回这张卡。
+
+    和 begin_plan 配套：卡一落地就拿到了 slug，前端可以立刻开跑生成，
+    不用等整个规划结束。
+    """
+    with _lock:
+        store = _read_store()
+        profile = _find(store, profile_id)
+        cards = list(profile["cards"])
+        if len(cards) >= CARDS_MAX:
+            raise ValueError(f"经历卡最多 {CARDS_MAX} 张")
+        card = _sanitize_card(
+            {
+                "name": unit.get("name") or "",
+                "description": unit.get("description") or "",
+                "source": "ai",
+                "status": "pending",
+                "sourceRevision": int(profile.get("materialsRevision") or 0),
+            },
+            len(cards),
+        )
+        cards.append(card)
+        profile["cards"] = cards
+        profile["updatedAt"] = _now()
+        _write_store(store)
+        return card
+
+
+def restore_cards(profile_id: str, cards: list[dict[str, Any]]) -> dict[str, Any]:
+    """把 begin_plan 拿走的旧卡原样放回去（规划一张都没产出时用）。"""
+    if not cards:
+        return get_profile(profile_id)
+    with _lock:
+        store = _read_store()
+        profile = _find(store, profile_id)
+        profile["cards"] = _sanitize_cards(list(cards) + list(profile["cards"]))
+        profile["updatedAt"] = _now()
+        _write_store(store)
+        return profile
 
 
 def apply_plan(profile_id: str, units: list[dict[str, Any]]) -> dict[str, Any]:

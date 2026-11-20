@@ -1,25 +1,35 @@
 /** 面试材料（面试档案）的前端数据模型与接口。 */
 
-import { json, request } from "@/lib/http";
+import {
+  json,
+  request,
+  streamRequest,
+  type RequestOptions,
+} from "@/lib/http";
 
 export type InterviewLanguage = "zh" | "en";
 export type CardStatus = "pending" | "generating" | "ready" | "failed";
 export type CardSource = "ai" | "manual";
 
+/** 顺序就是界面上的顺序，和后端 app/materials.py 的 CARD_BODY_KEYS 保持一致。 */
 export type CardBodyKey =
   | "facts"
+  | "pitfalls"
   | "defense"
   | "pushback"
   | "boundaries"
   | "depth"
+  | "transferable"
   | "nextQuestion";
 
 export const CARD_BODY_KEYS: CardBodyKey[] = [
   "facts",
+  "pitfalls",
   "defense",
   "pushback",
   "boundaries",
   "depth",
+  "transferable",
   "nextQuestion",
 ];
 
@@ -29,6 +39,18 @@ export interface MaterialSection {
   original: string;
   content: string;
   updatedAt: string | null;
+}
+
+/** 生成来源追溯：哪次调用、哪个模型、多久生成的。手动新增的卡没有。 */
+export interface CardMeta {
+  traceId?: string;
+  prompt?: string;
+  model?: string;
+  provider?: string;
+  generatedAt?: string;
+  durationMs?: number;
+  outputChars?: number;
+  truncated?: boolean;
 }
 
 export interface ExperienceCard {
@@ -43,6 +65,7 @@ export interface ExperienceCard {
   position: number;
   createdAt: string;
   updatedAt: string;
+  meta?: CardMeta | null;
 }
 
 export interface InterviewProfile {
@@ -153,10 +176,38 @@ export async function consolidateMaterial(
   return data.content;
 }
 
+/**
+ * 流式规划的事件。
+ *
+ * 出一个单元就发一个 `unit`，前端拿到 card.slug 就能立刻开跑那张卡——
+ * 这就是「边规划边生成」，不用等整个规划结束。
+ */
+export type PlanStreamEvent =
+  | { type: "unit"; card: ExperienceCard }
+  | { type: "done"; profile: InterviewProfile }
+  | { type: "error"; message: string };
+
+/** 流式生成一张卡的事件：字段到一个发一个，最后发整张卡（含 meta 追溯）。 */
+export type CardStreamEvent =
+  | { type: "field"; key: "name" | "description" | CardBodyKey; value: string }
+  | { type: "done"; card: ExperienceCard }
+  | { type: "error"; message: string };
+
 export async function planSkills(id: string): Promise<InterviewProfile> {
   return request<InterviewProfile>(
     `/api/profiles/${id}/skills/plan`,
     json("POST", {}),
+  );
+}
+
+export function planSkillsStream(
+  id: string,
+  options: RequestOptions = {},
+): AsyncGenerator<PlanStreamEvent> {
+  return streamRequest<PlanStreamEvent>(
+    `/api/profiles/${id}/skills/plan/stream`,
+    json("POST", {}),
+    options,
   );
 }
 
@@ -167,6 +218,18 @@ export async function generateSkill(
   return request<ExperienceCard>(
     `/api/profiles/${id}/skills/${encodeURIComponent(slug)}/generate`,
     json("POST", {}),
+  );
+}
+
+export function generateSkillStream(
+  id: string,
+  slug: string,
+  options: RequestOptions = {},
+): AsyncGenerator<CardStreamEvent> {
+  return streamRequest<CardStreamEvent>(
+    `/api/profiles/${id}/skills/${encodeURIComponent(slug)}/generate/stream`,
+    json("POST", {}),
+    options,
   );
 }
 
@@ -265,10 +328,12 @@ export function emptyCard(
     description: "",
     body: {
       facts: "",
+      pitfalls: "",
       defense: "",
       pushback: "",
       boundaries: "",
       depth: "",
+      transferable: "",
       nextQuestion: "",
     },
     source: "manual",
@@ -278,6 +343,32 @@ export function emptyCard(
     position,
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/**
+ * 对一张卡的增量更新。
+ *
+ * body 是 Partial：流式生成一次只推一个字段，
+ * 整个 Record 覆盖会把其他并发写进来的字段冲掉。
+ */
+export type CardPatch = Partial<Omit<ExperienceCard, "slug" | "body">> & {
+  slug: string;
+  body?: Partial<Record<CardBodyKey, string>>;
+};
+
+/** 把增量合并到一张卡上；没有基卡就按增量造一张。 */
+export function mergeCard(
+  base: ExperienceCard | undefined,
+  patch: CardPatch,
+): ExperienceCard {
+  const seed =
+    base ??
+    emptyCard(patch.slug, patch.name ?? "", patch.sourceRevision ?? 0, 0);
+  return {
+    ...seed,
+    ...patch,
+    body: { ...seed.body, ...(patch.body ?? {}) },
   };
 }
 

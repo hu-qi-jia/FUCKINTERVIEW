@@ -14,7 +14,6 @@ import { useTranslation } from "react-i18next";
 import { InlineConfirmButton } from "@/components/materials/inline-confirm-button";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,18 +21,28 @@ import {
   CARD_BODY_KEYS,
   CARDS_MAX,
   emptyCard,
-  generateSkill,
+  generateSkillStream,
   isCardStale,
-  planSkills,
+  planSkillsStream,
   sortCards,
   type CardBodyKey,
+  type CardPatch,
   type ExperienceCard,
   type InterviewProfile,
   type ProfilePatch,
 } from "@/lib/materials";
+import { isAbortError, newTraceId } from "@/lib/http";
 import { cn } from "@/lib/utils";
 
 type Phase = "idle" | "planning" | "generating";
+
+/**
+ * 并发生成的上限。
+ *
+ * 每张卡是一次独立的 LLM 调用，互不依赖，所以并行就是把墙钟时间除以并发数。
+ * 4 是个折中：再高容易撞上服务商的并发/限流，再低就白瞎了并行。
+ */
+const GENERATION_CONCURRENCY = 4;
 
 const BADGE =
   "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] leading-none";
@@ -46,7 +55,6 @@ export function CardsStep({
   profile,
   busy,
   onPatch,
-  onReplace,
   onApplyCard,
   onFlush,
   onBusyChange,
@@ -55,40 +63,43 @@ export function CardsStep({
   busy: boolean;
   onPatch: (patch: ProfilePatch) => void;
   onReplace: (profile: InterviewProfile) => void;
-  onApplyCard: (card: ExperienceCard) => void;
+  onApplyCard: (card: CardPatch, dropAi?: boolean) => void;
   onFlush: () => Promise<void>;
   onBusyChange: (busy: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("idle");
-  const [current, setCurrent] = useState<{
-    slug: string;
-    index: number;
-    total: number;
-  } | null>(null);
-  const [multiRun, setMultiRun] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState({
+    planned: 0,
+    done: 0,
+    failed: 0,
+  });
+  const [runningSlugs, setRunningSlugs] = useState<Set<string>>(new Set());
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const stopRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  // 生成是并发的：拿最新 cards 不能依赖闭包里的那份快照。
+  const cardsRef = useRef<ExperienceCard[]>(profile.cards);
+  cardsRef.current = profile.cards;
+
   const cards = useMemo(() => sortCards(profile.cards), [profile.cards]);
   const pending = cards.filter((card) => card.status === "pending");
-  const hasReady = cards.some((card) => card.status === "ready");
   const stale = cards.some((card) => isCardStale(card, profile.materialsRevision));
-  const running = phase === "generating";
-  const locked = busy || running || phase === "planning";
+  const running = phase !== "idle";
+  const locked = busy || running;
   const hasMaterials =
     Boolean(profile.resume.content.trim()) &&
     Boolean(profile.jobDescription.content.trim());
 
-  // 新计划到达时默认全选。
-  useEffect(() => {
-    setSelected(new Set(pending.map((card) => card.slug)));
-    // 只在待生成集合变化时重置，避免覆盖用户的勾选。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending.map((card) => card.slug).join("|")]);
+  // 组件卸载时把在跑的请求掐了，别让流挂在后台。
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
 
   const updateCard = useCallback(
     (slug: string, fields: Partial<ExperienceCard>) => {
@@ -101,110 +112,177 @@ export function CardsStep({
     [cards, onPatch],
   );
 
-  const startPlan = useCallback(async () => {
-    if (!hasMaterials || locked) return;
-    setPhase("planning");
-    setError(null);
-    onBusyChange(true);
-    try {
-      const next = await planSkills(profile.id);
-      onReplace(next);
-      setCurrent(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setPhase("idle");
-      onBusyChange(false);
-    }
-  }, [hasMaterials, locked, onBusyChange, onReplace, profile.id]);
+  /** 跑一张卡：字段到一个显示一个，出错只影响这一张。 */
+  const runOne = useCallback(
+    async (slug: string, signal: AbortSignal, trace: string) => {
+      setRunningSlugs((previous) => new Set(previous).add(slug));
+      try {
+        for await (const event of generateSkillStream(profile.id, slug, {
+          trace,
+          signal,
+        })) {
+          if (event.type === "field") {
+            if (event.key === "name" || event.key === "description") {
+              onApplyCard({ slug, [event.key]: event.value });
+            } else {
+              onApplyCard({
+                slug,
+                body: {
+                  [event.key]: event.value,
+                } as Partial<Record<CardBodyKey, string>>,
+              });
+            }
+          } else if (event.type === "done") {
+            onApplyCard(event.card);
+            setProgress((previous) => ({ ...previous, done: previous.done + 1 }));
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      } catch (cause) {
+        // 取消不算失败：服务端已经把这张卡退回 pending，界面上看得见、点得动。
+        if (isAbortError(cause)) return;
+        setProgress((previous) => ({
+          ...previous,
+          failed: previous.failed + 1,
+        }));
+        onApplyCard({
+          slug,
+          status: "failed",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      } finally {
+        setRunningSlugs((previous) => {
+          const next = new Set(previous);
+          next.delete(slug);
+          return next;
+        });
+      }
+    },
+    [onApplyCard, profile.id],
+  );
 
-  const runGeneration = useCallback(
-    async (slugs: string[], dropped: string[]) => {
-      if (slugs.length === 0) return;
-      stopRef.current = false;
-      setStopping(false);
-      setMultiRun(true);
+  /**
+   * 一次完整跑：边规划边生成。
+   *
+   * 规划是流式的，出一个单元就落一张卡、立刻排进生成队列，
+   * 不用等整个规划结束——这就是「正在分析简历…」那段死时间被吃掉的地方。
+   *
+   * 传 `slugs` 就跳过规划，只跑指定的卡（取消之后重新跑剩下的、或单张重试）。
+   */
+  const startRun = useCallback(
+    async (only?: string[]) => {
+      if (locked || (only ? only.length === 0 : !hasMaterials)) return;
+
+      // 先把本地没落盘的编辑存掉，免得和流式写回来的卡打架。
+      await onFlush();
+
+      const trace = newTraceId();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setError(null);
-      setPhase("generating");
+      setPhase(only ? "generating" : "planning");
+      setProgress({
+        planned: only ? only.length : 0,
+        done: 0,
+        failed: 0,
+      });
       onBusyChange(true);
 
-      if (dropped.length > 0) {
-        onPatch({
-          cards: cards.filter((card) => !dropped.includes(card.slug)),
-        });
-        await onFlush();
+      const queue: string[] = [...(only ?? [])];
+      let inflight = 0;
+      let planDone = Boolean(only);
+      let failure: string | null = null;
+      // 服务端在第一个单元落地时才清掉旧的 AI 卡，本地同步在那一刻一起清。
+      let dropAi = true;
+
+      const settle = () => {
+        if (!planDone || inflight > 0) return;
+        abortRef.current = null;
+        setPhase("idle");
+        setStopping(false);
+        onBusyChange(false);
+        if (failure) setError(failure);
+      };
+
+      const pump = () => {
+        while (inflight < GENERATION_CONCURRENCY && queue.length > 0) {
+          const slug = queue.shift();
+          if (!slug) break;
+          inflight += 1;
+          void runOne(slug, controller.signal, trace).finally(() => {
+            inflight -= 1;
+            pump();
+          });
+        }
+        settle();
+      };
+
+      if (only) {
+        pump();
+        return;
       }
 
       try {
-        for (const [index, slug] of slugs.entries()) {
-          if (stopRef.current) break;
-          setCurrent({ slug, index, total: slugs.length });
-          const source = cards.find((card) => card.slug === slug);
-          try {
-            const card = await generateSkill(profile.id, slug);
-            onApplyCard(card);
-          } catch (cause) {
-            if (!source) continue;
-            onApplyCard({
-              ...source,
-              status: "failed",
-              error: cause instanceof Error ? cause.message : String(cause),
-            });
+        for await (const event of planSkillsStream(profile.id, {
+          trace,
+          signal: controller.signal,
+        })) {
+          if (event.type === "unit") {
+            onApplyCard(event.card, dropAi);
+            dropAi = false;
+            setProgress((previous) => ({
+              ...previous,
+              planned: previous.planned + 1,
+            }));
+            queue.push(event.card.slug);
+            if (queue.length > GENERATION_CONCURRENCY) setPhase("generating");
+            pump();
+          } else if (event.type === "error") {
+            failure = event.message;
+            break;
           }
+          // done 不需要动本地状态：每个 unit 事件已经把卡落进来了。
+        }
+      } catch (cause) {
+        if (!isAbortError(cause)) {
+          failure = cause instanceof Error ? cause.message : String(cause);
         }
       } finally {
-        setCurrent(null);
-        setStopping(false);
-        setMultiRun(false);
-        setPhase("idle");
-        onBusyChange(false);
+        planDone = true;
+        setPhase("generating");
+        pump();
       }
     },
-    [cards, onApplyCard, onBusyChange, onFlush, onPatch, profile.id],
+    [hasMaterials, locked, onBusyChange, onFlush, profile.id, runOne],
   );
 
-  const startGeneration = useCallback(() => {
-    const chosen = pending.filter((card) => selected.has(card.slug));
-    const dropped = pending
-      .filter((card) => !selected.has(card.slug))
-      .map((card) => card.slug);
-    void runGeneration(
-      chosen.map((card) => card.slug),
-      dropped,
-    );
-  }, [pending, runGeneration, selected]);
+  /** 真正的取消：掐掉在跑的请求，服务端把卡退回 pending。 */
+  const stopRun = useCallback(() => {
+    setStopping(true);
+    abortRef.current?.abort();
+  }, []);
 
   const regenerateCard = useCallback(
     async (slug: string) => {
       if (locked) return;
+      const trace = newTraceId();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setError(null);
       setPhase("generating");
       onBusyChange(true);
-      setCurrent({ slug, index: 0, total: 1 });
-      const source = cards.find((card) => card.slug === slug);
       try {
-        const card = await generateSkill(profile.id, slug);
-        onApplyCard(card);
-      } catch (cause) {
-        if (source) {
-          onApplyCard({
-            ...source,
-            status: "failed",
-            error: cause instanceof Error ? cause.message : String(cause),
-          });
-        }
+        await runOne(slug, controller.signal, trace);
       } finally {
-        setCurrent(null);
+        abortRef.current = null;
         setPhase("idle");
         onBusyChange(false);
       }
     },
-    [cards, locked, onApplyCard, onBusyChange, profile.id],
+    [locked, onBusyChange, runOne],
   );
-
-  const cancelPlan = useCallback(() => {
-    onPatch({ cards: cards.filter((card) => card.status !== "pending") });
-  }, [cards, onPatch]);
 
   const addCard = useCallback(() => {
     if (cards.length >= CARDS_MAX || locked) return;
@@ -253,12 +331,6 @@ export function CardsStep({
     });
   };
 
-  const currentCard =
-    current && cards.find((card) => card.slug === current.slug);
-  const listed = cards.filter(
-    (card) => !(card.status === "pending" && !running),
-  );
-
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -276,16 +348,16 @@ export function CardsStep({
             disabled={locked || !hasMaterials}
             label={t("materials.cards.regenerate")}
             confirmLabel={t("materials.cards.confirmRegenerate")}
-            onConfirm={() => void startPlan()}
+            onConfirm={() => void startRun()}
           />
         ) : (
           <Button
             size="sm"
             variant="outline"
             disabled={locked || !hasMaterials}
-            onClick={() => void startPlan()}
+            onClick={() => void startRun()}
           >
-            {phase === "planning" ? <Spinner className="size-3.5" /> : null}
+            {running ? <Spinner className="size-3.5" /> : null}
             {t("materials.cards.generate")}
           </Button>
         )}
@@ -313,126 +385,65 @@ export function CardsStep({
             size="xs"
             variant="outline"
             disabled={locked || !hasMaterials}
-            onClick={() => void startPlan()}
+            onClick={() => void startRun()}
           >
             {t("materials.cards.regenerate")}
           </Button>
         </div>
       )}
 
-      {phase === "planning" && (
-        <p className="text-muted-foreground flex items-center gap-2 text-xs">
-          <Spinner className="size-3.5" />
-          {t("materials.cards.planning")}
-        </p>
-      )}
-
       {running && (
         <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs">
           <Spinner className="size-3.5" />
           <span className="min-w-0 flex-1 truncate">
-            {current
-              ? t("materials.cards.progress", {
-                  current: Math.min(current.index + 1, current.total),
-                  total: current.total,
-                  name: currentCard?.name || t("materials.cards.untitled"),
-                })
-              : t("materials.cards.generating")}
+            {t("materials.cards.runProgress", {
+              planned: progress.planned,
+              done: progress.done,
+              running: runningSlugs.size,
+            })}
           </span>
-          {multiRun && (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={stopping}
-              onClick={() => {
-                stopRef.current = true;
-                setStopping(true);
-              }}
-            >
-              {stopping
-                ? t("materials.cards.stopping")
-                : t("materials.cards.stop")}
-            </Button>
-          )}
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={stopping}
+            onClick={stopRun}
+          >
+            {stopping ? t("materials.cards.stopping") : t("materials.cards.stop")}
+          </Button>
         </div>
       )}
 
       {error && <p className="text-destructive text-xs">{error}</p>}
 
       {pending.length > 0 && !running && (
-        <div className="grid gap-4 rounded-lg border border-dashed p-4">
-          <p className="text-sm">
-            {t("materials.cards.planTitle", { count: pending.length })}
-          </p>
-          <ul className="grid gap-3">
-            {pending.map((card) => (
-              <li key={card.slug} className="flex items-start gap-3">
-                <Checkbox
-                  aria-label={card.name}
-                  className="mt-1"
-                  checked={selected.has(card.slug)}
-                  onCheckedChange={(checked) => {
-                    setSelected((previous) => {
-                      const next = new Set(previous);
-                      if (checked) next.add(card.slug);
-                      else next.delete(card.slug);
-                      return next;
-                    });
-                  }}
-                />
-                <div className="grid min-w-0 flex-1 gap-1">
-                  <input
-                    value={card.name}
-                    aria-label={t("materials.cardFields.name")}
-                    className="text-foreground -mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-medium outline-none transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
-                    onChange={(event) =>
-                      updateCard(card.slug, { name: event.target.value })
-                    }
-                  />
-                  {card.description && (
-                    <p className="text-muted-foreground max-w-prose text-xs leading-relaxed">
-                      {card.description}
-                    </p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              disabled={selected.size === 0 || busy}
-              onClick={startGeneration}
-            >
-              {hasReady
-                ? t("materials.cards.continue")
-                : t("materials.cards.start")}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={cancelPlan}
-            >
-              {t("materials.cards.cancelPlan")}
-            </Button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs">
+          <span className="text-muted-foreground min-w-0 flex-1">
+            {t("materials.cards.pendingLeft", { count: pending.length })}
+          </span>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={locked}
+            onClick={() =>
+              void startRun(pending.map((card) => card.slug))
+            }
+          >
+            {t("materials.cards.generatePending")}
+          </Button>
         </div>
       )}
 
-      {cards.length === 0 && phase !== "planning" && (
+      {cards.length === 0 && !running && (
         <p className="text-muted-foreground text-xs">
           {t("materials.cards.empty")}
         </p>
       )}
 
       <ul className="grid gap-2">
-        {listed.map((card) => {
+        {cards.map((card) => {
           const index = cards.findIndex((item) => item.slug === card.slug);
           const isPending = card.status === "pending";
-          const isGenerating =
-            card.status === "generating" ||
-            (running && current?.slug === card.slug);
+          const isGenerating = runningSlugs.has(card.slug);
           const isOpen = expanded.has(card.slug);
 
           return (
@@ -480,10 +491,7 @@ export function CardsStep({
                       )}
                       {isGenerating && (
                         <span
-                          className={cn(
-                            BADGE,
-                            "bg-primary/10 text-primary",
-                          )}
+                          className={cn(BADGE, "bg-primary/10 text-primary")}
                         >
                           <Spinner className="size-3" />
                           {t("materials.cards.generating")}
@@ -541,7 +549,7 @@ export function CardsStep({
                         size="icon-sm"
                         variant="ghost"
                         aria-label={t("materials.cards.regenerateCard")}
-                        disabled={locked}
+                        disabled={locked || isGenerating}
                         onClick={() => void regenerateCard(card.slug)}
                       >
                         <RefreshCwIcon />
@@ -551,7 +559,7 @@ export function CardsStep({
                       size="icon-sm"
                       variant="ghost"
                       aria-label={t("materials.cards.deleteCard")}
-                      disabled={locked}
+                      disabled={locked || isGenerating}
                       onClick={() => deleteCard(card.slug)}
                     >
                       <Trash2Icon />
@@ -576,7 +584,7 @@ export function CardsStep({
                   </div>
                 </div>
 
-                {(isPending || isGenerating) && (
+                {isGenerating && (
                   <div className="grid gap-2 border-t p-3">
                     <div className="bg-muted h-2.5 w-2/3 animate-pulse rounded" />
                     <div className="bg-muted h-2.5 w-full animate-pulse rounded" />
@@ -603,7 +611,7 @@ export function CardsStep({
                   </div>
                 )}
 
-                {isOpen && !isPending && !isGenerating && (
+                {isOpen && !isGenerating && (
                   <CardEditor
                     card={card}
                     disabled={locked}
