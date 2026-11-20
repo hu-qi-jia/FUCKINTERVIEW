@@ -106,6 +106,8 @@ function Home() {
   const [autoStartToken, setAutoStartToken] = useState(0);
   // 实时面试进行中锁住导航；连接失败、中途断开都算结束，放开导航。
   const [interviewEnded, setInterviewEnded] = useState(false);
+  // bot-ready 那一刻：面试计时从这里开始，连接耗时不计入「面试时长」。
+  const [liveReadyAt, setLiveReadyAt] = useState<number | null>(null);
   const liveWasLinked = useRef(false);
 
   const live = useLiveInterview({
@@ -253,6 +255,9 @@ function Home() {
     live.handleTransportStateChange(state);
     if (state === "connected" || state === "ready") {
       liveWasLinked.current = true;
+      // 计时从真正能答题（bot-ready，transport 的 ready）那一刻开始，
+      // 连接那段时间不算进「面试时长」。
+      if (state === "ready") setLiveReadyAt((previous) => previous ?? Date.now());
       return;
     }
     if (state !== "disconnected" && state !== "error") return;
@@ -268,6 +273,7 @@ function Home() {
     setInterviewId(newInterviewId());
     setAutoStartToken(Date.now());
     setInterviewEnded(false);
+    setLiveReadyAt(null);
     liveWasLinked.current = false;
     // 上一场的转写、指标和 LLM 回答都在旧 store / hook 状态里；连接完成
     // 前页面已经渲染，必须先清掉，否则会短暂看到上一场的记录。
@@ -393,7 +399,7 @@ function Home() {
   // 顶栏最左侧的面试计时器；每场面试换一个 key，重新从 00:00 开始。
   const liveLeadingSlot = (
     <>
-      <InterviewTimer key={interviewId} />
+      <InterviewTimer key={interviewId} startAt={liveReadyAt} />
       {mobileNav}
     </>
   );

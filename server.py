@@ -6,14 +6,21 @@
 """
 
 import asyncio
+import contextlib
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 
 import aiohttp
 from fastapi import File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from loguru import logger
 from starlette.concurrency import run_in_threadpool
 from starlette.staticfiles import StaticFiles
@@ -62,8 +69,10 @@ from app import terms as terms_store
 from app.session_recorder import SessionRecorder
 from app.materials import (
     CardChanged,
+    append_plan_unit,
     apply_coach_result,
     apply_plan,
+    begin_plan,
     card_version,
     create_profile,
     delete_profile,
@@ -73,6 +82,7 @@ from app.materials import (
     list_profiles,
     open_folder,
     pick_folder,
+    restore_cards,
     storage_info,
     update_card,
     update_coach_slots,
@@ -85,9 +95,13 @@ from app.materials_ai import (
     coach_questions,
     consolidate,
     generate_card,
+    generate_card_stream,
     plan_units,
+    plan_units_stream,
 )
+from app import ai as llm
 from app.ai import LLMError
+from app.obs import TRACE_HEADER, event, new_trace_id, normalize_trace, span
 from app.providers import build_llm, build_stt
 
 ROOT = Path(__file__).resolve().parent
@@ -99,6 +113,14 @@ migrate_legacy_data()
 
 # 只允许本机回环来源访问，并给 /api/* 加本次启动的随机令牌。
 security.install(app)
+
+
+# on_event 在 FastAPI 里已经标记废弃，但这个 app 是 pipecat runner 建的，
+# 没有给我们插 lifespan 的地方；shutdown 时收掉 LLM 的 aiohttp 连接池，
+# 免得并发生成时留一堆半开的连接。
+@app.on_event("shutdown")
+async def _close_llm_pool() -> None:
+    await llm.close()
 
 
 def _log_build_info() -> None:
@@ -122,6 +144,73 @@ def _log_build_info() -> None:
 
 
 _log_build_info()
+
+
+# --------------------------------------------------------------------------
+# 观测：前端报上来的事件原样进 backend.log
+#
+# 前端的耗时（进面试页、取系统音频、握手、bot-ready）和后端的 span 共用同一个
+# traceId，所以一场面试的全链路都在一份日志里，不用两边对时间。
+# --------------------------------------------------------------------------
+@app.post("/api/obs")
+async def api_obs(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    name = re.sub(r"[^a-zA-Z0-9_.-]", "", str(payload.get("name") or ""))[:48]
+    trace = normalize_trace(payload.get("trace") or request.headers.get(TRACE_HEADER))
+    fields = {
+        key: value
+        for raw_key, value in payload.items()
+        if raw_key not in ("name", "trace")
+        if (key := re.sub(r"[^a-zA-Z0-9_]", "", str(raw_key))[:32])
+    }
+    event(f"client.{name or 'event'}", trace=trace, **fields)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# 预热：把重活提前到进首页时做
+#
+# 一次实时面试要在很短时间里连起两路 Pipecat 会话，每路都要建 Silero VAD
+# （ONNX ~2.2MB）和 Smart Turn v3（ONNX ~8.3MB）的推理会话，问答检索还要
+# 预热向量模型。这些只跟本机配置有关、跟具体哪场面试无关，所以提前做掉。
+#
+# 按约定**不在启动时做**：很多人开了 App 不一定马上面试，不该为这个拖慢启动。
+# --------------------------------------------------------------------------
+
+_prewarm_task: asyncio.Task | None = None
+
+
+async def _prewarm() -> None:
+    settings = load_settings()
+    trace = new_trace_id()
+    async with span("prewarm", trace=trace):
+        # ONNX 两个模型是逐会话最贵的一步；建好之后 _shared_*_analyzer 会缓存。
+        await run_in_threadpool(_shared_vad_analyzer)
+        await run_in_threadpool(_shared_smart_turn_analyzer)
+        # 供应商 SDK 是懒加载的，构造一次把 import 做掉。
+        for label, builder, section in (
+            ("ASR", build_stt, settings.get("asr", {})),
+            ("LLM", build_llm, settings.get("llm", {})),
+        ):
+            try:
+                builder(section)
+            except Exception as error:  # 预热失败不该影响任何功能
+                logger.warning(f"预热 {label} 失败（不影响使用）：{error}")
+        await _warm_qa_model()
+
+
+@app.post("/api/prewarm")
+async def api_prewarm():
+    """预热面试用得到的重活。后台跑，不阻塞调用方；重复调用是空操作。"""
+    global _prewarm_task
+    if _prewarm_task is None or _prewarm_task.done():
+        _prewarm_task = asyncio.create_task(_prewarm())
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------
@@ -215,8 +304,36 @@ async def api_consolidate(profile_id: str, request: Request):
     return {"content": text}
 
 
+# --------------------------------------------------------------------------
+# 经历卡：流式规划 + 流式生成
+#
+# 两条都是 SSE，一次全量生成会并发开好几个流。三条约定：
+#   - 客户端带 X-Trace-Id，后端全程带着它；一张卡落盘时把 traceId 写进 meta，
+#     出问题能从产物反查回它是哪次调用、哪个模型、多久生成的。
+#   - 流随时会被掐断（用户点停止、关页面、网络断）。掐断时把卡片退回 pending，
+#     别留下一张永远转圈的卡。
+#   - 规划是「边出边落」：拿到第一个单元就落一张 pending 卡并把 slug 发出去，
+#     前端可以立刻开跑第一张，不用等整个规划结束。
+# --------------------------------------------------------------------------
+
+# 旧的非流式入口保留着：前端构建产物可能落后于后端一次部署，
+# 直接删掉会让老 UI 整个生成功能失效。它们只是流式的薄封装。
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _trace_of(request: Request) -> str:
+    return normalize_trace(request.headers.get(TRACE_HEADER))
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 @app.post("/api/profiles/{profile_id}/skills/plan")
-async def api_plan_skills(profile_id: str):
+async def api_plan_skills(profile_id: str, request: Request):
     profile = _profile_or_404(profile_id)
     resume = str(profile["resume"].get("content") or "")
     description = str(profile["jobDescription"].get("content") or "")
@@ -231,14 +348,74 @@ async def api_plan_skills(profile_id: str):
             resume=resume,
             job_description=description,
             language=str(profile.get("language") or "zh"),
+            trace=_trace_of(request),
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return apply_plan(profile_id, units)
 
 
+@app.post("/api/profiles/{profile_id}/skills/plan/stream")
+async def api_plan_skills_stream(profile_id: str, request: Request):
+    """流式规划：每出一个单元就落一张 pending 卡，立刻推给前端。"""
+    profile = _profile_or_404(profile_id)
+    resume = str(profile["resume"].get("content") or "")
+    description = str(profile["jobDescription"].get("content") or "")
+    if not resume.strip():
+        raise HTTPException(status_code=400, detail="简历为空，无法生成经历卡")
+    if not description.strip():
+        raise HTTPException(status_code=400, detail="岗位描述为空，无法生成经历卡")
+
+    trace = _trace_of(request)
+    language = str(profile.get("language") or "zh")
+    settings = load_settings()
+
+    async def events():
+        removed: list = []
+        produced = 0
+        try:
+            async with span("card.plan.stream", trace=trace, profile=profile_id):
+                async with contextlib.aclosing(
+                    plan_units_stream(
+                        settings,
+                        resume=resume,
+                        job_description=description,
+                        language=language,
+                        trace=trace,
+                    )
+                ) as units:
+                    async for item in units:
+                        if produced == 0:
+                            # 第一个单元确实出来了才动用户的旧卡，
+                            # 一上来就报错的话旧卡原封不动。
+                            removed = begin_plan(profile_id)
+                        try:
+                            card = append_plan_unit(
+                                profile_id,
+                                {"name": item["name"], "description": item["description"]},
+                            )
+                        except ValueError as error:
+                            yield _sse({"type": "error", "message": str(error)})
+                            break
+                        produced += 1
+                        yield _sse({"type": "unit", "card": card})
+                yield _sse({"type": "done", "profile": get_profile(profile_id)})
+        except (asyncio.CancelledError, GeneratorExit):
+            # 半途中断：已经落的卡保留（那是真实进度），只在一张都没出时回滚。
+            if produced == 0 and removed:
+                restore_cards(profile_id, removed)
+            raise
+        except Exception as error:
+            logger.exception(f"规划经历单元失败 trace={trace}")
+            if produced == 0 and removed:
+                restore_cards(profile_id, removed)
+            yield _sse({"type": "error", "message": str(error)})
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
 @app.post("/api/profiles/{profile_id}/skills/{slug}/generate")
-async def api_generate_skill(profile_id: str, slug: str):
+async def api_generate_skill(profile_id: str, slug: str, request: Request):
     profile = _profile_or_404(profile_id)
     try:
         card = find_card(profile_id, slug)
@@ -252,6 +429,7 @@ async def api_generate_skill(profile_id: str, slug: str):
             resume=str(profile["resume"].get("content") or ""),
             job_description=str(profile["jobDescription"].get("content") or ""),
             language=str(profile.get("language") or "zh"),
+            trace=_trace_of(request),
         )
     except LLMError as e:
         update_card(profile_id, slug, {"status": "failed", "error": str(e)})
@@ -261,6 +439,63 @@ async def api_generate_skill(profile_id: str, slug: str):
         return update_card(profile_id, slug, fields)
     except KeyError:
         raise HTTPException(status_code=404, detail="经历卡不存在")
+
+
+@app.post("/api/profiles/{profile_id}/skills/{slug}/generate/stream")
+async def api_generate_skill_stream(profile_id: str, slug: str, request: Request):
+    """流式生成一张卡：字段到一个发一个，最后发整张卡（含 meta 追溯）。"""
+    profile = _profile_or_404(profile_id)
+    try:
+        card = find_card(profile_id, slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    trace = _trace_of(request)
+    settings = load_settings()
+    resume = str(profile["resume"].get("content") or "")
+    description = str(profile["jobDescription"].get("content") or "")
+    language = str(profile.get("language") or "zh")
+
+    async def events():
+        try:
+            update_card(profile_id, slug, {"status": "generating", "error": None})
+            async with contextlib.aclosing(
+                generate_card_stream(
+                    settings,
+                    unit=card,
+                    resume=resume,
+                    job_description=description,
+                    language=language,
+                    trace=trace,
+                )
+            ) as stream:
+                async for item in stream:
+                    # done 那一帧才把整张卡写回——流式过程中的字段只推给界面，
+                    # 不落盘，免得中途刷新留下半张卡。写回后把持久化结果原样
+                    # 发出去，前端拿到的就是磁盘上那一份（含 meta）。
+                    if item.get("type") == "done":
+                        try:
+                            item = {
+                                **item,
+                                "card": update_card(
+                                    profile_id, slug, item.get("card") or {}
+                                ),
+                            }
+                        except KeyError:
+                            pass
+                    yield _sse(item)
+        except (asyncio.CancelledError, GeneratorExit):
+            # 用户点了停止或页面关了：退回 pending，下次能直接重跑。
+            # 这里是同步调用——GeneratorExit 里不能再 await。
+            update_card(profile_id, slug, {"status": "pending", "error": None})
+            raise
+        except Exception as error:
+            logger.exception(f"生成经历卡失败 trace={trace} slug={slug}")
+            message = str(error)
+            update_card(profile_id, slug, {"status": "failed", "error": message})
+            yield _sse({"type": "error", "message": message})
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 # --------------------------------------------------------------------------

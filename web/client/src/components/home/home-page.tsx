@@ -19,6 +19,7 @@ import { StartPanel } from "@/components/home/start-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WindowControls } from "@/components/window-controls";
+import { prewarm } from "@/lib/http";
 import { listProfiles, type ProfileSummary } from "@/lib/materials";
 import { qaStats } from "@/lib/qa";
 import {
@@ -123,6 +124,13 @@ export function HomePage({
     void loadSessions();
     void loadCounts();
   }, [dataVersion, loadStats, loadSessions, loadCounts]);
+
+  // 进首页就把面试要用的重活热掉（ONNX 两个模型、向量模型、供应商 SDK）。
+  // 点「开始面试」后要串起两路 Pipecat 会话，热过之后那段明显短；
+  // 刻意不放在 App 启动时——开了 App 不一定马上面试，不该拖慢启动。
+  useEffect(() => {
+    prewarm();
+  }, []);
 
   const loadProfiles = useCallback(async () => {
     setProfileError(null);

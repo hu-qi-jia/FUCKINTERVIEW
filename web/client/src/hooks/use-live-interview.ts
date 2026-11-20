@@ -130,56 +130,71 @@ export function useLiveInterview({
     setInterimText("");
   }, [manager]);
 
-  const beforeConnect = useCallback(async () => {
-    setMicError(null);
+  /**
+   * 连接前的准备：取系统音频 + 起候选人那路会话。
+   *
+   * 返回的 `micReady` 是候选人会话的连接结果，**不在这一步 await**——
+   * 调用方把它和面试官那路一起 `Promise.all`，两路管线并行启动。
+   * 早先这里是串行的：候选人那路一路跑到 bot-ready，才轮到面试官那路发 /start，
+   * 两次完整的管线组装排成一列，是进面试页最慢的一段。
+   *
+   * 它永不 reject：麦克风那路失败只是少一路转写，不该把整场面试拦下来，
+   * 所以错误落在 micError 上，让界面提示。
+   */
+  const beforeConnect =
+    useCallback(async (): Promise<{ micReady: Promise<void> }> => {
+      setMicError(null);
 
-    try {
-      const capture = await captureSystemAudio();
-      displayRef.current = capture;
-      manager.setStream(capture.stream);
-      capture.source.getAudioTracks()[0]?.addEventListener("ended", () => {
-        setDisconnectSignal((value) => value + 1);
-      });
-    } catch (error) {
-      if (error instanceof CaptureError) {
-        const message =
-          error.code === "cancelled"
-            ? t("errors.captureCancelled")
-            : error.code === "no-audio"
-              ? t("errors.noSystemAudio")
-              : t("errors.captureUnsupported");
-        throw new Error(message);
+      try {
+        const capture = await captureSystemAudio();
+        displayRef.current = capture;
+        manager.setStream(capture.stream);
+        capture.source.getAudioTracks()[0]?.addEventListener("ended", () => {
+          setDisconnectSignal((value) => value + 1);
+        });
+      } catch (error) {
+        if (error instanceof CaptureError) {
+          const message =
+            error.code === "cancelled"
+              ? t("errors.captureCancelled")
+              : error.code === "no-audio"
+                ? t("errors.noSystemAudio")
+                : t("errors.captureUnsupported");
+          throw new Error(message);
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    // From here on a new session is really starting; only now is it safe to
-    // drop the previous transcript.
-    setInterimText("");
-    setExtraMessages([]);
+      // From here on a new session is really starting; only now is it safe to
+      // drop the previous transcript.
+      setInterimText("");
+      setExtraMessages([]);
 
-    if (!readCaptureMic() || !micApp.client) return;
+      const micReady = (async () => {
+        if (!readCaptureMic() || !micApp.client) return;
+        try {
+          const client = micApp.client;
+          if (client.needsInit()) await client.initDevices();
+          const stored = readDeviceId("mic");
+          if (stored) {
+            // The client's updateMic drops the transport promise; await the
+            // transport directly so the device switch finishes before connect.
+            await Promise.resolve(
+              (client.transport.updateMic as (id: string) => unknown)(stored),
+            );
+          }
+          await micApp.connect();
+        } catch (error) {
+          setMicError(
+            t("errors.micSession", {
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
+      })();
 
-    try {
-      const client = micApp.client;
-      if (client.needsInit()) await client.initDevices();
-      const stored = readDeviceId("mic");
-      if (stored) {
-        // The client's updateMic drops the transport promise; await the
-        // transport directly so the device switch finishes before connect.
-        await Promise.resolve(
-          (client.transport.updateMic as (id: string) => unknown)(stored),
-        );
-      }
-      await micApp.connect();
-    } catch (error) {
-      setMicError(
-        t("errors.micSession", {
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
-  }, [manager, micApp, t]);
+      return { micReady };
+    }, [manager, micApp, t]);
 
   const stopSession = useCallback(() => {
     stopCapture();

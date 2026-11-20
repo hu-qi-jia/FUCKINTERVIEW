@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getProfile,
+  mergeCard,
   patchProfile,
+  type CardPatch,
   type CoachSlots,
-  type ExperienceCard,
   type InterviewProfile,
   type ProfilePatch,
 } from "@/lib/materials";
@@ -202,16 +203,27 @@ export function useProfileEditor() {
     [clearTimer, setBoth],
   );
 
-  /** 单张经历卡写回（生成接口已经把结果落盘）。 */
-  const applyCard = useCallback((card: ExperienceCard) => {
+  /**
+   * 同步一张服务端已经落盘（或正在流式写）的卡：按 slug 合并，没有就追加。
+   *
+   * 三个约定，改这里的时候别丢：
+   * - **合并而不是整张覆盖**：流式生成会并发打进来半张半张的卡，四个并发
+   *   同时改各自 slug 的字段，合并才不会互相冲掉。
+   * - **不触发 PATCH**：这些是服务端状态，回写会把服务端刚落盘的结果冲掉。
+   * - `dropAi` 为 true 时先清掉旧的 AI 卡：新规划落地那一刻服务端也刚清掉，
+   *   两边一起动，界面上才不会出现两套卡。
+   */
+  const applyCard = useCallback((card: CardPatch, dropAi = false) => {
     setProfile((current) => {
       if (!current || current.id !== idRef.current) return current;
-      const next = {
-        ...current,
-        cards: current.cards.map((item) =>
-          item.slug === card.slug ? card : item,
-        ),
-      };
+      const kept = dropAi
+        ? current.cards.filter((item) => item.source !== "ai")
+        : current.cards;
+      const existing = kept.find((item) => item.slug === card.slug);
+      const cards = existing
+        ? kept.map((item) => (item.slug === card.slug ? mergeCard(item, card) : item))
+        : [...kept, mergeCard(undefined, card)];
+      const next = { ...current, cards };
       profileRef.current = next;
       return next;
     });

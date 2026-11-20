@@ -61,7 +61,16 @@ function writeIco(image, target) {
 }
 
 /**
- * 更新所有指向本应用 exe 的快捷方式。
+ * 更新「固定到任务栏」的快捷方式。
+ *
+ * **只改这一处**，桌面和开始菜单的快捷方式一概不动：按需求，伪装只针对
+ * 托盘和任务栏，桌面上的快捷方式保持原样——不然桌面上一堆换过脸的图标，
+ * 反而更显眼。
+ *
+ * 代价要说清楚：Windows 的任务栏按钮读的是「启动本实例的那个快捷方式」的
+ * IconLocation。固定到任务栏时就是这个文件夹里的 .lnk，改它就够了；
+ * 如果应用**没有**固定到任务栏、而是从桌面/开始菜单的快捷方式启动的，
+ * 那个按钮仍会显示旧图标。要覆盖这种情况，把对应目录加回 $roots 即可。
  *
  * 路径通过环境变量传给 PowerShell：命令行参数会被代码页打乱（中文用户名
  * 尤其明显），环境变量是 Unicode 的，不会走样。脚本正文只用 ASCII。
@@ -72,15 +81,12 @@ $sh = New-Object -ComObject WScript.Shell
 $exe = $env:FI_EXE
 $icon = $env:FI_ICON
 $roots = @(
-  (Join-Path $env:USERPROFILE 'Desktop'),
-  (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu'),
-  (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu'),
   (Join-Path $env:APPDATA 'Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar')
 )
 $count = 0
 foreach ($root in $roots) {
   if (-not (Test-Path $root)) { continue }
-  Get-ChildItem -Path $root -Filter *.lnk -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+  Get-ChildItem -Path $root -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object {
     $lnk = $sh.CreateShortcut($_.FullName)
     if ($lnk.TargetPath -eq $exe) {
       $lnk.IconLocation = $icon
