@@ -51,8 +51,8 @@ def test_changed_answer_stays_pending(store):
         profile["id"],
         "card-1",
         {"body": {"facts": "模型合并后的事实", "defense": "合并"}, "status": "ready"},
-        ["facts", "defense"],
-        expected_answers={"facts": "回答 A", "defense": "回答 D"},
+        [("facts", 0), ("defense", 0)],
+        expected_answers={"facts:0": "回答 A", "defense:0": "回答 D"},
         expected_card_version=version,
     )
 
@@ -79,8 +79,8 @@ def test_card_edited_during_merge_is_not_overwritten(store):
             profile["id"],
             "card-1",
             {"body": {"facts": "旧快照合并结果"}, "status": "ready"},
-            ["facts"],
-            expected_answers={"facts": "回答 A"},
+            [("facts", 0)],
+            expected_answers={"facts:0": "回答 A"},
             expected_card_version=version,
         )
 
@@ -102,8 +102,8 @@ def test_second_write_back_only_merges_new_answer(store):
         profile["id"],
         "card-1",
         {"body": {"facts": "第一次结果", "defense": "合并"}, "status": "ready"},
-        ["facts", "defense"],
-        expected_answers={"facts": "回答 A", "defense": "回答 D"},
+        [("facts", 0), ("defense", 0)],
+        expected_answers={"facts:0": "回答 A", "defense:0": "回答 D"},
         expected_card_version=version,
     )
 
@@ -113,8 +113,8 @@ def test_second_write_back_only_merges_new_answer(store):
         profile["id"],
         "card-1",
         {"body": {"facts": "第二次结果，包含 B", "defense": "合并"}, "status": "ready"},
-        ["facts"],
-        expected_answers={"facts": "回答 B"},
+        [("facts", 0)],
+        expected_answers={"facts:0": "回答 B"},
         expected_card_version=store.card_version(card_now),
     )
 
@@ -123,3 +123,78 @@ def test_second_write_back_only_merges_new_answer(store):
     assert final["coachSlots"]["card-1"]["facts"]["a"] == "回答 B"
     assert store.find_card(profile["id"], "card-1")["body"]["facts"] == "第二次结果，包含 B"
     assert current["coachSlots"]["card-1"]["facts"]["applied"] is False
+
+
+def test_followups_are_marked_per_ring(store):
+    """追问链上每一环是独立的一问一答，写入标记要按环来。"""
+    profile, card = make_profile(store)
+    version = store.card_version(card)
+
+    slots = dict(profile["coachSlots"]["card-1"])
+    slots["facts"] = {
+        **slots["facts"],
+        "a": "主问题的回答",
+        "applied": False,
+        "followups": [
+            {"q": "追问一", "a": "第一环的回答", "applied": False},
+            {"q": "追问二", "a": "", "applied": False},
+        ],
+    }
+    store.update_coach_slots(profile["id"], "card-1", slots)
+
+    updated = store.apply_coach_result(
+        profile["id"],
+        "card-1",
+        {"body": {"facts": "合并结果"}, "status": "ready"},
+        [("facts", 0), ("facts", 1)],
+        expected_answers={"facts:0": "主问题的回答", "facts:1": "第一环的回答"},
+        expected_card_version=version,
+    )
+
+    slot = updated["coachSlots"]["card-1"]["facts"]
+    assert slot["applied"] is True
+    assert slot["followups"][0]["applied"] is True
+    # 第二环还没答，不该被标成已写入。
+    assert slot["followups"][1]["applied"] is False
+
+
+def test_changed_followup_answer_stays_pending(store):
+    profile, card = make_profile(store)
+    version = store.card_version(card)
+
+    slots = dict(profile["coachSlots"]["card-1"])
+    slots["facts"] = {
+        **slots["facts"],
+        "a": "主问题的回答",
+        "followups": [{"q": "追问一", "a": "改过之后的回答", "applied": False}],
+    }
+    store.update_coach_slots(profile["id"], "card-1", slots)
+
+    updated = store.apply_coach_result(
+        profile["id"],
+        "card-1",
+        {"body": {"facts": "合并结果"}, "status": "ready"},
+        [("facts", 0), ("facts", 1)],
+        expected_answers={"facts:0": "主问题的回答", "facts:1": "写回时的旧回答"},
+        expected_card_version=version,
+    )
+
+    slot = updated["coachSlots"]["card-1"]["facts"]
+    assert slot["applied"] is True
+    # 追问那一环的回答在写回期间被改过：保持待写入，下次再合并。
+    assert slot["followups"][0]["applied"] is False
+
+
+def test_followup_chain_is_sanitized_with_depth_limit(store):
+    """追问链要能落盘，但不能无限长——再深就只是绕圈子。"""
+    deep: dict = {"q": "问", "a": "答", "applied": False}
+    for _ in range(10):
+        deep = {"q": "问", "a": "答", "applied": False, "followups": [deep]}
+
+    cleaned = store._sanitize_coach_slots({"card-1": {"facts": deep}})
+    node = cleaned["card-1"]["facts"]
+    depth = 0
+    while node.get("followups"):
+        node = node["followups"][0]
+        depth += 1
+    assert depth <= 5

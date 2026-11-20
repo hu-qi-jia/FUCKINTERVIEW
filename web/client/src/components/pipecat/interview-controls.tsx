@@ -52,10 +52,7 @@ export function InterviewControls({
     return (
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground hidden max-w-64 truncate text-xs md:inline">
-          {/* 选框开着的时候给一句人话，否则用户不知道屏幕在等他什么。 */}
-          {isPreparing
-            ? t("connect.chooseScreen")
-            : t("connect.preparing")}
+          {t("connect.preparing")}
         </span>
         <Button size="sm" variant="outline" onClick={onCancel}>
           {t("connect.cancel")}

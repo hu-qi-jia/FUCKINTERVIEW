@@ -187,10 +187,11 @@ const zh = {
       incomplete: "AI 没有把问题出全，请重试。",
       start: "开始补全",
       startHint:
-        "AI 会先为这张卡生成 6 个针对性问题，之后逐项作答，最后一次性写回卡片。",
+        "AI 会先按这张卡的细节出 6 个问题，逐项作答后可以「继续追问」——顺着答案再挖一层。最后一并写回卡片。",
       progress: "已补全 {{filled}} / {{total}}",
       placeholder: "用一两句话回答…",
       save: "保存回答",
+      followUp: "继续追问",
       cancel: "取消",
       pendingWrite: "待写入",
       written: "已写入",
@@ -346,7 +347,6 @@ const zh = {
     retry: "重试",
     cancel: "取消",
     preparing: "正在启动面试…",
-    chooseScreen: "请选择要共享的屏幕，并勾选「分享系统音频」",
     starting: "正在启动识别…",
   },
   status: {
@@ -1003,10 +1003,11 @@ const en = {
       incomplete: "The AI didn't finish the questions. Try again.",
       start: "Start",
       startHint:
-        "The AI will write 6 tailored questions for this card first, then you answer them one by one and write them back in one go.",
+        "The AI writes 6 questions from this card's own details. After answering, hit “Keep digging” to follow up on your answers — then write everything back at once.",
       progress: "{{filled}} / {{total}} filled",
       placeholder: "Answer in a sentence or two…",
       save: "Save answer",
+      followUp: "Keep digging",
       cancel: "Cancel",
       pendingWrite: "To write",
       written: "Written",
@@ -1167,8 +1168,6 @@ const en = {
     retry: "Retry",
     cancel: "Cancel",
     preparing: "Starting the interview…",
-    chooseScreen:
-      "Share your entire screen and tick “Share system audio”.",
     starting: "Starting recognition…",
   },
   status: { title: "Status", client: "Client", agent: "Agent" },

@@ -135,6 +135,34 @@ def _new_material() -> dict[str, Any]:
     return {"original": "", "content": "", "updatedAt": None}
 
 
+def _sanitize_coach_slot(raw: Any, depth: int = 0) -> dict[str, Any] | None:
+    """一格补全：问题 + 回答 + 是否已写回，外加一条追问链。
+
+    追问链是「不聊天气氛下也能一直往下挖」的关键：经历卡只是从简历里扒出来
+    的一层皮，能提取的信息本来就少；每答一格就由答案引出下一个更具体的问题，
+    把口径、边界、取舍、失败面这些简历上根本没有的东西一层层补出来。
+
+    链条限 5 层：再深就只是绕圈子，而且会让写回时的合并变慢。
+    """
+    if not isinstance(raw, dict):
+        return None
+    slot: dict[str, Any] = {
+        "q": str(raw.get("q") or "").strip()[:400],
+        "a": str(raw.get("a") or "").strip()[:4000],
+        "applied": bool(raw.get("applied")),
+    }
+    chain = raw.get("followups")
+    if depth < 5 and isinstance(chain, list):
+        items: list[dict[str, Any]] = []
+        for item in chain[:5]:
+            nested = _sanitize_coach_slot(item, depth + 1)
+            if nested is not None:
+                items.append(nested)
+        if items:
+            slot["followups"] = items
+    return slot
+
+
 def _sanitize_coach_slots(raw: Any) -> dict[str, dict[str, dict[str, Any]]]:
     """教练补全清单：{卡 slug: {维度: {q: 问题, a: 回答, applied: 是否已写入卡片}}}。
 
@@ -152,11 +180,9 @@ def _sanitize_coach_slots(raw: Any) -> dict[str, dict[str, dict[str, Any]]]:
             dimension = str(key or "").strip()[:20]
             if not dimension or not isinstance(slot, dict):
                 continue
-            slots[dimension] = {
-                "q": str(slot.get("q") or "").strip()[:400],
-                "a": str(slot.get("a") or "").strip()[:4000],
-                "applied": bool(slot.get("applied")),
-            }
+            clean = _sanitize_coach_slot(slot)
+            if clean is not None:
+                slots[dimension] = clean
             if len(slots) >= 8:
                 break
         if slots:
@@ -544,17 +570,22 @@ def apply_coach_result(
     profile_id: str,
     slug: str,
     fields: dict[str, Any],
-    applied_dimensions: list[str],
+    applied_refs: list[tuple[str, int]],
     *,
     expected_answers: dict[str, str] | None = None,
     expected_card_version: str | None = None,
 ) -> dict[str, Any]:
     """写回合并结果，并在同一次写盘里把这几格标成已写入（避免写一半）。
 
+    ``applied_refs`` 是 [(维度, 深度), ...]：深度 0 是这一格的主问题，
+    n>0 是追问链上的第 n 环。追问链上每一环都是独立的一问一答，所以标记也要
+    按环来，不能把整格一并置位——那样后面追出来的新问题会莫名其妙显示成已写入。
+
     - ``expected_card_version`` 与当前卡片不一致时抛 ``CardChanged``，
       避免模型调用期间的手动编辑被旧快照覆盖；
-    - ``expected_answers`` 是发起写回时的回答快照：只有回答没变过的维度
-      才标成已写入，等待期间改成新内容的格子继续保持待写入，下次再合并。
+    - ``expected_answers`` 是发起写回时的回答快照，键是 "维度:深度"：只有回答
+      没变过的那一环才标成已写入，等待期间改成新内容的环继续保持待写入，
+      下次再合并。
     """
     with _lock:
         store = _read_store()
@@ -581,15 +612,30 @@ def apply_coach_result(
 
         all_slots = dict(profile.get("coachSlots") or {})
         slots = dict(all_slots.get(slug) or {})
-        for dimension in applied_dimensions:
+        for dimension, depth in applied_refs:
             if dimension not in slots:
                 continue
-            if expected_answers is not None:
-                current_answer = str(slots[dimension].get("a") or "")
-                if current_answer != expected_answers.get(dimension, ""):
+            slot = dict(slots[dimension])
+            if depth > 0:
+                chain = list(slot.get("followups") or [])
+                if depth > len(chain):
+                    continue
+                item = dict(chain[depth - 1])
+                if expected_answers is not None and str(item.get("a") or "") != expected_answers.get(
+                    f"{dimension}:{depth}", ""
+                ):
                     # 回答已经变了：保持待写入，下一次写回会带上新内容。
                     continue
-            slots[dimension] = {**slots[dimension], "applied": True}
+                item["applied"] = True
+                chain[depth - 1] = item
+                slot["followups"] = chain
+            else:
+                if expected_answers is not None and str(slot.get("a") or "") != expected_answers.get(
+                    f"{dimension}:0", ""
+                ):
+                    continue
+                slot["applied"] = True
+            slots[dimension] = slot
         all_slots[slug] = slots
         profile["coachSlots"] = all_slots
 

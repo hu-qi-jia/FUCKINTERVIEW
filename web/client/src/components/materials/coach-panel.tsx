@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   COACH_DIMENSIONS,
   coachAnswer,
+  coachFollowup,
   coachQuestions,
   coachWriteBack,
   sortCards,
@@ -71,6 +72,10 @@ export function CoachPanel({
   const [active, setActive] = useState<CoachDimension | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState<CoachDimension | null>(null);
+  // 追问链上每一环有自己的草稿和保存状态；主问题用上面那个 draft。
+  const [followDrafts, setFollowDrafts] = useState<Record<string, string>>({});
+  const [followSaving, setFollowSaving] = useState<string | null>(null);
+  const [asking, setAsking] = useState<CoachDimension | null>(null);
   const [writing, setWriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 出题失败后的重试：清掉「已请求过」标记再跑一次同一个 effect。
@@ -183,23 +188,60 @@ export function CoachPanel({
     setDraft(cardSlots[dimension]?.a ?? "");
   };
 
-  const save = async (dimension: CoachDimension) => {
-    const text = draft.trim();
-    if (!text || saving || writing) return;
+  /** depth 0 是这一格的主问题，>0 是追问链上的第 n 环。 */
+  const save = async (dimension: CoachDimension, depth = 0) => {
+    const key = `${dimension}:${depth}`;
+    const text = (depth === 0 ? draft : (followDrafts[key] ?? "")).trim();
+    if (!text || saving || writing || followSaving) return;
     const profileId = profile.id;
-    setSaving(dimension);
+    if (depth === 0) setSaving(dimension);
+    else setFollowSaving(key);
     setError(null);
     try {
-      const next = await coachAnswer(profileId, slug, dimension, text);
+      const next = await coachAnswer(profileId, slug, dimension, text, depth);
       if (profileIdRef.current !== profileId) return;
-      advanceFrom.current = dimension;
-      advanceRef.current = true;
+      // 追问保存后不往前跳，让人顺着这条链继续往下问。
+      if (depth === 0) {
+        advanceFrom.current = dimension;
+        advanceRef.current = true;
+      } else {
+        setFollowDrafts((current) => {
+          const rest = { ...current };
+          delete rest[key];
+          return rest;
+        });
+      }
       onCoachSlots(next);
     } catch (cause) {
       if (profileIdRef.current !== profileId) return;
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setSaving(null);
+      if (depth === 0) setSaving(null);
+      else setFollowSaving((current) => (current === key ? null : current));
+    }
+  };
+
+  /**
+   * 追问：顺着这一格已有的问答再挖一层。
+   *
+   * 这是「和 AI 完善面试档案」里最要紧的一步——经历卡只是从简历里扒出来的
+   * 一层皮，能提取的信息有限；只有顺着答案一轮轮往里钻，才能把口径、边界、
+   * 取舍、失败面这些简历上根本没有的东西补出来。
+   */
+  const askFollowup = async (dimension: CoachDimension) => {
+    if (!slug || asking || saving || writing || followSaving) return;
+    const profileId = profile.id;
+    setAsking(dimension);
+    setError(null);
+    try {
+      const next = await coachFollowup(profileId, slug, dimension);
+      if (profileIdRef.current !== profileId) return;
+      onCoachSlots(next);
+    } catch (cause) {
+      if (profileIdRef.current !== profileId) return;
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAsking(null);
     }
   };
 
@@ -337,6 +379,10 @@ export function CoachPanel({
               const slot = cardSlots[dimension];
               const filledSlot = Boolean(slot?.a);
               const open = active === dimension;
+              // 追问链：主问题之后每一环都答了才能继续追，最多 5 环。
+              const chain = slot?.followups ?? [];
+              const lastItem = chain.length ? chain[chain.length - 1] : slot;
+              const canFollowUp = Boolean(lastItem?.a) && chain.length < 5;
               return (
                 <li
                   key={dimension}
@@ -458,6 +504,89 @@ export function CoachPanel({
                             {t("materials.coach.save")}
                           </Button>
                         </div>
+
+                        {/* 追问链：每一环由上一环的答案引出，把细节再往下挖一层。 */}
+                        {chain.map((item, position) => {
+                          const depth = position + 1;
+                          const key = `${dimension}:${depth}`;
+                          const text = followDrafts[key] ?? item.a;
+                          return (
+                            <div
+                              key={key}
+                              className="grid gap-2 rounded-lg border border-dashed p-2.5"
+                            >
+                              <p className="text-foreground text-xs leading-relaxed">
+                                {item.q}
+                              </p>
+                              <Textarea
+                                value={text}
+                                disabled={
+                                  busy ||
+                                  saving !== null ||
+                                  writing ||
+                                  followSaving !== null
+                                }
+                                placeholder={t("materials.coach.placeholder")}
+                                className="field-sizing-fixed h-16 resize-y text-sm"
+                                onChange={(event) =>
+                                  setFollowDrafts((current) => ({
+                                    ...current,
+                                    [key]: event.target.value,
+                                  }))
+                                }
+                                onKeyDown={(event) => {
+                                  if (
+                                    (event.metaKey || event.ctrlKey) &&
+                                    event.key === "Enter"
+                                  ) {
+                                    event.preventDefault();
+                                    void save(dimension, depth);
+                                  }
+                                }}
+                              />
+                              <div className="flex items-center justify-end gap-1.5">
+                                {item.applied && (
+                                  <span className="text-muted-foreground/70 text-[0.6875rem] leading-4">
+                                    {t("materials.coach.written")}
+                                  </span>
+                                )}
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    busy ||
+                                    writing ||
+                                    followSaving !== null ||
+                                    !text.trim()
+                                  }
+                                  onClick={() => void save(dimension, depth)}
+                                >
+                                  {followSaving === key && (
+                                    <Spinner className="size-3" />
+                                  )}
+                                  {t("materials.coach.save")}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {canFollowUp && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              busy ||
+                              writing ||
+                              saving !== null ||
+                              asking !== null ||
+                              followSaving !== null
+                            }
+                            onClick={() => void askFollowup(dimension)}
+                          >
+                            {asking === dimension && <Spinner className="size-3" />}
+                            {t("materials.coach.followUp")}
+                          </Button>
+                        )}
                       </div>
                     ) : (
                       <p

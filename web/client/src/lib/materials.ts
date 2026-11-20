@@ -101,6 +101,14 @@ export interface CoachSlot {
   a: string;
   /** 这条回答是否已经合并进经历卡。 */
   applied: boolean;
+  /**
+   * 追问链：每一环由上一环的答案引出。
+   *
+   * 经历卡只是从简历里扒出来的一层皮，能提取的信息本来就少；靠这条链顺着
+   * 答案一轮轮往下钻，才能把口径、边界、取舍、失败面这些简历上没有的东西
+   * 补出来——这是「和 AI 完善面试档案」里最要紧的一步。
+   */
+  followups?: CoachSlot[];
 }
 
 export type CoachSlots = Record<string, Record<string, CoachSlot>>;
@@ -245,16 +253,41 @@ export async function coachQuestions(
   return data.coachSlots ?? {};
 }
 
-/** 保存一格回答（纯本地写盘，不经过模型）。返回整张表。 */
+/**
+ * 保存一格回答（纯本地写盘，不经过模型）。返回整张表。
+ *
+ * `depth` 选填：0 或不传是这一格的主问题，n>0 是追问链上的第 n 环。
+ */
 export async function coachAnswer(
   id: string,
   slug: string,
   dimension: CoachDimension,
   answer: string,
+  depth = 0,
 ): Promise<CoachSlots> {
   const data = await request<{ coachSlots: CoachSlots }>(
     `/api/profiles/${id}/coach/answer`,
-    json("POST", { slug, dimension, answer }),
+    json("POST", { slug, dimension, answer, depth }),
+  );
+  return data.coachSlots ?? {};
+}
+
+/**
+ * 追问：顺着这一格已有的问答再挖一层，把新问题挂到追问链尾。返回整张表。
+ *
+ * 这是完善档案里最要紧的一步——简历能提取的信息有限，只有顺着答案往下钻
+ * 才能补出细节。调用方要传信号，追问慢（要走一趟模型）而且可以被取消。
+ */
+export async function coachFollowup(
+  id: string,
+  slug: string,
+  dimension: CoachDimension,
+  options: RequestOptions = {},
+): Promise<CoachSlots> {
+  const data = await request<{ coachSlots: CoachSlots }>(
+    `/api/profiles/${id}/coach/followup`,
+    json("POST", { slug, dimension }),
+    options,
   );
   return data.coachSlots ?? {};
 }

@@ -91,6 +91,7 @@ from app.materials import (
 from app.materials_ai import (
     COACH_DIMENSION_KEYS,
     build_live_system_prompt,
+    coach_followup,
     coach_merge,
     coach_questions,
     consolidate,
@@ -553,7 +554,10 @@ async def api_coach_questions(profile_id: str, request: Request):
 
 @app.post("/api/profiles/{profile_id}/coach/answer")
 async def api_coach_answer(profile_id: str, request: Request):
-    """保存一格回答。纯本地写盘，不调模型，失败了也不会丢已经答的内容。"""
+    """保存一格回答。纯本地写盘，不调模型，失败了也不会丢已经答的内容。
+
+    ``depth`` 选填：0 或不传表示这一格的主问题，n>0 表示追问链上的第 n 环。
+    """
     profile = _profile_or_404(profile_id)
     try:
         payload = await request.json()
@@ -562,8 +566,14 @@ async def api_coach_answer(profile_id: str, request: Request):
     slug = str(payload.get("slug") or "").strip()
     dimension = str(payload.get("dimension") or "").strip()
     answer = str(payload.get("answer") or "").strip()
+    try:
+        depth = int(payload.get("depth") or 0)
+    except (TypeError, ValueError):
+        depth = 0
     if dimension not in COACH_DIMENSION_KEYS:
         raise HTTPException(status_code=400, detail="未知的维度")
+    if depth < 0 or depth > 5:
+        raise HTTPException(status_code=400, detail="追问层级不合法")
     if not answer:
         raise HTTPException(status_code=400, detail="回答不能为空")
     try:
@@ -572,8 +582,68 @@ async def api_coach_answer(profile_id: str, request: Request):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
     slots = _slots_of(profile, slug)
-    slot = slots.get(dimension) or {}
-    slots[dimension] = {**slot, "a": answer[:4000], "applied": False}
+    slot = dict(slots.get(dimension) or {})
+    if depth > 0:
+        chain = list(slot.get("followups") or [])
+        if depth > len(chain):
+            raise HTTPException(status_code=404, detail="这一环追问不存在")
+        item = dict(chain[depth - 1])
+        item["a"] = answer[:4000]
+        item["applied"] = False
+        chain[depth - 1] = item
+        slot["followups"] = chain
+    else:
+        slot["a"] = answer[:4000]
+        slot["applied"] = False
+    slots[dimension] = slot
+    saved = update_coach_slots(profile_id, slug, slots)
+    return _slots_response(saved, slug)
+
+
+@app.post("/api/profiles/{profile_id}/coach/followup")
+async def api_coach_followup(profile_id: str, request: Request):
+    """追问：顺着这一格已有的问答再挖一层，把新问题挂到追问链尾。
+
+    这是「和 AI 完善面试档案」里最要紧的一步——经历卡只是从简历里扒出来的
+    一层皮，只有顺着答案一轮轮往里钻，才能把口径、边界、取舍、失败面这些
+    简历上根本没有的东西补出来。
+    """
+    profile = _profile_or_404(profile_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    slug = str(payload.get("slug") or "").strip()
+    dimension = str(payload.get("dimension") or "").strip()
+    if dimension not in COACH_DIMENSION_KEYS:
+        raise HTTPException(status_code=400, detail="未知的维度")
+    try:
+        card = find_card(profile_id, slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="经历卡不存在")
+
+    slots = _slots_of(profile, slug)
+    slot = dict(slots.get(dimension) or {})
+    chain = [{"question": slot.get("q") or "", "answer": slot.get("a") or ""}]
+    chain.extend(
+        {"question": item.get("q") or "", "answer": item.get("a") or ""}
+        for item in (slot.get("followups") or [])
+    )
+    # 末尾还没答的那一环没东西可追，只能从已答的往下走。
+    answered = [item for item in chain if item["answer"]]
+    if not answered:
+        raise HTTPException(status_code=400, detail="先回答这一格，再追问")
+    if len(chain) >= 6:
+        raise HTTPException(status_code=400, detail="这一格已经追问到头了")
+
+    try:
+        question = await coach_followup(load_settings(), profile, card, answered)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    followups = list(slot.get("followups") or [])
+    followups.append({"q": question, "a": "", "applied": False})
+    slots[dimension] = {**slot, "followups": followups}
     saved = update_coach_slots(profile_id, slug, slots)
     return _slots_response(saved, slug)
 
@@ -593,21 +663,37 @@ async def api_coach_apply(profile_id: str, request: Request):
         raise HTTPException(status_code=404, detail="经历卡不存在")
 
     slots = _slots_of(profile, slug)
-    pending = [
-        {
-            "dimension": key,
-            "question": str((slots.get(key) or {}).get("q") or ""),
-            "answer": str((slots.get(key) or {}).get("a") or ""),
-        }
-        for key in COACH_DIMENSION_KEYS
-        if (slots.get(key) or {}).get("a") and not (slots.get(key) or {}).get("applied")
-    ]
+    pending = []
+    for key in COACH_DIMENSION_KEYS:
+        slot = slots.get(key) or {}
+        if slot.get("a") and not slot.get("applied"):
+            pending.append(
+                {
+                    "dimension": key,
+                    "depth": 0,
+                    "question": str(slot.get("q") or ""),
+                    "answer": str(slot.get("a") or ""),
+                }
+            )
+        # 追问链上每一环都是一问一答，写回时要一并带过去。
+        for depth, item in enumerate(slot.get("followups") or [], 1):
+            if item.get("a") and not item.get("applied"):
+                pending.append(
+                    {
+                        "dimension": key,
+                        "depth": depth,
+                        "question": str(item.get("q") or ""),
+                        "answer": str(item.get("a") or ""),
+                    }
+                )
     if not pending:
         raise HTTPException(status_code=400, detail="没有新的回答可以写入")
 
-    # 模型调用可能持续好几秒；期间用户可能继续编辑同一格回答或卡片正文。
-    # 记下发车时的回答和卡片指纹，写回时只提交仍然有效的那部分。
-    expected_answers = {item["dimension"]: item["answer"] for item in pending}
+    # 模型调用可能持续好几秒；期间用户可能继续编辑某一环的回答或卡片正文。
+    # 记下发车时的回答和卡片指纹，写回时只提交仍然有效的那一部分。
+    expected_answers = {
+        f"{item['dimension']}:{item['depth']}": item["answer"] for item in pending
+    }
     expected_card = card_version(card)
 
     try:
@@ -620,7 +706,7 @@ async def api_coach_apply(profile_id: str, request: Request):
             profile_id,
             slug,
             fields,
-            [item["dimension"] for item in pending],
+            [(item["dimension"], item["depth"]) for item in pending],
             expected_answers=expected_answers,
             expected_card_version=expected_card,
         )

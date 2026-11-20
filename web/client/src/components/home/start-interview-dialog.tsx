@@ -14,8 +14,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * 开始面试前的两步：上面一个弹窗选面试档案，下面一个弹窗配音频，
- * 「开始面试」压在整个组合的最底部。内容放得下时不出滚动条，
- * 太长就整块滚动，两个弹窗都不会被单独截断。
+ * 「开始面试」压在整个组合的最底部。
+ *
+ * 档案列表是固定高度、内部滚动的：档案一多就只露几条，剩下的靠滚动条翻，
+ * 免得整个弹窗被撑高、把「开始面试」顶出屏幕。
  */
 export function StartInterviewDialog({
   open,
@@ -89,7 +91,8 @@ export function StartInterviewDialog({
               </Button>
             </div>
 
-            <div className="grid gap-1 p-2">
+            {/* 档案多时固定高度、内部滚动：不然档案一多就把「开始面试」顶出屏幕。 */}
+            <div className="grid max-h-64 content-start gap-1 overflow-y-auto overscroll-contain p-2">
               {loading && (
                 <div className="text-muted-foreground flex h-40 items-center justify-center gap-2 text-sm">
                   <Spinner className="size-4" />
