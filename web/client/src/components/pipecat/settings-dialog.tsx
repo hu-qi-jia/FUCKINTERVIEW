@@ -45,8 +45,10 @@ import {
   findProvider,
   LLM_PROVIDERS,
   saveSettings,
+  THINKING_EFFORTS,
   type AppSettings,
   type ProviderMeta,
+  type ThinkingEffort,
 } from "@/lib/settings";
 
 type Section = "asr" | "llm" | "embedding";
@@ -129,6 +131,50 @@ function ProviderSelect({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/**
+ * 材料生成的思考档位。
+ *
+ * 和上面那个「关闭模型思考」是两件事，别混：那个管**语音**（实时回答，
+ * 必须一直关思考才跟得上对话），这个管**材料生成**（经历卡、规划、简历整合、
+ * 教练问答），不在实时链路上，可以拿一点时间换推理质量。
+ *
+ * 取值是 DeepSeek 的 reasoning_effort，文档只有四档，没有连续刻度；
+ * 顺带一提 `medium` 只是 `high` 的兼容别名，所以界面上不列它。
+ */
+function ThinkingEffortField({
+  value,
+  onChange,
+}: {
+  value: ThinkingEffort;
+  onChange: (value: ThinkingEffort) => void;
+}) {
+  const { t } = useTranslation();
+  const items = THINKING_EFFORTS.map((effort) => ({
+    value: effort as string,
+    label: t(`settings.thinkingEffort.${effort}`),
+  }));
+  return (
+    <Field label={t("settings.fields.thinkingEffort")}>
+      <Select
+        items={items}
+        value={value}
+        onValueChange={(next) => onChange(String(next) as ThinkingEffort)}
+      >
+        <SelectTrigger className="h-8 w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          {items.map(({ value, label }) => (
+            <SelectItem key={value} value={value}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
   );
 }
 
@@ -792,6 +838,20 @@ export function SettingsDialog({
                                   ...current.llm,
                                   disable_thinking: Boolean(next),
                                 },
+                              }
+                            : current,
+                        )
+                      }
+                    />
+
+                    <ThinkingEffortField
+                      value={settings.llm.thinking_effort ?? "low"}
+                      onChange={(next) =>
+                        setSettings((current) =>
+                          current
+                            ? {
+                                ...current,
+                                llm: { ...current.llm, thinking_effort: next },
                               }
                             : current,
                         )

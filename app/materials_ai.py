@@ -16,12 +16,9 @@ from app.obs import event, span
 
 LANGUAGE_LABEL = {"zh": "简体中文", "en": "English"}
 
-# 材料相关的调用不限制输出长度：带思考的模型会先花掉一部分 token 在推理上，
-# 设上限容易在正文还没开始时就被截断，交给服务商按模型上限自己决定。
-# 唯一的例外是经历卡：它走 JSONL 逐行输出，被截断时已经到手的字段照样能用，
-# 所以那里设了上限来兜住最坏耗时。
-
-CARD_MAX_OUTPUT_TOKENS = 4000
+# 材料相关的调用一律不限制输出长度。带思考的模型会先花掉一部分 token 在推理上，
+# 而 max_tokens 把思考也算进去——设了上限，正文还没开始就先被截断了。
+# 交给服务商按模型上限自己决定（DeepSeek 思考模式下不传时默认 64K）。
 
 
 def _system(template: str, language: str) -> str:
@@ -84,7 +81,23 @@ CARD_SYSTEM = """你是一名面试防守教练。针对给定的经历单元，
 6. 材料里有数字就写数字（说清口径），没有数字就写"材料未记录"，绝不补数、绝不估数。
 7. 写不出来就少写。凑字数的空话（"提升了能力""积累了经验"）一律不要。
 
-二、硬性字数上限（超了就是不合格；宁可少写，不要注水）
+二、深度标准（"浅"是这张卡最常见的废法，先认清它长什么样）
+浅：只说做了什么、不说为什么这么做；用"提升了性能""优化了流程""保障了稳定性"
+这种没有机制的空话收尾；追问只是把上一问换个说法再问一遍；结论对，但经不起一句
+"为什么是这个方案"。这种卡在真面试里一追就穿。
+
+深，要同时做到这五条：
+1. **说机制**：任何一句"做了 X"，都要接得住"X 是怎么起作用的"——链路怎么走、
+   数据或状态在哪一步被改变、关键判断放在哪、为什么放在那。
+2. **说取舍**：当时还有哪些可选项、被什么约束否掉了、付了什么代价。想不出取舍就
+   说明这段经历没想清楚，**不要编一个取舍出来**，改写成"这块当时没参与选型"。
+3. **说失败面**：这个方案在什么情况下会坏、坏了怎么被发现、代价多大、怎么止血。
+   没被追问过失败面的方案不算守住。
+4. **说边界**：哪一段是自己做的、哪一段是团队或别人的；能归因到什么程度、不能到什么程度。
+5. **递进**：连续追问必须一轮比一轮更深（机制 → 取舍 → 失败面 → 重设计），
+   不许横着平移，不许两轮问同一件事的两个侧面。
+
+三、硬性字数上限（超了就是不合格；宁可少写，不要注水）
 - name：8–20 字，能区分是哪段经历。
 - description：≤ 320 字。讲清这是什么经历、业务或研究背景、最强的区分点，
   并补上机制、约束、结果、贡献边界。有量化结果就必须写出来（含口径）。
@@ -92,19 +105,29 @@ CARD_SYSTEM = """你是一名面试防守教练。针对给定的经历单元，
   材料支持的部分；每条只说一件事，必须是能被追问的事实，不是评价。
 - pitfalls：2–3 条，每条 ≤ 90 字，以「- 」开头。这段经历里的坑、返工、失败或教训：
   当时怎么发现的、代价是什么、后来怎么改的。材料里确实没有就只写一条「材料未记录」。
-- defense：≤ 425 字。先写一个会被深挖的具体问题（≤ 45 字），换行，再给 4–6 句
-  可以直接说出口的答案，事实与有边界的机制推理结合。
-- pushback：恰好两轮递归追问，每轮 ≤ 175 字，以「- 」开头。每轮包含一个可以说出口的
-  回答和一条不能越过的底线，底线写在回答之后、用「底线：」引出。
+- defense：≤ 620 字。
+  第一行写一个**真能把人问倒**的问题（≤ 55 字）：它必须逼出机制或取舍，
+  例如"为什么用 Kafka 而不是本地重试队列""这 480ms 到 160ms 是怎么来的"，
+  不要"这个项目你做了什么"这种开场白。
+  换行后给 5–7 句可以直接说出口的答案，并且**必须同时**包含：
+  一句结论；至少一句机制（它怎么起作用）；至少一句取舍（否掉了什么、为什么）；
+  至少一句失败面（什么时候会坏、怎么发现）。材料没写的部分用一句自然的话带过
+  （"这块我没直接参与"），不要硬编。
+- pushback：恰好两轮递归追问，每轮 ≤ 260 字，以「- 」开头。
+  这两轮必须**一轮比一轮更深**：第一轮追机制或取舍（"为什么是它，不是另一个"），
+  第二轮追失败面或重设计（"如果 X 变了会怎样""现在重做会改哪一步"）。
+  每轮先写追问（≤ 35 字），再给回答，最后用「底线：」引出一条**不能越过的边界**。
+  底线必须具体到能执行，例如"不能说这套方案支撑了 100 万 QPS，我只知道峰值日订单 40 万"；
+  不要"要诚实""要客观"这类废话。
 - boundaries：2–3 条，每条 ≤ 100 字，以「- 」开头。缺细节时的转向话术：能支撑什么、
   可以怎么推理、不能声称什么、会怎么核实。
-- depth：L1–L5 逐级要点，每级 ≤ 45 字，各级独立一行，以「- L1 」这样的形式开头。
+- depth：L1–L5 逐级要点，每级 ≤ 55 字，各级独立一行，以「- L1 」这样的形式开头。
   五级是：确认事实 / 决策与取舍 / 机制 / 风险与失败模式 / 重设计与反思。
 - transferable：2–3 条，每条 ≤ 70 字，以「- 」开头。这段经历里能带走、能用在别的场景的
   能力或判断（不是技能清单），每条说清"从什么得出、能用在哪"。
 - nextQuestion：≤ 45 字。最值得补的一个候选人自己的事实；没有就写「没有问题。」
 
-三、输出格式
+四、输出格式
 逐行输出，一行一个 JSON 对象，形如 {"key": "facts", "value": "..."}：
 {"key": "name", "value": "订单服务重构"}
 {"key": "description", "value": "把单体订单服务拆成三个服务…"}
@@ -124,8 +147,19 @@ def _language(section: dict[str, Any]) -> str:
     return LANGUAGE_LABEL.get(str(section.get("language") or "zh"), LANGUAGE_LABEL["zh"])
 
 
-def _section(settings: dict[str, Any]) -> dict[str, Any]:
-    return settings.get("llm", {})
+def _section(
+    settings: dict[str, Any], *, thinking: str | None = None
+) -> dict[str, Any]:
+    """取 LLM 配置；``thinking`` 非空时覆盖这一路的思考档位。
+
+    思考只用在**生成经历卡**上——那是要交给候选人照着说的内容，值得多想一会儿。
+    规划、简历整合、教练问答都在用户的等待路径上（规划一慢，「边规划边生成」
+    就白做了），而思考对它们帮助不大，实测反而要慢好几倍，所以一律压回 none。
+    """
+    section = dict(settings.get("llm") or {})
+    if thinking is not None:
+        section["thinking_effort"] = thinking
+    return section
 
 
 def _wrap(tag: str, value: str) -> str:
@@ -148,7 +182,7 @@ async def consolidate(
         {"role": "system", "content": CONSOLIDATE_SYSTEM.format(language=label)},
         {"role": "user", "content": _wrap("material", text)},
     ]
-    result = await complete(_section(settings), messages)
+    result = await complete(_section(settings, thinking="none"), messages)
 
     if not _is_usable_consolidation(text, result):
         messages.append({"role": "assistant", "content": result})
@@ -159,7 +193,7 @@ async def consolidate(
                 f"请重新整理，用{label}输出，保留全部事实并压缩到原文 70% 以内，只输出正文。",
             }
         )
-        result = await complete(_section(settings), messages)
+        result = await complete(_section(settings, thinking="none"), messages)
         if not _is_usable_consolidation(text, result):
             raise LLMError("整合结果不可用，请重试")
     return result.strip()
@@ -235,7 +269,7 @@ async def plan_units_stream(
     seen: set[str] = set()
     buffer = ""
     async with span("card.plan", trace=trace) as trace_id:
-        async for chunk in complete_stream(_section(settings), messages):
+        async for chunk in complete_stream(_section(settings, thinking="none"), messages):
             buffer += chunk
             if len(buffer) > 32768:
                 buffer = buffer[-16384:]
@@ -304,7 +338,7 @@ CARD_FIELD_ORDER = (
 CARD_KEYS = CARD_FIELD_ORDER[2:]
 
 # 生成一张卡用的模型标识，跟着卡片落盘，方便事后追这张卡是哪次调用产的。
-CARD_PROMPT_VERSION = "card-v2-jsonl"
+CARD_PROMPT_VERSION = "card-v3-deep"
 
 
 # --------------------------------------------------------------------------
@@ -520,7 +554,7 @@ async def coach_questions(
         ]
     )
     data = await complete_json(
-        _section(settings),
+        _section(settings, thinking="none"),
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
 
@@ -564,7 +598,7 @@ async def coach_merge(
     )
 
     data = await complete_json(
-        _section(settings),
+        _section(settings, thinking="none"),
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
 
@@ -696,9 +730,7 @@ async def generate_card_stream(
     started = time.perf_counter()
 
     async with span("card.generate", trace=trace, unit=name) as trace_id:
-        async for chunk in complete_stream(
-            section, messages, max_tokens=CARD_MAX_OUTPUT_TOKENS
-        ):
+        async for chunk in complete_stream(section, messages):
             output_chars += len(chunk)
             buffer += chunk
             if len(buffer) > 32768:

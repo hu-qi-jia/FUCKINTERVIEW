@@ -63,9 +63,23 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "api_key": "",
         "base_url": "",
         "model": "",
-        # 关掉推理模型的思考：面试回答不需要链式推理。DeepSeek 实测能削掉
-        # 0.7s 以上的首字延迟。换到不认这个参数的供应商时，这里改成 false。
+        # 语音管线专用（app/providers.py）：实时回答必须快。DeepSeek 实测思考
+        # 能削掉 0.7s 以上的首字延迟，所以这条路一直关思考。
+        # 换到不认 reasoning_effort 的供应商时，这里改成 false。
         "disable_thinking": True,
+        # 经历卡生成专用（app/ai.py 的 generate_card_stream）。
+        # 卡片是要交给候选人照着说的内容，值得多想一会儿；而规划、简历整合、
+        # 教练问答都在用户的等待路径上，思考实测要慢好几倍、输出量却没变化，
+        # 所以那几路一律压回 none，只有生成卡吃这个档位。
+        #
+        # 和上面那个开关**分开**：一个管语音（实时，必须快）、一个管经历卡生成，
+        # 改一个不会牵动另一个。
+        #
+        # 取值是 DeepSeek 的 reasoning_effort：none / low / high / max
+        # （兼容别名 minimal→low、medium→high、xhigh→high）。
+        # 默认给 low：实测单卡 6.6–7.4 秒涨到 12–17 秒；要更快就 none，
+        # 要更深就 high / max。
+        "thinking_effort": "low",
     },
     "tts": {
         "provider": "minimax",

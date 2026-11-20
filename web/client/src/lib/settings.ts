@@ -10,13 +10,27 @@ export interface AsrSettings {
   language: string;
 }
 
+/** 材料生成的思考档位，对应 DeepSeek 的 reasoning_effort。只有这四档，没有连续刻度。 */
+export const THINKING_EFFORTS = ["none", "low", "high", "max"] as const;
+export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
+
 export interface LlmSettings {
   provider: string;
   api_key: string;
   base_url: string;
   model: string;
-  /** 关掉推理模型的思考，换取首字延迟；不认这个参数的供应商要关掉。 */
+  /** 语音管线专用：关掉思考换首字延迟。不认这个参数的供应商要关掉。 */
   disable_thinking?: boolean;
+/**
+   * 经历卡生成专用的思考档位。
+   *
+   * 只有生成经历卡吃它：卡片要交给候选人照着说，值得多想一会儿。
+   * 规划、简历整合、教练问答在等待路径上，思考实测慢好几倍却没换来更好的
+   * 输出，后端把那几路压回了 none。
+   *
+   * 和 disable_thinking 分开：一个管实时语音，一个管经历卡生成。
+   */
+  thinking_effort?: ThinkingEffort;
 }
 
 export interface EmbeddingSettings {

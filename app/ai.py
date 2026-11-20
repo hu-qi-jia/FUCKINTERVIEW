@@ -69,16 +69,47 @@ def _require_key(section: dict[str, Any], label: str, env: str) -> str:
     return key
 
 
-def _thinking_extras(section: dict[str, Any]) -> dict[str, Any]:
-    """关掉推理模型的思考（Reasoning / Thinking）。
+# DeepSeek 的 reasoning_effort 取值：none 关思考；low / high / max 开思考，档位递增。
+# 文档里的兼容别名（minimal→low、medium→high、xhigh→high）这里不收，
+# 免得界面上写的和实际生效的对不上。
+THINKING_EFFORTS = ("none", "low", "high", "max")
+DEFAULT_THINKING_EFFORT = "low"
 
-    DeepSeek 实测思考占了首字延迟的 84%，而这里调的都是「把材料整理成结构化
-    文本」，不需要链式推理。和 app/providers.py 的 build_llm 保持同一套规则：
-    走 reasoning_effort=none，DeepSeek / Qwen / OpenAI 的新模型都认。
+
+def _thinking_extras(section: dict[str, Any]) -> dict[str, Any]:
+    """这一路调用的思考档位（思考开多深）。
+
+    和语音管线（app/providers.py 的 build_llm）**不是一回事**：那边是实时回答，
+    必须一直关思考；这边是批量生成，可以拿一点时间换推理质量。两边各有各的
+    配置项，改一个不会牵动另一个。
+
+    实际只有**生成经历卡**开思考：调用方（app/materials_ai.py）会给规划、
+    简历整合、教练问答显式传 thinking="none" 压回去——那几路在用户等待路径上，
+    思考实测慢好几倍却没换来更好的输出。
+
+    不传 thinking_effort 时 DeepSeek 默认是 high——思考开得比预期深会白等，
+    所以这里显式回落到 low。
+
+    注意：Anthropic 走的是另一套（thinking.budget_tokens），这条路不生效；
+    那边默认就是关思考。
     """
-    if not section.get("disable_thinking", True):
-        return {}
-    return {"reasoning_effort": "none"}
+    effort = str(
+        section.get("thinking_effort") or DEFAULT_THINKING_EFFORT
+    ).strip().lower()
+    if effort not in THINKING_EFFORTS:
+        effort = DEFAULT_THINKING_EFFORT
+    return {"reasoning_effort": effort}
+
+
+def _rejects_reasoning_effort(body: str) -> bool:
+    """400 的原因是不是「不认识 / 不接受 reasoning_effort」。"""
+    lowered = body.lower()
+    return (
+        "reasoning_effort" in lowered
+        or "unknown parameter" in lowered
+        or "unrecognized" in lowered
+        or "unexpected keyword" in lowered
+    )
 
 
 async def complete(
@@ -281,12 +312,12 @@ async def _post_json(
         ) as response:
             text = await response.text()
             if response.status >= 400:
-                # 少数供应商不认识 reasoning_effort 会整个拒绝请求。
-                # 带着这个字段被拒时，去掉再试一次，免得换个模型就全挂。
+                # 少数供应商不认识 reasoning_effort 会整个拒绝请求。只有真的是
+                # 这个字段被拒时才去掉它重试，免得别的 400 也白跑一趟。
                 if (
                     response.status == 400
                     and section is not None
-                    and _thinking_extras(section)
+                    and _rejects_reasoning_effort(text)
                 ):
                     stripped = {
                         key: value
