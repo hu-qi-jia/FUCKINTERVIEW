@@ -20,7 +20,8 @@ const CHANNEL_NAME = "interview-answers";
 
 type Packet =
   | { type: "answers"; turns: AnswerTurn[] }
-  | { type: "answers:request" };
+  | { type: "session"; startAt: number | null }
+  | { type: "state:request" };
 
 /** 复用一个发信通道：每次新建会在窗口里堆一个没人关的实例。 */
 let sender: BroadcastChannel | null = null;
@@ -53,14 +54,32 @@ export function subscribeAnswers(
   });
 }
 
-/** 悬浮窗：刚打开时向主窗口要一份已经攒下的。 */
-export function requestAnswers(): void {
-  send({ type: "answers:request" });
+/** 主窗口：面试计时起点（`InterviewTimer` 的 startAt）变了就广播一份。 */
+export function publishSession(startAt: number | null): void {
+  send({ type: "session", startAt });
+}
+
+/** 悬浮窗：收计时起点。返回退订函数。 */
+export function subscribeSession(
+  handler: (startAt: number | null) => void,
+): () => void {
+  return listen((packet) => {
+    if (packet.type === "session") handler(packet.startAt);
+  });
+}
+
+/**
+ * 悬浮窗：刚打开时向主窗口要一份已经攒下的。
+ * 回答和计时起点各有各的人守着（回答在 ConsoleAnswerPanel，起点在首页），
+ * 谁被叫到谁把自己那份发一遍。
+ */
+export function requestState(): void {
+  send({ type: "state:request" });
 }
 
 /** 主窗口：悬浮窗来要了，把手上的发一份过去。 */
-export function onAnswersRequested(handler: () => void): () => void {
+export function onStateRequested(handler: () => void): () => void {
   return listen((packet) => {
-    if (packet.type === "answers:request") handler();
+    if (packet.type === "state:request") handler();
   });
 }

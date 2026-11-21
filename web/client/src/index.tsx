@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLiveInterview } from "@/hooks/use-live-interview";
 import { installApiToken } from "@/lib/api-token";
+import { onStateRequested, publishSession } from "@/lib/answer-bus";
 import { useContentProtection } from "@/lib/content-protection";
 import { readLiveProfileId, saveLiveProfileId } from "@/lib/live-profile";
 import {
@@ -246,6 +247,17 @@ function Home() {
   const openFloatWindow = useCallback(() => {
     window.desktop?.float?.open();
   }, []);
+
+  // 悬浮窗顶栏要显示面试计时：计时起点广播过去，它复用主窗口那个计时器组件。
+  useEffect(() => {
+    publishSession(liveReadyAt);
+  }, [liveReadyAt]);
+  const liveReadyAtRef = useRef(liveReadyAt);
+  liveReadyAtRef.current = liveReadyAt;
+  useEffect(
+    () => onStateRequested(() => publishSession(liveReadyAtRef.current)),
+    [],
+  );
 
   // 悬浮窗里点「结束面试」，主进程把主窗口叫回来并把动作转过来。
   // 这里走离开面试页那条路收尾：记一笔会话、两条连接随页面卸载断掉。

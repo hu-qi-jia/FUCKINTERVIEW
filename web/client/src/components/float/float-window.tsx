@@ -7,27 +7,15 @@ import { useTranslation } from "react-i18next";
 import { ConversationView } from "@/components/pipecat/conversation";
 import { EndInterviewButton } from "@/components/pipecat/end-interview-button";
 import { Button } from "@/components/ui/button";
+import { InterviewTimer } from "@/components/interview-timer";
 import {
-  requestAnswers,
+  requestState,
   subscribeAnswers,
+  subscribeSession,
   type AnswerTurn,
 } from "@/lib/answer-bus";
 import { readTheme, resolveDark } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-
-/** 顶栏左上角的当前时间，一秒一跳；tabular-nums 免得数字一跳就抖。 */
-function Clock() {
-  const [now, setNow] = React.useState(() => new Date());
-  React.useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return (
-    <span className="text-sm font-medium tabular-nums">
-      {now.toLocaleTimeString(undefined, { hour12: false })}
-    </span>
-  );
-}
 
 /**
  * 悬浮窗：面试中弹出的置顶小窗，只放回答，右上角两个动作。
@@ -43,12 +31,18 @@ function Clock() {
 export function FloatWindow() {
   const { t, i18n } = useTranslation();
   const [turns, setTurns] = React.useState<AnswerTurn[]>([]);
+  /** 面试计时起点：和主窗口顶栏那个计时器同一个来源、同一个组件。 */
+  const [startAt, setStartAt] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    const unsubscribe = subscribeAnswers(setTurns);
-    // 中途才开的窗：先问主窗口把已经攒下的回答要一份过来。
-    requestAnswers();
-    return unsubscribe;
+    const offAnswers = subscribeAnswers(setTurns);
+    const offSession = subscribeSession(setStartAt);
+    // 中途才开的窗：先问主窗口把已经攒下的（回答 + 计时起点）要一份过来。
+    requestState();
+    return () => {
+      offAnswers();
+      offSession();
+    };
   }, []);
 
   // 亮暗跟随主窗口：读的是同一份 localStorage，主窗口换了这里跟着换。
@@ -99,8 +93,8 @@ export function FloatWindow() {
         )}
       >
         <header className="app-drag flex h-11 shrink-0 items-center gap-2 border-b px-3">
-          {/* 左上角是当前时间：面试中照着它控制回答节奏。 */}
-          <Clock />
+          {/* 左上角是面试计时器，跟主窗口顶栏那个同一个组件、同一个起点。 */}
+          <InterviewTimer startAt={startAt} />
           {/* 顶栏本身是拖拽区，两个按钮要从里面让出来。 */}
           <div className="app-no-drag ml-auto flex items-center gap-1">
             <Button

@@ -15,7 +15,7 @@ import {
   type ConversationProps,
 } from "@/components/pipecat/conversation";
 import {
-  onAnswersRequested,
+  onStateRequested,
   publishAnswers,
   type AnswerTurn,
 } from "@/lib/answer-bus";
@@ -100,7 +100,7 @@ export function ConsoleAnswerPanel({
     publishAnswers(turns);
   }, [turns]);
   React.useEffect(
-    () => onAnswersRequested(() => publishAnswers(turnsRef.current)),
+    () => onStateRequested(() => publishAnswers(turnsRef.current)),
     [],
   );
 
