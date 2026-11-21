@@ -196,7 +196,10 @@ export function HomePage({
           <StartPanel
             className="shrink-0"
             summary={stats?.summary ?? null}
+            counts={counts}
+            countsLoading={countsLoading}
             onStart={openDialog}
+            onOpenMaterials={onOpenMaterials}
           />
 
           <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-12">

@@ -119,12 +119,15 @@ body,
   --agent-foreground: oklch(0.585 0.233 277.117);
   --client-background: oklch(0.97 0.014 254.604);
   --client-foreground: oklch(0.623 0.214 259.815);
-  /* 首页点阵图的绿色梯度：0 = 没面试，4 = 5 场以上。 */
-  --heat-0: oklch(0.958 0.006 155);
-  --heat-1: oklch(0.902 0.056 155);
-  --heat-2: oklch(0.802 0.115 155);
-  --heat-3: oklch(0.678 0.142 155);
-  --heat-4: oklch(0.522 0.128 155);
+  /* 首页点阵图的强度梯度：0 = 没面试，4 = 5 场以上。
+     不带色相，跟按钮同一个色系——浅色主题从近白到近黑，深色主题反过来。
+     最浓的一档就是 --primary（浅色黑 / 深色白），所以主视觉、图表、点阵
+     看上去是同一支笔画出来的。 */
+  --heat-0: oklch(0.958 0 0);
+  --heat-1: oklch(0.858 0 0);
+  --heat-2: oklch(0.715 0 0);
+  --heat-3: oklch(0.52 0 0);
+  --heat-4: oklch(0.205 0 0);
 }
 
 .dark {
@@ -167,11 +170,11 @@ body,
   --agent-foreground: oklch(0.585 0.233 277.117);
   --client-background: oklch(0.19 0.045 259.815);
   --client-foreground: oklch(0.623 0.214 259.815);
-  --heat-0: oklch(0.253 0.007 155);
-  --heat-1: oklch(0.345 0.052 155);
-  --heat-2: oklch(0.462 0.094 155);
-  --heat-3: oklch(0.605 0.128 155);
-  --heat-4: oklch(0.745 0.148 155);
+  --heat-0: oklch(0.253 0 0);
+  --heat-1: oklch(0.36 0 0);
+  --heat-2: oklch(0.5 0 0);
+  --heat-3: oklch(0.7 0 0);
+  --heat-4: oklch(0.922 0 0);
 }
 
 @layer base {

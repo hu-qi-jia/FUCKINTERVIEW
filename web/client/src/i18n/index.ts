@@ -29,6 +29,14 @@ const zh = {
   home: {
     title: "控制台",
     startButton: "开始面试",
+    tagline: "把面试官的问题，变成你能照着说的答案。",
+    taglineSub: "讲经历只按简历和经历卡，没写过的不编。",
+    startStatus: {
+      ready: "{{count}} 份材料就绪",
+      missing: "还差{{item}}",
+      checking: "正在检查材料…",
+      unknown: "材料数量未知",
+    },
     loadFailed: "看板加载失败：{{message}}",
     heatmap: {
       title: "面试热力图",
@@ -844,6 +852,15 @@ const en = {
   home: {
     title: "Dashboard",
     startButton: "Start interview",
+    tagline: "Turns the interviewer's question into an answer you can say.",
+    taglineSub:
+      "Your own story comes only from your resume and experience cards. Nothing invented.",
+    startStatus: {
+      ready: "{{count}} materials ready",
+      missing: "Missing {{item}}",
+      checking: "Checking materials…",
+      unknown: "Material counts unavailable",
+    },
     loadFailed: "Could not load the dashboard: {{message}}",
     heatmap: {
       title: "Interview heatmap",
