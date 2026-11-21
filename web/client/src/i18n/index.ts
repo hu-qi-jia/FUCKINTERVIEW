@@ -605,7 +605,7 @@ const zh = {
     appIcon: {
       label: "应用图标",
       upload: "上传图片",
-      restartHint: "标题栏图标立即更换；任务栏和托盘图标重启后生效",
+      restartHint: "切换后重启生效：标题栏、任务栏、托盘和桌面快捷方式一起换",
       restart: "重新启动",
       presets: {
         default: "默认",
@@ -1435,7 +1435,7 @@ const en = {
       label: "App icon",
       upload: "Upload image",
       restartHint:
-        "The window icon changes at once; the taskbar and tray icons update after a restart.",
+        "Takes effect after a restart: window, taskbar, tray and desktop shortcut all switch together.",
       restart: "Restart now",
       presets: {
         default: "Default",

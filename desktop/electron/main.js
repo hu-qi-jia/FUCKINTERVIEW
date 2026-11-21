@@ -514,17 +514,14 @@ function installWindowIpc() {
   });
 
   // ---- 应用图标：预设切换 + 上传图片 ----
-  // 点一下只做「写盘 + 换窗体图标 + 立刻回话」，设置页的选中态当场就变。
-  // 任务栏那一路要起 PowerShell 改快捷方式，**不等它**——放在关键路径上会让
-  // 界面卡住半秒到两秒，而它本来就是重启后才生效的，晚一点落地没有任何代价。
-  // 托盘更是一动不动：重启后才换（见 app-icon.apply 的注释）。
+  // 点一下**只写盘**：窗体、托盘、快捷方式（任务栏 / 桌面 / 开始菜单）
+  // 一律等下次启动再换。切换时不干重活，点了才不会卡；而且图标是
+  // 用来「投屏时不暴露应用」的，切完立刻换掉反而当场露馅。
+  // 启动时在 boot() 里一次性铺开（见那里）。
   ipcMain.handle("app-icon:get", () => appIcon.describe());
   ipcMain.handle("app-icon:set", (event, preset) => {
     if (!isMainSender(event)) return appIcon.describe();
-    const info = appIcon.setPreset(preset);
-    appIcon.apply({ window: mainWindow });
-    void appIcon.applyTaskbar();
-    return info;
+    return appIcon.setPreset(preset);
   });
   ipcMain.handle("app-icon:pick-image", async (event) => {
     if (!isMainSender(event)) return null;
@@ -536,12 +533,7 @@ function installWindowIpc() {
       ],
     });
     if (canceled || !filePaths.length) return null;
-    const info = appIcon.setFromFilePath(filePaths[0]);
-    if (info) {
-      appIcon.apply({ window: mainWindow });
-      void appIcon.applyTaskbar();
-    }
-    return info;
+    return appIcon.setFromFilePath(filePaths[0]);
   });
   // 任务栏图标要按钮重建才认，所以给个「立即重启」的口子。
   ipcMain.handle("app-icon:relaunch", (event) => {
@@ -776,6 +768,9 @@ async function boot() {
     log?.write(`${new Date().toISOString()} ${line}\n`);
   };
 
+  // 图标只在启动时铺开一次：窗体、托盘在建窗口/建托盘那一刻就按持久化状态
+  // 取图，快捷方式（任务栏 / 桌面 / 开始菜单）这一路要起 PowerShell，不挡启动。
+  void appIcon.applyTaskbar();
   mainWindow = createWindow();
 
   try {
