@@ -37,10 +37,51 @@ def test_prompt_splits_facts_from_general_knowledge():
     """经历事实只认 profile；原理方案放开，但相撞时 profile 赢。"""
     prompt = build_live_system_prompt(None)
     assert "只使用 <profile> 里确认过的内容" in prompt
-    assert "用你自己的知识回答" in prompt
+    assert "用你自己的知识正面回答" in prompt
     assert "两类撞上时以 <profile> 为准" in prompt
     # 举例要落在 profile 的栈上，否则通用答案会跟经历对不上。
     assert "举例一律落在 <profile> 里出现过的技术栈上" in prompt
+
+
+def test_rule_one_is_scoped_to_experience_not_knowledge():
+    """「没写当没参与」一旦管到知识题，Transformer 这类问题就会被拒答。"""
+    prompt = build_live_system_prompt(None)
+    assert "这条只管经历事实，不管知识与原理" in prompt
+
+
+def test_prompt_forbids_refusing_knowledge_questions():
+    prompt = build_live_system_prompt(None)
+    for excuse in ("我讲不了", "不在我的工作范围", "这块我没直接参与", "我是产品不是算法"):
+        assert excuse in prompt
+    # 多问那一题里也不能拿「没确认过」当借口跳过知识题。
+    assert "照第 2 条正面答，不许跳过" in prompt
+
+
+def test_prompt_cuts_the_resume_off_from_the_competence_ceiling():
+    """简历只记做过什么；拿它推断「你讲不了什么」正是拒答的来源。"""
+    prompt = build_live_system_prompt(None)
+    assert "不代表你能讲什么" in prompt
+    assert "不要拿简历推断" in prompt
+
+
+def test_prompt_keeps_mechanism_and_project_in_two_layers():
+    """机制用知识讲、项目部分只说档案里有的，混起来就成了编造。"""
+    prompt = build_live_system_prompt(None)
+    assert "机制用你的知识讲" in prompt
+    assert "两段不要混起来编" in prompt
+
+
+def test_prompt_ships_a_three_way_few_shot():
+    """三组对照定边界：经历事实 / 技术知识 / 项目里的技术知识。"""
+    prompt = build_live_system_prompt(None)
+    assert "A｜经历事实" in prompt
+    assert "B｜技术知识" in prompt
+    assert "C｜项目里的技术知识" in prompt
+    # 每组都要有正例和反例，反例还得说清错在哪。
+    assert prompt.count("对：") == 3
+    assert prompt.count("错：") == 4
+    assert "这是编的" in prompt
+    assert "禁止退缩" in prompt
 
 
 def test_prompt_sets_length_by_question_type():
