@@ -39,7 +39,11 @@ export function FloatWindow() {
     const offSession = subscribeSession(setStartAt);
     // 中途才开的窗：先问主窗口把已经攒下的（回答 + 计时起点）要一份过来。
     requestState();
+    // 再定时对一次表：广播漏了一条（窗口刚挂载、主窗口刚从隐藏里回来）
+    // 也能在几秒内追上，计时器和主窗口不会一直差着。
+    const timer = window.setInterval(requestState, 5000);
     return () => {
+      window.clearInterval(timer);
       offAnswers();
       offSession();
     };
