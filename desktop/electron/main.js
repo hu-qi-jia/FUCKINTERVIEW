@@ -768,9 +768,14 @@ async function boot() {
     log?.write(`${new Date().toISOString()} ${line}\n`);
   };
 
-  // 图标只在启动时铺开一次：窗体、托盘在建窗口/建托盘那一刻就按持久化状态
-  // 取图，快捷方式（任务栏 / 桌面 / 开始菜单）这一路要起 PowerShell，不挡启动。
-  void appIcon.applyTaskbar();
+  // 图标在启动时一次性铺开：窗体/托盘在建窗口、建托盘那一刻按持久化状态取图。
+  //
+  // 快捷方式这一路必须**先落地再建窗口**——任务栏按钮在建的那一刻就按
+  // 快捷方式的 IconLocation 取一次图标，之后不再重读。丢给后台慢慢跑的话，
+  // 按钮建出来时快捷方式还是上一版，于是永远「慢一版」：上次选的先上墙，
+  // 这次选的要等下次重启。它起 PowerShell（含扫开始菜单）会花一两秒，
+  // 但这是启动路径、不是点击路径，卡这一下比慢一版值。
+  await appIcon.applyTaskbar();
   mainWindow = createWindow();
 
   try {
