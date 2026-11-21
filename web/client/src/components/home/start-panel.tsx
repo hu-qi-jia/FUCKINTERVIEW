@@ -1,13 +1,15 @@
 "use client";
 
-import { ChevronRightIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Wordmark } from "@/components/home/wordmark";
-import type { LibraryCounts } from "@/components/home/interview-prep-card";
 import { Button } from "@/components/ui/button";
 import type { SessionStatsSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
+
+/** 祝福语轮播的间隔。太短会晃眼，太长就等于只有一句。 */
+const CHEER_INTERVAL_MS = 7000;
 
 function StatBlock({
   label,
@@ -35,46 +37,47 @@ function StatBlock({
 
 /**
  * 首页第一行：左边是字标主视觉 + 开始面试，右边是统计数字。
- * 左边自上而下是字标、一句说明、主操作、材料状态；字标和按钮共用 72% 的宽度，
- * 说明按句子长度收窄，所以是「两块重物夹几行字」。
+ * 左边自上而下是字标、一句轮播的祝福语、主操作；字标和按钮共用 64% 的宽度，
+ * 中间那行字只占句子的长度，靠留白跟它们分开。
  * 右侧不套卡片，直接落在页面底色上，只留数字本身；
  * 统计块与左侧整块垂直居中。
  */
 export function StartPanel({
   summary,
-  counts,
-  countsLoading,
   onStart,
-  onOpenMaterials,
   className,
 }: {
   summary: SessionStatsSummary | null;
-  /** 三份材料各建了多少；拿来看「现在能不能开始」。 */
-  counts: LibraryCounts;
-  countsLoading: boolean;
   onStart: () => void;
-  /** 缺材料时点状态行直接去补。不传就只显示不给点。 */
-  onOpenMaterials?: (segment: "profiles" | "questions" | "terms") => void;
   className?: string;
 }) {
   const { t } = useTranslation();
 
-  // 口径同下面那张「面试准备」卡：档案 / 问答库 / 术语库三样都建好了才算就绪。
-  const materials = [
-    { segment: "profiles", label: t("materials.tabs.profiles") },
-    { segment: "questions", label: t("materials.tabs.questions") },
-    { segment: "terms", label: t("materials.tabs.terms") },
-  ] as const;
-  const known = materials.every((item) => counts[item.segment] !== null);
-  const missing = materials.find((item) => (counts[item.segment] ?? 0) === 0);
-  const ready = materials.filter((item) => (counts[item.segment] ?? 0) > 0).length;
-  const status = countsLoading
-    ? t("home.startStatus.checking")
-    : !known
-      ? t("home.startStatus.unknown")
-      : missing
-        ? t("home.startStatus.missing", { item: missing.label })
-        : t("home.startStatus.ready", { count: ready });
+  // 开始面试前那句祝福语轮着来：一次只出一行，换句时旧的淡出、新的淡入抬起。
+  // 新旧下标放一个 state 里，切换是一次更新，两层不会错开。
+  const rawCheers = t("home.cheers", { returnObjects: true }) as unknown;
+  const cheers = Array.isArray(rawCheers)
+    ? rawCheers.filter((item): item is string => typeof item === "string")
+    : [];
+  const [carousel, setCarousel] = useState<{
+    index: number;
+    previous: number | null;
+  }>({ index: 0, previous: null });
+  useEffect(() => {
+    if (cheers.length < 2) return;
+    const timer = setInterval(
+      () =>
+        setCarousel((state) => ({
+          index: (state.index + 1) % cheers.length,
+          previous: state.index,
+        })),
+      CHEER_INTERVAL_MS
+    );
+    return () => clearInterval(timer);
+  }, [cheers.length]);
+  const cheer = cheers[carousel.index] ?? "";
+  const outgoing =
+    carousel.previous === null ? "" : (cheers[carousel.previous] ?? "");
 
   return (
     <div
@@ -84,17 +87,30 @@ export function StartPanel({
       )}
     >
       <div className="flex min-w-0 flex-col gap-3 px-1 py-2 lg:col-span-3">
-        {/* 字标与主操作同宽（72%，最宽 440）：这一栏的两个重物共用一个尺度，
-            中间那两行说明只占句子的长度，靠留白跟它们分开。 */}
-        <Wordmark className="w-[72%] max-w-[440px]" />
+        {/* 字标和它下面那行字贴成一组（8px），跟主操作之间才拉开。
+            字标与主操作同宽（64%，最宽 380），这一栏的两个重物共用一个尺度。 */}
+        <div className="flex min-w-0 flex-col gap-2">
+          <Wordmark className="w-[64%] max-w-[380px]" />
 
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-[15px] leading-snug font-medium">
-            {t("home.tagline")}
-          </p>
-          <p className="text-muted-foreground max-w-[38ch] text-xs leading-relaxed">
-            {t("home.taglineSub")}
-          </p>
+          {/* 一句一句轮着来的祝福语。换句时旧的淡出、新的淡入并抬起一点，
+              两层叠着过渡；高度由新的一行撑住，不会跳版。 */}
+          <div className="relative min-h-[1.4em]">
+            {carousel.previous !== null && (
+              <p
+                key={`out-${carousel.index}`}
+                aria-hidden
+                className="absolute inset-x-0 top-0 text-[24px] leading-snug font-medium animate-out fade-out fill-mode-forwards duration-500 motion-reduce:hidden"
+              >
+                {outgoing}
+              </p>
+            )}
+            <p
+              key={carousel.index}
+              className="text-[24px] leading-snug font-medium animate-in fade-in slide-in-from-bottom-1 fill-mode-both duration-500 motion-reduce:animate-none"
+            >
+              {cheer}
+            </p>
+          </div>
         </div>
 
         {/* 主操作：黑（深色主题白），跟其他按钮同一个色系，只是放到主视觉的尺寸。
@@ -102,7 +118,7 @@ export function StartPanel({
         <Button
           onClick={onStart}
           className={cn(
-            "mt-1 h-14 w-[72%] max-w-[440px] rounded-xl text-[15px] font-semibold",
+            "mt-1 h-14 w-[64%] max-w-[380px] rounded-xl text-[15px] font-semibold",
             "shadow-[0_10px_26px_-18px_oklch(0_0_0/60%)]",
             "transition-[transform,box-shadow,background-color] duration-200 ease-out",
             "hover:-translate-y-px hover:bg-primary/85",
@@ -112,20 +128,6 @@ export function StartPanel({
         >
           {t("home.startButton")}
         </Button>
-
-        {/* 开始之前看一眼材料齐不齐；缺什么就点这行去补。 */}
-        {known && missing && onOpenMaterials ? (
-          <button
-            type="button"
-            onClick={() => onOpenMaterials(missing.segment)}
-            className="text-muted-foreground hover:text-foreground -mt-1 flex w-fit items-center gap-0.5 text-xs transition-colors hover:underline hover:underline-offset-4"
-          >
-            {status}
-            <ChevronRightIcon className="size-3 shrink-0" />
-          </button>
-        ) : (
-          <p className="text-muted-foreground -mt-1 text-xs">{status}</p>
-        )}
       </div>
 
       <div className="flex items-center py-2 pl-1 lg:col-span-2">
