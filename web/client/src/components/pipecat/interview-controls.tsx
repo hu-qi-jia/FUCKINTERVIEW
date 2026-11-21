@@ -1,21 +1,12 @@
 "use client";
 
 import { usePipecatClientTransportState } from "@pipecat-ai/client-react";
-import {
-  AppWindowIcon,
-  Loader2Icon,
-  PhoneOffIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { AppWindowIcon, Loader2Icon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { EndInterviewButton } from "@/components/pipecat/end-interview-button";
 import { Button } from "@/components/ui/button";
-
-// 和 connect-button.tsx 里「结束」动作同一套配色，两处观感保持一致。
-// 悬浮窗里的「结束面试」也用它。
-export const END_CLASSES =
-  "border-inactive/30 bg-inactive/10 text-inactive hover:bg-inactive/20 hover:text-inactive dark:bg-inactive/20";
 
 /**
  * 面试页的连接控件。
@@ -94,10 +85,7 @@ export function InterviewControls({
             {t("float.open")}
           </Button>
         )}
-        <Button size="sm" variant="outline" className={END_CLASSES} onClick={onDisconnect}>
-          <PhoneOffIcon />
-          {t("connect.disconnect")}
-        </Button>
+        <EndInterviewButton onClick={onDisconnect} />
       </div>
     );
   }

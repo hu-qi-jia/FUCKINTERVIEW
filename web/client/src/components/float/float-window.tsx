@@ -5,7 +5,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConversationView } from "@/components/pipecat/conversation";
-import { END_CLASSES } from "@/components/pipecat/interview-controls";
+import { EndInterviewButton } from "@/components/pipecat/end-interview-button";
 import { Button } from "@/components/ui/button";
 import {
   requestAnswers,
@@ -14,6 +14,20 @@ import {
 } from "@/lib/answer-bus";
 import { readTheme, resolveDark } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+
+/** 顶栏左上角的当前时间，一秒一跳；tabular-nums 免得数字一跳就抖。 */
+function Clock() {
+  const [now, setNow] = React.useState(() => new Date());
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <span className="text-sm font-medium tabular-nums">
+      {now.toLocaleTimeString(undefined, { hour12: false })}
+    </span>
+  );
+}
 
 /**
  * 悬浮窗：面试中弹出的置顶小窗，只放回答，右上角两个动作。
@@ -85,7 +99,8 @@ export function FloatWindow() {
         )}
       >
         <header className="app-drag flex h-11 shrink-0 items-center gap-2 border-b px-3">
-          <span className="text-sm font-medium">{t("conversation.answer")}</span>
+          {/* 左上角是当前时间：面试中照着它控制回答节奏。 */}
+          <Clock />
           {/* 顶栏本身是拖拽区，两个按钮要从里面让出来。 */}
           <div className="app-no-drag ml-auto flex items-center gap-1">
             <Button
@@ -95,14 +110,7 @@ export function FloatWindow() {
             >
               {t("float.back")}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={END_CLASSES}
-              onClick={() => window.desktop?.float?.end()}
-            >
-              {t("connect.disconnect")}
-            </Button>
+            <EndInterviewButton onClick={() => window.desktop?.float?.end()} />
           </div>
         </header>
 
