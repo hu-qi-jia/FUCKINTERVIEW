@@ -17,11 +17,35 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776AB" />
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-20%2B-339933" />
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-47848F" />
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-2ea44f" /></a>
 </p>
 
 ---
 
 FUCKINTERVIEW 是一个本地运行的桌面端面试辅助工具。它采集系统音频里的面试官提问，经语音识别转成文字，再结合你准备的面试档案、问答库与术语库生成回答，并以文字实时显示。数据、模型与 API Key 都留在本机。
+
+## 界面预览
+
+| 首页 | 实时面试 | 悬浮窗 |
+| :---: | :---: | :---: |
+| ![首页](docs/screenshots/home.png) | ![实时面试](docs/screenshots/interview.png) | ![悬浮窗](docs/screenshots/float.png) |
+
+## 它做什么
+
+- **听清问题** —— 采集系统音频里面试官的提问（Windows 环回，不需要对方配合），断句后转写；术语库把同音词、别名纠回规范写法。
+- **按你的材料回答** —— 经历事实只从简历和经历卡里取，没写过的不编；原理、方案、概念用模型自己的知识正面回答，不退缩。
+- **准备过的直接出** —— 问答库命中阈值就原文输出，不跑模型；同一句不连着重复。
+- **一次问几个答几个** —— 一问里套了几个问题就按顺序全答完，不许漏；追问会在 6 秒窗口内和上一问融合起来一起答全。
+- **悬浮窗** —— 面试中把回答拎到置顶小窗，主窗口同时收起；投屏、共享屏幕时只看得见小窗。
+- **防截屏** —— 窗口可以从系统级画面采集里排除，跟着设置走。
+
+## 工作流程
+
+```text
+系统音频 ─► 语音识别 ─► 术语纠错 ─┬─► 问答库命中 ─► 直出原文
+                                 └─► 提示词组装 ─► LLM ─► 文字回答
+简历 / 经历卡 / 问答库 / 术语库 ──────────────────────────────┘
+```
 
 ## 安装
 
@@ -79,5 +103,9 @@ npm --prefix desktop run dist
 | 语音处理 | Silero VAD · Smart Turn v3（本地 ONNX 推理） |
 | 模型服务 | ASR：Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM：任意 OpenAI 兼容接口 / Qwen / Anthropic |
 | 本地检索 | SQLite FTS5 + `BAAI/bge-small-zh-v1.5` 向量检索（ONNX，无需 PyTorch） |
+
+## 开源协议
+
+[MIT](LICENSE) © 2026 hu-qi-jia
 
 <p align="center"><sub>Built with Pipecat · © 2026 hu-qi-jia</sub></p>

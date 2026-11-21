@@ -5,7 +5,7 @@
 <h1 align="center">FUCKINTERVIEW</h1>
 
 <p align="center">
-  A real-time voice interview copilot: it listens to the interviewer, draws on your resume and Q&A library, and puts a ready-to-speak answer on screen.
+  Live voice interview assistant: it hears the interviewer's question and turns it into an answer you can say out loud.
 </p>
 
 <p align="center">
@@ -17,23 +17,47 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776AB" />
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-20%2B-339933" />
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-47848F" />
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-2ea44f" /></a>
 </p>
 
 ---
 
-FUCKINTERVIEW is a local-first desktop assistant for job interviews. It captures the interviewer's voice from system audio, transcribes it, and generates an answer grounded in your interview profile, Q&A library and terminology list — shown as text in real time. Your data, models and API keys never leave your machine.
+FUCKINTERVIEW is a desktop interview assistant that runs entirely on your machine. It captures the interviewer's questions from system audio, transcribes them, and answers from your own resume, experience cards, question bank and glossary — showing the answer as text in real time. Data, models and API keys never leave your computer.
 
-## Installation
+## Screenshots
+
+| Home | Live interview | Floating window |
+| :---: | :---: | :---: |
+| ![Home](docs/screenshots/home.png) | ![Live interview](docs/screenshots/interview.png) | ![Floating window](docs/screenshots/float.png) |
+
+## What it does
+
+- **Hears the question** — captures the interviewer from Windows loopback audio (no cooperation needed), segments the speech and transcribes it; the glossary fixes homophones and aliases.
+- **Answers from your material** — experience facts come only from your resume and experience cards; nothing gets invented. Principles, designs and concepts get a straight answer from the model's own knowledge.
+- **Prepared answers come out verbatim** — a question bank hit skips the model entirely, and the same line is never pasted twice.
+- **Every question in a question** — several questions in one breath all get answered, in order; a rapid follow-up is merged with the previous one inside a 6-second window.
+- **Floating window** — pull the answers into an always-on-top window while the main window hides, so screen sharing only shows the small one.
+- **Screen-capture protection** — the windows can be excluded from system-level capture, following the setting.
+
+## How it works
+
+```text
+System audio ─► ASR ─► term fix ─┬─► question bank hit ─► verbatim answer
+                                 └─► prompt ─► LLM ─► text answer
+Resume / cards / question bank / glossary ──────────────────────────┘
+```
+
+## Install
 
 ### Windows installer
 
-Download the latest `FUCKINTERVIEW-Setup-<version>.exe` from [Releases](https://github.com/hu-qi-jia/FUCKINTERVIEW/releases) and run it. If no installer is published yet, build one with the instructions under “Run from source” below.
+Download the latest `FUCKINTERVIEW-Setup-<version>.exe` from [Releases](https://github.com/hu-qi-jia/FUCKINTERVIEW/releases) and run it. If there is no release yet, build from source below.
 
-On first launch you can choose where data and model files are stored (or skip it and change these later in **Settings → General**). Then open **Settings → Model Configuration** and fill in your ASR / LLM API keys.
+On first launch you pick a **data folder** and a **model folder** (both skippable, changeable later in Settings → General). Then open Settings → Models, fill in the ASR / LLM API keys and you are ready.
 
-- Data lives in `%APPDATA%\FUCKINTERVIEW\data` by default and is kept when you uninstall
-- System-audio capture uses the Windows loopback device and requires Windows 10 2004 or later
-- Upgrading from the old “面试语音助手” app copies existing data into the new folder on first launch; the old folder is kept
+- Data lives in `%APPDATA%\FUCKINTERVIEW\data` by default and survives uninstall
+- Live interviews rely on Windows loopback audio, so Windows 10 2004 or newer
+- Upgrading from the old “面试语音助手”: the first launch copies the old data over, the old folder is kept
 
 ### Run from source
 
@@ -53,13 +77,13 @@ npm --prefix desktop install
 npm --prefix desktop start
 ```
 
-To use it in the browser only (without the desktop shell):
+Browser only (no desktop shell):
 
 ```bash
 PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe server.py
 ```
 
-Then open <http://localhost:7860/>. On macOS / Linux, replace `.venv/Scripts/python` with `.venv/bin/python`.
+Then open <http://localhost:7860/>. On macOS / Linux use `.venv/bin/python` instead.
 
 Build the Windows installer yourself:
 
@@ -67,17 +91,21 @@ Build the Windows installer yourself:
 npm --prefix desktop run dist
 ```
 
-The output is `desktop/dist/FUCKINTERVIEW-Setup-<version>.exe`.
+The result lands in `desktop/dist/FUCKINTERVIEW-Setup-<version>.exe`.
 
 ## Tech stack
 
 | Layer | Choice |
 | --- | --- |
-| Desktop | Electron 44 (frameless window, tray, system-audio loopback, capture protection) |
+| Desktop | Electron 44 (frameless window, tray, system audio loopback, capture protection) |
 | Frontend | React 19 · TypeScript · Vite · Tailwind CSS · Pipecat React SDK |
 | Backend | Python 3.12 · FastAPI · Pipecat voice pipeline (SmallWebRTC transport) |
-| Voice | Silero VAD · Smart Turn v3 (local ONNX inference) |
-| Model providers | ASR: Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM: any OpenAI-compatible API / Qwen / Anthropic |
-| Local retrieval | SQLite FTS5 + `BAAI/bge-small-zh-v1.5` embeddings (ONNX, no PyTorch) |
+| Speech | Silero VAD · Smart Turn v3 (local ONNX inference) |
+| Models | ASR: Qwen / MiniMax / Deepgram / OpenAI Whisper<br />LLM: any OpenAI-compatible endpoint / Qwen / Anthropic |
+| Retrieval | SQLite FTS5 + `BAAI/bge-small-zh-v1.5` embeddings (ONNX, no PyTorch) |
+
+## License
+
+[MIT](LICENSE) © 2026 hu-qi-jia
 
 <p align="center"><sub>Built with Pipecat · © 2026 hu-qi-jia</sub></p>

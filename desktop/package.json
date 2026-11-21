@@ -3,6 +3,7 @@
   "productName": "FUCKINTERVIEW",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "description": "FUCKINTERVIEW 桌面端：Electron 外壳 + 本地 Python 服务",
   "author": "hu-qi-jia",
   "main": "electron/main.js",

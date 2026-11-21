@@ -15,7 +15,7 @@ import {
   MicOffIcon,
   Volume2Icon,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -291,7 +291,6 @@ export function UserAudioControlView({
   const hasMics = !noMicrophones && (mics?.length ?? 0) > 0;
   const hasSpeakers = !noSpeakers && (speakers?.length ?? 0) > 0;
   const noDropdown = noDevicePicker || (noMicrophones && noSpeakers);
-  const showModeSwitch = !noModeSwitch && !!onModeChange;
 
   const isPtt = mode === "push-to-talk";
   const pttActive = isPtt && !isLoading && !unavailableText;
@@ -508,37 +507,7 @@ export function UserAudioControlView({
                 </DropdownMenuLabel>
               </DropdownMenuGroup>
             )}
-            {showModeSwitch && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
-                  {/* Enabling push-to-talk closes the menu and moves focus
-                      to the talk button — otherwise focus returns to the
-                      dropdown trigger, where Space reopens the menu instead
-                      of talking. Disabling keeps the menu open. */}
-                  <DropdownMenuItem
-                    closeOnClick={!isPtt}
-                    onClick={() => {
-                      const next = isPtt ? "toggle" : "push-to-talk";
-                      onModeChange?.(next);
-                      if (next === "push-to-talk") {
-                        requestAnimationFrame(() => toggleRef.current?.focus());
-                      }
-                    }}
-                  >
-                    {t("audio.pushToTalk")}
-                    {/* Inert visual — the menu item handles the toggle. */}
-                    <Switch
-                      checked={isPtt}
-                      tabIndex={-1}
-                      className="pointer-events-none ml-auto"
-                    />
-                  </DropdownMenuItem>
-                  {micSwitchItem}
-                </DropdownMenuGroup>
-              </>
-            )}
-            {!showModeSwitch && micSwitchItem && (
+            {micSwitchItem && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>{micSwitchItem}</DropdownMenuGroup>
@@ -747,19 +716,22 @@ export interface UserAudioControlProps extends Omit<
   | "audioTrack"
   | "isLoading"
   | "unavailableText"
+  | "mode"
+  | "onModeChange"
 > {
   /** Replaces the automatically derived device-error message. */
   unavailableText?: React.ReactNode;
-  /** Initial mode when `mode` is left uncontrolled (default "toggle"). */
-  defaultMode?: "toggle" | "push-to-talk";
 }
 
-/** Requires PipecatClientProvider. Manages device state, selection, and toggle or push-to-talk interaction. */
+/**
+ * Requires PipecatClientProvider. Manages device state, selection, and the
+ * mute toggle.
+ *
+ * 「按住说话」那套已经从界面上拿掉了——它要靠一个没写在界面上的按键，
+ * 谁也不知道按什么，开关留着只会让人点进死胡同。麦克风固定按开关走。
+ */
 export function UserAudioControl({
   unavailableText,
-  mode: controlledMode,
-  defaultMode = "toggle",
-  onModeChange,
   ...props
 }: UserAudioControlProps) {
   // 走 provider 的 enableMic，而不是 client.enableMic：前者会同步更新
@@ -777,16 +749,6 @@ export function UserAudioControl({
   } = usePipecatDevices("audiooutput");
   const audioTrack = usePipecatClientMediaTrack("audio", "local");
 
-  const [uncontrolledMode, setUncontrolledMode] = useState(defaultMode);
-  const mode = controlledMode ?? uncontrolledMode;
-  const handleModeChange = useCallback(
-    (next: "toggle" | "push-to-talk") => {
-      setUncontrolledMode(next);
-      onModeChange?.(next);
-    },
-    [onModeChange],
-  );
-
   // "uninitialized" is deliberately not treated as loading: it also covers
   // post-init setups where the transport didn't acquire the mic. In those
   // cases nothing is in flight, so the control just renders muted.
@@ -802,8 +764,6 @@ export function UserAudioControl({
           isMicEnabled={isMicEnabled}
           onToggleMic={onClick}
           onMicEnabledChange={enableMic}
-          mode={mode}
-          onModeChange={handleModeChange}
           isLoading={isLoading}
           unavailableText={unavailableText ?? derivedUnavailable}
           mics={mics}
