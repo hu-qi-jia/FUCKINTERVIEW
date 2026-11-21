@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Wordmark } from "@/components/home/wordmark";
 import { Button } from "@/components/ui/button";
 import type { SessionStatsSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
@@ -36,9 +35,8 @@ function StatBlock({
 }
 
 /**
- * 首页第一行：左边是字标主视觉 + 开始面试，右边是统计数字。
- * 左边自上而下是字标、一句轮播的祝福语、主操作；字标和按钮共用 64% 的宽度，
- * 中间那行字只占句子的长度，靠留白跟它们分开。
+ * 首页第一行：左边是轮播的祝福语 + 开始面试，右边是统计数字。
+ * 应用标识在左上角侧栏，这里不再重复，主视觉只留一句话和一个动作。
  * 右侧不套卡片，直接落在页面底色上，只留数字本身；
  * 统计块与左侧整块垂直居中。
  */
@@ -87,30 +85,24 @@ export function StartPanel({
       )}
     >
       <div className="flex min-w-0 flex-col gap-3 px-1 py-2 lg:col-span-3">
-        {/* 字标和它下面那行字贴成一组（8px），跟主操作之间才拉开。
-            字标与主操作同宽（64%，最宽 380），这一栏的两个重物共用一个尺度。 */}
-        <div className="flex min-w-0 flex-col gap-2">
-          <Wordmark className="w-[64%] max-w-[380px]" />
-
-          {/* 一句一句轮着来的祝福语。换句时旧的淡出、新的淡入并抬起一点，
-              两层叠着过渡；高度由新的一行撑住，不会跳版。 */}
-          <div className="relative min-h-[1.4em]">
-            {carousel.previous !== null && (
-              <p
-                key={`out-${carousel.index}`}
-                aria-hidden
-                className="absolute inset-x-0 top-0 text-[24px] leading-snug font-medium animate-out fade-out fill-mode-forwards duration-500 motion-reduce:hidden"
-              >
-                {outgoing}
-              </p>
-            )}
+        {/* 一句一句轮着来的祝福语。换句时旧的淡出、新的淡入并抬起一点，
+            两层叠着过渡；高度由新的一行撑住，不会跳版。 */}
+        <div className="relative min-h-[1.4em]">
+          {carousel.previous !== null && (
             <p
-              key={carousel.index}
-              className="text-[24px] leading-snug font-medium animate-in fade-in slide-in-from-bottom-1 fill-mode-both duration-500 motion-reduce:animate-none"
+              key={`out-${carousel.index}`}
+              aria-hidden
+              className="absolute inset-x-0 top-0 text-[24px] leading-snug font-medium animate-out fade-out fill-mode-forwards duration-500 motion-reduce:hidden"
             >
-              {cheer}
+              {outgoing}
             </p>
-          </div>
+          )}
+          <p
+            key={carousel.index}
+            className="text-[24px] leading-snug font-medium animate-in fade-in slide-in-from-bottom-1 fill-mode-both duration-500 motion-reduce:animate-none"
+          >
+            {cheer}
+          </p>
         </div>
 
         {/* 主操作：黑（深色主题白），跟其他按钮同一个色系，只是放到主视觉的尺寸。

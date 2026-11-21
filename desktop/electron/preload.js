@@ -31,4 +31,14 @@ contextBridge.exposeInMainWorld("desktop", {
     pickImage: () => ipcRenderer.invoke("app-icon:pick-image"),
     relaunch: () => ipcRenderer.invoke("app-icon:relaunch"),
   },
+  float: {
+    open: () => ipcRenderer.send("float:open"),
+    back: () => ipcRenderer.send("float:back"),
+    end: () => ipcRenderer.send("float:end"),
+    onCommand: (listener) => {
+      const handler = (_event, action) => listener(String(action));
+      ipcRenderer.on("float:command", handler);
+      return () => ipcRenderer.removeListener("float:command", handler);
+    },
+  },
 });

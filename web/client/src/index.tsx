@@ -19,6 +19,7 @@ import { HistoryPage } from "@/components/history/history-page";
 import { HomePage } from "@/components/home/home-page";
 import type { MaterialsSegment } from "@/components/home/interview-prep-card";
 import { DocumentsPage } from "@/components/documents/documents-page";
+import { FloatWindow } from "@/components/float/float-window";
 import { InterviewTimer } from "@/components/interview-timer";
 import { MaterialsPage } from "@/components/materials/materials-page";
 import { Console } from "@/components/pipecat/console/console";
@@ -235,6 +236,24 @@ function Home() {
     if (next === "materials") setMaterialsProfileFocus(null);
     navigate(next);
   };
+
+  /**
+   * 悬浮窗：把回答拎到置顶小窗，主窗口同时藏起来。
+   * 只有桌面端有这个能力，浏览器版不显示那个按钮。
+   */
+  const openFloatWindow = useCallback(() => {
+    window.desktop?.float?.open();
+  }, []);
+
+  // 悬浮窗里点「结束面试」，主进程把主窗口叫回来并把动作转过来。
+  // 这里走离开面试页那条路收尾：记一笔会话、两条连接随页面卸载断掉。
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  useEffect(() => {
+    return window.desktop?.float?.onCommand?.((action) => {
+      if (action === "end") navigateRef.current("home");
+    });
+  }, []);
 
   /**
    * 面试页点「断开」并真的断开后回首页。
@@ -530,6 +549,7 @@ function Home() {
                   disconnectSignal={live.disconnectSignal}
                   autoConnectSignal={autoStartToken}
                   onEnd={() => void markSessionEnded(interviewId)}
+                  onOpenFloat={window.desktop?.float ? openFloatWindow : undefined}
                   onDisconnected={handleInterviewDisconnected}
                   onConnectError={() => {
                     // 首次连接失败也要结束这次尝试：解锁导航，并停掉已经
@@ -620,8 +640,13 @@ function Home() {
 // 必须在任何接口请求之前包好 fetch。
 installApiToken();
 
+/** 悬浮窗那一路：`/client/?window=float`，只画回答和右上角两个动作。 */
+function isFloatWindow(): boolean {
+  return (
+    new URLSearchParams(window.location.search).get("window") === "float"
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <Home />
-  </StrictMode>
+  <StrictMode>{isFloatWindow() ? <FloatWindow /> : <Home />}</StrictMode>
 );

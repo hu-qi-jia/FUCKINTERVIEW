@@ -41,6 +41,18 @@ declare global {
          */
         relaunch: () => Promise<boolean>;
       };
+      /**
+       * 悬浮窗：面试中弹出的置顶小窗，只显示回答。
+       * 打开时主窗口隐藏（面试照跑）；回主窗口时把窗口叫回来。
+       * 「结束面试」由主进程转回主窗口，走正常收尾。
+       */
+      float?: {
+        open: () => void;
+        back: () => void;
+        end: () => void;
+        /** 悬浮窗发来的动作，目前只有 "end"。返回退订函数。 */
+        onCommand: (listener: (action: string) => void) => () => void;
+      };
     };
   }
 }

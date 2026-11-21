@@ -14,17 +14,14 @@ import {
   Conversation,
   type ConversationProps,
 } from "@/components/pipecat/conversation";
+import {
+  onAnswersRequested,
+  publishAnswers,
+  type AnswerTurn,
+} from "@/lib/answer-bus";
 
 /** The bot's own turns only; that is the answer being read out. */
 const ANSWER_ROLES: ConversationMessage["role"][] = ["assistant"];
-
-/** 一轮回答：从 bot-llm-started 到 bot-llm-stopped。 */
-interface AnswerTurn {
-  id: string;
-  text: string;
-  createdAt: string;
-  final: boolean;
-}
 
 export interface ConsoleAnswerPanelProps {
   /** Overrides merged onto the Conversation (labels, renderers, …). */
@@ -94,6 +91,17 @@ export function ConsoleAnswerPanel({
             { ...previous[previous.length - 1], final: true },
           ]
     )
+  );
+
+  // 悬浮窗只看不连：列表变一次广播一次，它刚开窗时再来要一份补上。
+  const turnsRef = React.useRef(turns);
+  turnsRef.current = turns;
+  React.useEffect(() => {
+    publishAnswers(turns);
+  }, [turns]);
+  React.useEffect(
+    () => onAnswersRequested(() => publishAnswers(turnsRef.current)),
+    [],
   );
 
   const messages = React.useMemo<ConversationMessage[]>(

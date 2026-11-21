@@ -29,14 +29,12 @@ const zh = {
   home: {
     title: "控制台",
     startButton: "开始面试",
-    // 开始面试前那句话，一句一句轮着来。短句，语气稳，别喊口号，末尾不带句号。
+    // 开始面试前那句话，一句一句轮着来。短句，语气稳，末尾不带句号。
     cheers: [
-      "别紧张，稳稳拿下",
-      "从容一点，你接得住",
-      "深呼吸，然后开口",
-      "该会的，你都会了",
-      "不必完美，讲清楚就好",
-      "把准备过的，都讲出来",
+      "操翻所有面试官",
+      "AI面试也是AI提效能力的体现",
+      "祝你拿下大结果",
+      "你的面试官其实也在用FUCKINTERVIEW",
     ],
     loadFailed: "看板加载失败：{{message}}",
     heatmap: {
@@ -116,6 +114,11 @@ const zh = {
       mic: "麦克风",
       speaker: "扬声器",
     },
+  },
+  // 悬浮窗：面试中弹出的置顶小窗，右上角是「返回主窗口」和「结束面试」。
+  float: {
+    open: "悬浮窗",
+    back: "返回主窗口",
   },
   history: {
     title: "历史记录",
@@ -854,12 +857,10 @@ const en = {
     title: "Dashboard",
     startButton: "Start interview",
     cheers: [
-      "Take it easy, you've got this",
-      "Stay calm, you can handle it",
-      "Breathe, then speak",
-      "You know what you know",
-      "Clear beats perfect",
-      "Say what you prepared for",
+      "Crush every interviewer",
+      "Using AI in the interview is an AI skill too",
+      "Wishing you a big win",
+      "Your interviewer uses FUCKINTERVIEW too",
     ],
     loadFailed: "Could not load the dashboard: {{message}}",
     heatmap: {
@@ -940,6 +941,10 @@ const en = {
       mic: "Microphone",
       speaker: "Speaker",
     },
+  },
+  float: {
+    open: "Float",
+    back: "Back to window",
   },
   history: {
     title: "History",

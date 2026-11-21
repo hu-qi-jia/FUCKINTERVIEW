@@ -19,6 +19,7 @@ const {
   dialog,
   desktopCapturer,
   ipcMain,
+  screen,
   session,
   shell,
 } = require("electron");
@@ -142,6 +143,7 @@ const LOADING_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`<!docty
 <body><div class="wrap"><div class="ring"></div><p>正在启动本地服务…</p></div></body></html>`)}`;
 
 let mainWindow = null;
+let floatWindow = null;
 let tray = null;
 let backend = null;
 let quitting = false; // 用户真的要退出（托盘菜单 / Ctrl+Q）
@@ -181,6 +183,9 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // 悬浮窗开着的时候主窗口是隐藏的；隐藏的页面会被 Chromium 限流，
+      // 回答广播和两条连接就都跟不上了，所以这里关掉限流。
+      backgroundThrottling: false,
     },
   });
 
@@ -234,6 +239,94 @@ function showMainWindow() {
   mainWindow.focus();
 }
 
+/** 悬浮窗被自己关掉时用来把主窗口叫回来；主窗口没了就什么都不做。 */
+function restoreMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  showMainWindow();
+}
+
+/**
+ * 悬浮窗：面试中弹出的置顶小窗，只显示回答（见 web/client 的 FloatWindow）。
+ *
+ * 无边框 + 透明：圆角和阴影都由页面画，所以窗口本身不带背景色，
+ * 四周留一圈透明边让圆角看得见。打开时把主窗口藏起来——面试照跑
+ * （页面只是不可见，两条连接一动不动），回主窗口时再叫回来。
+ */
+function createFloatWindow() {
+  if (floatWindow && !floatWindow.isDestroyed()) {
+    if (floatWindow.isMinimized()) floatWindow.restore();
+    floatWindow.show();
+    floatWindow.focus();
+    return floatWindow;
+  }
+
+  const { workArea } = screen.getPrimaryDisplay();
+  const width = 460;
+  const height = 680;
+  const window = new BrowserWindow({
+    width,
+    height,
+    // 默认贴右上角：它是给人「瞟一眼」的，别挡着屏幕中间。
+    x: workArea.x + workArea.width - width - 24,
+    y: workArea.y + 24,
+    minWidth: 320,
+    minHeight: 260,
+    title: APP_TITLE,
+    icon: appIcon.windowImage(),
+    show: false,
+    frame: false,
+    transparent: true,
+    // 系统阴影是方的，会从圆角外圈出来；阴影交给页面按圆角画。
+    hasShadow: false,
+    resizable: true,
+    minimizable: true,
+    maximizable: false,
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: PRELOAD_PATH,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+
+  floatWindow = window;
+  window.once("ready-to-show", () => window.show());
+  applyContentProtection(window);
+  window.on("page-title-updated", (event) => {
+    event.preventDefault();
+    window.setTitle(APP_TITLE);
+  });
+  window.on("closed", () => {
+    if (floatWindow === window) floatWindow = null;
+    // 自己被关掉（Alt+F4 / 任务栏）时主窗口还藏着，得叫回来，
+    // 不然屏幕上什么都没有，只剩托盘。
+    if (!quitting) restoreMainWindow();
+  });
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAppUrl(url)) return { action: "allow" };
+    openExternalSafely(url);
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isAppUrl(url)) return;
+    event.preventDefault();
+    openExternalSafely(url);
+  });
+
+  void window.loadURL(new URL("/client/?window=float", backend.url).href);
+  return window;
+}
+
+function closeFloatWindow() {
+  const window = floatWindow;
+  floatWindow = null;
+  if (window && !window.isDestroyed()) window.close();
+}
+
 function quitApp() {
   quitting = true;
   app.quit();
@@ -260,6 +353,11 @@ function isMainSender(event) {
   return Boolean(mainWindow && event.sender === mainWindow.webContents);
 }
 
+/** 悬浮窗自己的请求（返回主窗口 / 结束面试）走这条验。 */
+function isFloatSender(event) {
+  return Boolean(floatWindow && event.sender === floatWindow.webContents);
+}
+
 function installWindowIpc() {
   const windowOf = (event) => BrowserWindow.fromWebContents(event.sender);
 
@@ -280,8 +378,31 @@ function installWindowIpc() {
     if (!isMainSender(event)) return contentProtection;
     contentProtection = Boolean(enabled);
     savePrivacySettings();
-    applyContentProtection(mainWindow);
+    applyAllContentProtection();
     return contentProtection;
+  });
+
+  // ---- 悬浮窗 ----
+  // 打开：主窗口藏起来，回答在小窗里继续出。
+  ipcMain.on("float:open", (event) => {
+    if (!isMainSender(event)) return;
+    createFloatWindow();
+    mainWindow?.hide();
+  });
+  // 回主窗口：面试照常进行，只是把主窗口叫回来。
+  ipcMain.on("float:back", (event) => {
+    if (!isFloatSender(event)) return;
+    restoreMainWindow();
+    closeFloatWindow();
+  });
+  // 结束面试：把动作转回主窗口走正常收尾（记会话、回首页），再收摊。
+  ipcMain.on("float:end", (event) => {
+    if (!isFloatSender(event)) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("float:command", "end");
+    }
+    restoreMainWindow();
+    closeFloatWindow();
   });
 
   // ---- 应用图标：预设切换 + 上传图片 ----
@@ -468,6 +589,12 @@ function applyContentProtection(window) {
   } catch (error) {
     console.error("[privacy] 应用防截屏设置失败", error);
   }
+}
+
+/** 主窗口和悬浮窗都跟着设置走；新窗口自己开出来时也会单独套一次。 */
+function applyAllContentProtection() {
+  applyContentProtection(mainWindow);
+  applyContentProtection(floatWindow);
 }
 
 function openLog() {

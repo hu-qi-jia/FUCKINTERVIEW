@@ -1,13 +1,19 @@
 "use client";
 
 import { usePipecatClientTransportState } from "@pipecat-ai/client-react";
-import { Loader2Icon, PhoneOffIcon, RefreshCwIcon } from "lucide-react";
+import {
+  AppWindowIcon,
+  Loader2Icon,
+  PhoneOffIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 
 // 和 connect-button.tsx 里「结束」动作同一套配色，两处观感保持一致。
-const END_CLASSES =
+// 悬浮窗里的「结束面试」也用它。
+export const END_CLASSES =
   "border-inactive/30 bg-inactive/10 text-inactive hover:bg-inactive/20 hover:text-inactive dark:bg-inactive/20";
 
 /**
@@ -26,6 +32,7 @@ export function InterviewControls({
   onConnect,
   onCancel,
   onDisconnect,
+  onOpenFloat,
 }: {
   /** 还在取系统音频（系统选择框可能开着）。 */
   isPreparing: boolean;
@@ -34,6 +41,8 @@ export function InterviewControls({
   onConnect: () => void;
   onCancel: () => void;
   onDisconnect: () => void;
+  /** 弹出悬浮窗。桌面端才给；不给就不显示这个按钮。 */
+  onOpenFloat?: () => void;
 }) {
   const { t } = useTranslation();
   const transportState = usePipecatClientTransportState();
@@ -69,6 +78,13 @@ export function InterviewControls({
           <span className="text-muted-foreground hidden text-xs md:inline">
             {t("connect.starting")}
           </span>
+        )}
+        {/* 悬浮窗：把回答拎到置顶小窗里，主窗口同时收起来。排在「结束面试」左边。 */}
+        {onOpenFloat && (
+          <Button size="sm" variant="outline" onClick={onOpenFloat}>
+            <AppWindowIcon />
+            {t("float.open")}
+          </Button>
         )}
         <Button size="sm" variant="outline" className={END_CLASSES} onClick={onDisconnect}>
           <PhoneOffIcon />

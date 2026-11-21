@@ -192,6 +192,8 @@ export interface ConsoleProps {
   autoConnectSignal?: number;
   /** 用户主动结束会话时调用（点断开、停止共享系统音频）。 */
   onEnd?: () => void;
+  /** 弹出悬浮窗（桌面端）。不给就不显示那个按钮。 */
+  onOpenFloat?: () => void;
 
   // -- Bootstrap (forwarded to usePipecatApp) --------------------------------
   /** Transport backing the client (default "smallwebrtc"). Match it to transportFactory; codec and ICE handling depend on it. */
@@ -398,6 +400,7 @@ function ConsoleShell({
   disconnectSignal,
   autoConnectSignal,
   onEnd,
+  onOpenFloat,
   transportOptions,
   connectParams,
   startBotParams,
@@ -709,6 +712,7 @@ function ConsoleShell({
       onConnect={() => void handleConnect()}
       onCancel={handleCancel}
       onDisconnect={handleDisconnect}
+      onOpenFloat={onOpenFloat}
     />
   ) : (
     <ConnectButton size="sm" onConnect={handleConnect} onDisconnect={handleDisconnect} />
