@@ -198,6 +198,8 @@ function Home() {
       document.documentElement.classList.toggle("dark", resolveDark(theme));
     };
     apply();
+    // 主题落盘给主进程：下次启动的启动页在界面出来之前就要按它配色。
+    window.desktop?.appearance?.setTheme(theme);
     if (theme !== "system") return;
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);

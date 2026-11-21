@@ -37,8 +37,10 @@ export function FloatWindow() {
   }, []);
 
   // 亮暗跟随主窗口：读的是同一份 localStorage，主窗口换了这里跟着换。
+  // 顺手给 html 挂个标记，让页面别自己铺底色（见 index.css）。
   React.useEffect(() => {
     document.documentElement.lang = i18n.language;
+    document.documentElement.classList.add("float-window");
     const apply = () => {
       document.documentElement.classList.toggle("dark", resolveDark(readTheme()));
     };
@@ -47,6 +49,7 @@ export function FloatWindow() {
     media.addEventListener("change", apply);
     window.addEventListener("storage", apply);
     return () => {
+      document.documentElement.classList.remove("float-window");
       media.removeEventListener("change", apply);
       window.removeEventListener("storage", apply);
     };

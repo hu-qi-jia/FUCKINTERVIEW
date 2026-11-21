@@ -53,6 +53,13 @@ declare global {
         /** 悬浮窗发来的动作，目前只有 "end"。返回退订函数。 */
         onCommand: (listener: (action: string) => void) => () => void;
       };
+      /**
+       * 外观：把主题写盘。启动页在界面出来之前就得配好色，
+       * 而主题存在 localStorage 里，主进程读不到。
+       */
+      appearance?: {
+        setTheme: (theme: string) => void;
+      };
     };
   }
 }

@@ -7,6 +7,7 @@ import {
   PhoneOffIcon,
   RefreshCwIcon,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,14 @@ export function InterviewControls({
     transportState === "authenticating" ||
     transportState === "authenticated" ||
     transportState === "connecting";
-  const ending = transportState === "disconnecting";
+  // 连上过就记一笔：这一场只要真的连上过，之后无论怎么掉（点结束、
+  // 外部停止共享、网络断）都算结束，别再闪一下「重试」——页面马上回首页，
+  // 「重试」只留给压根没连上的失败。
+  const [linked, setLinked] = useState(false);
+  useEffect(() => {
+    if (connected) setLinked(true);
+  }, [connected]);
+  const ending = transportState === "disconnecting" || linked;
 
   if (connecting) {
     return (

@@ -19,6 +19,7 @@ const {
   dialog,
   desktopCapturer,
   ipcMain,
+  nativeTheme,
   screen,
   session,
   shell,
@@ -120,27 +121,126 @@ const ALLOWED_PERMISSIONS = new Set([
   "fullscreen",
 ]);
 
-const LOADING_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+/**
+ * 启动页：本地服务还没起来时先给一屏。
+ *
+ * 跟着亮暗设置走——渲染进程把主题写进 userData 的 appearance.json
+ * （改主题和每次启动都写一份），没写过就退回系统主题。
+ * 中间是当前应用图标，慢慢淡进去；服务就绪后整屏淡出再换成正式界面。
+ */
+let appearanceTheme = "system";
+
+function appearancePath() {
+  return path.join(app.getPath("userData"), "appearance.json");
+}
+
+function loadAppearance() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(appearancePath(), "utf8"));
+    appearanceTheme =
+      parsed?.theme === "light" || parsed?.theme === "dark"
+        ? parsed.theme
+        : "system";
+  } catch {
+    appearanceTheme = "system";
+  }
+}
+
+function saveAppearance() {
+  try {
+    const file = appearancePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ theme: appearanceTheme }, null, 2),
+      "utf8"
+    );
+  } catch (error) {
+    console.error("[appearance] 保存主题设置失败", error);
+  }
+}
+
+function splashPrefersDark() {
+  if (appearanceTheme === "dark") return true;
+  if (appearanceTheme === "light") return false;
+  return nativeTheme.shouldUseDarkColors;
+}
+
+/** 启动页上那枚图标：按当前（含自定义）图标缩到 128，别把原图塞进 HTML。 */
+function splashIconDataUrl() {
+  try {
+    const image = appIcon.windowImage();
+    const { width, height } = image.getSize();
+    const longest = Math.max(width, height);
+    const scaled =
+      longest > 128
+        ? image.resize(
+            width >= height
+              ? { width: 128, quality: "good" }
+              : { height: 128, quality: "good" }
+          )
+        : image;
+    return scaled.toDataURL();
+  } catch {
+    return null;
+  }
+}
+
+function buildLoadingPage() {
+  const dark = splashPrefersDark();
+  const bg = dark ? "oklch(0.145 0 0)" : "oklch(1 0 0)";
+  const ink = dark ? "oklch(0.985 0 0)" : "oklch(0.145 0 0)";
+  const dim = dark ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)";
+  const icon = splashIconDataUrl();
+  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
 <style>
-  :root { color-scheme: dark; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex; align-items: center; justify-content: center;
-    background: #0a0a0a; color: #e5e5e5;
+    background: ${bg}; color: ${dim};
     font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif;
+    transition: opacity .26s ease;
     -webkit-app-region: drag;
   }
+  body.fade-out { opacity: 0; }
   .wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; }
-  .ring {
-    width: 26px; height: 26px; border-radius: 50%;
-    border: 2px solid #2a2a2a; border-top-color: #4ade80;
-    animation: spin .9s linear infinite;
+  .mark {
+    width: 92px; height: 92px; border-radius: 22px;
+    animation: rise 1s cubic-bezier(.22, 1, .36, 1) both;
   }
+  p {
+    margin: 0; color: ${ink}; opacity: .78;
+    animation: rise 1.1s cubic-bezier(.22, 1, .36, 1) both;
+  }
+  .ring {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid ${dim}; border-top-color: transparent;
+    animation: spin .9s linear infinite, show 1s .45s ease both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { transform: none; } }
+  @keyframes show { from { opacity: 0; } to { opacity: .45; } }
   @keyframes spin { to { transform: rotate(360deg); } }
-  p { margin: 0; opacity: .75; }
 </style></head>
-<body><div class="wrap"><div class="ring"></div><p>正在启动本地服务…</p></div></body></html>`)}`;
+<body><div class="wrap">
+  ${icon ? `<img class="mark" src="${icon}" alt="" />` : ""}
+  <p>正在启动本地服务…</p>
+  <div class="ring"></div>
+</div></body></html>`)}`;
+}
+
+// 启动页在进程起来时拼一次：它同时也是 URL 策略放行的那张页。
+// 这里要是抛了，应用连窗口都开不出来，所以兜一张纯色页。
+loadAppearance();
+let loadingPage;
+try {
+  loadingPage = buildLoadingPage();
+} catch (error) {
+  console.error("[app] 启动页生成失败", error);
+  loadingPage = `data:text/html;charset=utf-8,${encodeURIComponent(
+    "<!doctype html><meta charset='utf-8'><body style='margin:0;height:100%;background:#0a0a0a'></body>"
+  )}`;
+}
 
 let mainWindow = null;
 let floatWindow = null;
@@ -149,7 +249,7 @@ let backend = null;
 let quitting = false; // 用户真的要退出（托盘菜单 / Ctrl+Q）
 let cleanedUp = false; // 后端已经收干净，可以放行退出
 // 本地服务的精确 Origin（端口是动态的），后端就绪后设置。
-const urlPolicy = createUrlPolicy(LOADING_PAGE);
+const urlPolicy = createUrlPolicy(loadingPage);
 
 function isAppUrl(url) {
   return urlPolicy.isAppUrl(url);
@@ -225,7 +325,7 @@ function createWindow() {
     openExternalSafely(url);
   });
 
-  void window.loadURL(LOADING_PAGE);
+  void window.loadURL(loadingPage);
   return window;
 }
 
@@ -373,13 +473,20 @@ function installWindowIpc() {
     "window:is-maximized",
     (event) => windowOf(event)?.isMaximized() ?? false
   );
-  ipcMain.handle("privacy:get-content-protection", () => contentProtection);
-  ipcMain.handle("privacy:set-content-protection", (event, enabled) => {
+  ipcMain.handle("privacy:get-content-protection", () => contentProtection);  ipcMain.handle("privacy:set-content-protection", (event, enabled) => {
     if (!isMainSender(event)) return contentProtection;
     contentProtection = Boolean(enabled);
     savePrivacySettings();
     applyAllContentProtection();
     return contentProtection;
+  });
+
+  // ---- 外观：主题写盘，下次启动的启动页照它配色 ----
+  ipcMain.on("appearance:set-theme", (event, theme) => {
+    if (!isMainSender(event)) return;
+    appearanceTheme =
+      theme === "light" || theme === "dark" ? theme : "system";
+    saveAppearance();
   });
 
   // ---- 悬浮窗 ----
@@ -641,6 +748,21 @@ function missingFrontend() {
   return true;
 }
 
+/**
+ * 服务就绪后把启动页淡出，再换成正式界面——硬切一刀最难看。
+ * 正式界面自己还有一段淡入（index.css 的 #root），两段接得上。
+ */
+async function enterApp(window) {
+  await window.webContents
+    .executeJavaScript(
+      "document.body && document.body.classList.add('fade-out')"
+    )
+    .catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  if (window.isDestroyed()) return;
+  await window.loadURL(backend.url);
+}
+
 async function boot() {
   if (missingFrontend()) {
     app.quit();
@@ -687,7 +809,7 @@ async function boot() {
   console.log(`[electron] 后端已就绪：${backend.url}`);
   urlPolicy.setAppOrigin(backend.url);
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await mainWindow.loadURL(backend.url);
+    await enterApp(mainWindow);
     if (IS_DEV) mainWindow.webContents.openDevTools({ mode: "detach" });
   }
   // 后端日志跟着窗口关闭一起收尾。

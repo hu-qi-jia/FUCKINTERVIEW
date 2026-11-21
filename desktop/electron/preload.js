@@ -41,4 +41,9 @@ contextBridge.exposeInMainWorld("desktop", {
       return () => ipcRenderer.removeListener("float:command", handler);
     },
   },
+  appearance: {
+    // 主题改了要落盘：下次启动的启动页在界面出来之前就得配好色。
+    setTheme: (theme) =>
+      ipcRenderer.send("appearance:set-theme", String(theme || "system")),
+  },
 });
