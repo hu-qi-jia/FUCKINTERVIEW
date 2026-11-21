@@ -95,6 +95,10 @@ foreach ($root in $roots) {
     }
   }
 }
+# 改完必须叫 shell 重新读一遍关联/图标，否则任务栏按钮仍旧是旧图。
+$sig = '[DllImport("shell32.dll")] public static extern void SHChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);'
+$sh32 = Add-Type -MemberDefinition $sig -Name Shell32 -Namespace Win32 -PassThru
+$sh32::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
 Write-Output $count
 `;
   return new Promise((resolve) => {
@@ -112,8 +116,30 @@ Write-Output $count
           resolve(0);
           return;
         }
-        resolve(Number.parseInt(String(stdout).trim(), 10) || 0);
+        const count = Number.parseInt(String(stdout).trim(), 10) || 0;
+        // 数量记一笔：0 说明压根没固定到任务栏（或固定的那个不是这个 exe），
+        // 这时候任务栏按钮走的是窗体图标，改 .lnk 改不到它。
+        console.log(`[app-icon] 任务栏快捷方式改到 ${count} 个`);
+        resolve(count);
       }
+    );
+  });
+}
+
+/**
+ * 叫 Windows 把图标缓存重读一遍。
+ *
+ * 光改快捷方式不够：任务栏按钮的图标是缓存住的，.lnk 换了它也不动，
+ * 只有缓存失效才会重新取。`ie4uinit -show` 就是干这个的；
+ * 上面的 SHChangeNotify 已经兜了一层，这里再补一记官方入口。
+ */
+function refreshShellIcons() {
+  return new Promise((resolve) => {
+    execFile(
+      "ie4uinit.exe",
+      ["-show"],
+      { windowsHide: true, timeout: 15_000 },
+      () => resolve()
     );
   });
 }
@@ -137,12 +163,15 @@ function pruneOldIcons(keepFile) {
 async function applyTaskbarIcon(image) {
   const exeIcon = `${process.execPath},0`;
   if (!image || image.isEmpty()) {
-    return updateShortcuts(exeIcon);
+    const restored = await updateShortcuts(exeIcon);
+    await refreshShellIcons();
+    return restored;
   }
   const file = path.join(icoDir(), `app-${Date.now().toString(36)}.ico`);
   writeIco(image, file);
   const updated = await updateShortcuts(`${file},0`);
   pruneOldIcons(file);
+  await refreshShellIcons();
   return updated;
 }
 
