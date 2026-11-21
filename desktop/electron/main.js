@@ -348,8 +348,9 @@ function restoreMainWindow() {
 /**
  * 悬浮窗：面试中弹出的置顶小窗，只显示回答（见 web/client 的 FloatWindow）。
  *
- * 无边框 + 透明：圆角和阴影都由页面画，所以窗口本身不带背景色，
- * 四周留一圈透明边让圆角看得见。打开时把主窗口藏起来——面试照跑
+ * 无边框 + 透明：圆角由页面画，所以窗口本身不带背景色，四周留一圈透明边
+ * 让圆角看得见。卡片以外什么都不铺，连阴影都不要——透明窗口上那圈
+ * 半透明的晕看着就像蒙了层纱。打开时把主窗口藏起来——面试照跑
  * （页面只是不可见，两条连接一动不动），回主窗口时再叫回来。
  */
 function createFloatWindow() {
@@ -376,7 +377,7 @@ function createFloatWindow() {
     show: false,
     frame: false,
     transparent: true,
-    // 系统阴影是方的，会从圆角外圈出来；阴影交给页面按圆角画。
+    // 整窗不留阴影：系统阴影是方的、会从圆角外圈出来，页面那边也不画。
     hasShadow: false,
     resizable: true,
     minimizable: true,

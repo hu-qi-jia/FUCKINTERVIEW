@@ -223,9 +223,12 @@ body,
   -webkit-app-region: no-drag;
 }
 
-/* 悬浮窗那一路（/client/?window=float）：窗口本身是透明的，圆角和阴影都由页面画。
-   页面再自己铺一层底色就会盖住透明窗口，圆角外露出一整块，看着像贴了层白框。 */
-html.float-window body {
+/* 悬浮窗那一路（/client/?window=float）：窗口本身是透明的，圆角由页面画。
+   页面不能自己铺底色，否则圆角外露出一整块；透明还得挂在 html 上——
+   只写 body 的话画布还是会垫一层自己的底色。 */
+html.float-window,
+html.float-window body,
+html.float-window #root {
   background: transparent;
 }
 

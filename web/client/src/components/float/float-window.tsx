@@ -23,7 +23,8 @@ import { cn } from "@/lib/utils";
  * 但页面照跑，所以回答一直在更新。
  *
  * 窗口本身在主进程里是无边框透明的（`desktop/electron/main.js`），
- * 这里拿一张圆角卡片把内容包起来，圆角和阴影都由页面画。
+ * 这里拿一张圆角卡片把内容包起来，圆角由页面画；卡片以外什么都不铺，
+ * 阴影也不要——透明窗口上那圈半透明的晕看着就像蒙了层纱。
  */
 export function FloatWindow() {
   const { t, i18n } = useTranslation();
@@ -81,7 +82,6 @@ export function FloatWindow() {
         className={cn(
           "bg-card text-card-foreground ring-foreground/10",
           "flex h-full min-h-0 flex-col overflow-hidden rounded-2xl ring-1",
-          "shadow-[0_24px_60px_-18px_oklch(0_0_0/55%)]",
         )}
       >
         <header className="app-drag flex h-11 shrink-0 items-center gap-2 border-b px-3">
