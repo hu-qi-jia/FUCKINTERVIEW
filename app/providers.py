@@ -10,7 +10,7 @@ from typing import Any
 
 from pipecat.transcriptions.language import Language
 
-from app.config import DEFAULT_SYSTEM_PROMPT
+from app.config import DEFAULT_SYSTEM_PROMPT, active_asr_config
 
 QWEN_LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 MINIMAX_ASR_BASE_URL = "https://api.minimax.cn/v1"
@@ -54,16 +54,31 @@ def _require_key(section: dict[str, Any], label: str, env: str = "") -> str:
 
 
 def build_stt(section: dict[str, Any], session=None):
-    provider = section.get("provider", "qwen")
-    language = section.get("language") or None
-    model = (section.get("model") or "").strip()
-    base_url = (section.get("base_url") or "").strip()
+    provider, config = active_asr_config(section)
+    language = config.get("language") or None
+    model = (config.get("model") or "").strip()
+    base_url = (config.get("base_url") or "").strip()
 
     if provider == "qwen":
+        # 同一个供应商底下有「整段上传」和「音频流式」两类模型，按模型名
+        # 路由，而不是按供应商粗分。只认 qwen3-asr 的实时模型——像
+        # qwen-audio-*-realtime 这类 Omni 模型仍走 chat/completions 的
+        # 整段识别，别被 "realtime" 三个字误判。
+        if model.startswith("qwen3-asr-flash-realtime"):
+            from app.services.qwen_realtime_stt import QwenRealtimeSTTService
+
+            return QwenRealtimeSTTService(
+                api_key=_require_key(config, "ASR (Qwen)", "DASHSCOPE_API_KEY"),
+                base_url=_qwen_realtime_url(base_url),
+                model=model,
+                language=language,
+                aiohttp_session=session,
+            )
+
         from app.services.qwen_stt import QwenSTTService
 
         return QwenSTTService(
-            api_key=_require_key(section, "ASR (Qwen)", "DASHSCOPE_API_KEY"),
+            api_key=_require_key(config, "ASR (Qwen)", "DASHSCOPE_API_KEY"),
             base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
             model=model or "qwen3-asr-flash",
             language=language,
@@ -74,7 +89,7 @@ def build_stt(section: dict[str, Any], session=None):
         from app.services.minimax_stt import MiniMaxSTTService
 
         return MiniMaxSTTService(
-            api_key=_require_key(section, "ASR (MiniMax)", "MINIMAX_API_KEY"),
+            api_key=_require_key(config, "ASR (MiniMax)", "MINIMAX_API_KEY"),
             # 国内平台是 api.minimax.cn；api.minimax.io 是国际站，国内 Key 在那边会 401。
             base_url=base_url or MINIMAX_ASR_BASE_URL,
             model=model or "asr-1.0",
@@ -86,7 +101,7 @@ def build_stt(section: dict[str, Any], session=None):
         from pipecat.services.deepgram.stt import DeepgramSTTService
 
         return DeepgramSTTService(
-            api_key=_require_key(section, "ASR (Deepgram)", "DEEPGRAM_API_KEY"),
+            api_key=_require_key(config, "ASR (Deepgram)", "DEEPGRAM_API_KEY"),
             settings=DeepgramSTTService.Settings(
                 model=model or "nova-3",
                 language=_language(language),
@@ -111,7 +126,7 @@ def build_stt(section: dict[str, Any], session=None):
                     raise RuntimeError(f"{e}（请求 {endpoint}）") from e
 
         return ExplainedOpenAISTTService(
-            api_key=_require_key(section, "ASR (OpenAI)", "OPENAI_API_KEY"),
+            api_key=_require_key(config, "ASR (OpenAI)", "OPENAI_API_KEY"),
             base_url=base_url or None,
             settings=OpenAISTTService.Settings(
                 model=model or "whisper-1",
@@ -120,6 +135,18 @@ def build_stt(section: dict[str, Any], session=None):
         )
 
     raise ValueError(f"不支持的 ASR 供应商: {provider}")
+
+
+def _qwen_realtime_url(base_url: str) -> str:
+    """把设置里的地址归一成 Qwen 实时识别的 WebSocket 端点。
+
+    用户可能还留着文件识别那一栏的 HTTP 地址（设置页正常切换模型时会
+    自动换成 wss），也可能填了带 workspace 的完整地址；这里只处理前一种。
+    """
+    url = (base_url or "").strip()
+    if url.startswith(("ws://", "wss://")):
+        return url
+    return "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 
 
 def build_llm(section: dict[str, Any]):

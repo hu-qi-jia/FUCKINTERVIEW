@@ -556,6 +556,7 @@ const zh = {
     fields: {
       provider: "供应商",
       model: "模型",
+      customModel: "自定义模型",
       asrLanguage: "识别语言",
       language: "语言",
       appLanguage: "界面语言",
@@ -569,6 +570,11 @@ const zh = {
       thinkingEffort: "经历卡生成的思考强度",
       baseUrl: "Base URL",
       apiKey: "API Key",
+    },
+    asrCapability: {
+      input: "音频流式（边说边识别）",
+      output: "结果流式（整段上传）",
+      none: "整段识别",
     },
     thinkingEffort: {
       none: "不思考（最快）",
@@ -1385,6 +1391,7 @@ const en = {
     fields: {
       provider: "Provider",
       model: "Model",
+      customModel: "Custom model",
       asrLanguage: "Language",
       language: "Language",
       appLanguage: "Interface language",
@@ -1398,6 +1405,11 @@ const en = {
       thinkingEffort: "Thinking effort for card generation",
       baseUrl: "Base URL",
       apiKey: "API key",
+    },
+    asrCapability: {
+      input: "Audio streaming",
+      output: "Streaming results",
+      none: "Full segment",
     },
     thinkingEffort: {
       none: "No thinking (fastest)",

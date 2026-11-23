@@ -47,16 +47,119 @@ DEFAULT_SYSTEM_PROMPT = (
 # 提示词按场景内置（模拟面试 / 实时面试 / 面试材料各用各的），不再写进配置文件，
 # 设置页也就不再暴露 system_prompt 这一项。
 
+# ASR 的配置按供应商分开存：每家要填的字段不一样，切换供应商也不该把
+# 另一家的 Key、模型和地址冲掉。顶层 provider 只表示「当前用哪家」。
+ASR_PROVIDERS = ("qwen", "minimax", "deepgram", "openai")
+ASR_CONFIG_FIELDS = ("api_key", "base_url", "model", "language")
+
+# 请求地址是用户最容易填错的一项（官方文档里往往有好几个域名），
+# 所以内置默认值，设置页选中供应商/模型时直接带出来，仍可手改。
+ASR_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+    "qwen": {
+        "api_key": "",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen3-asr-flash",
+        "language": "zh",
+    },
+    "minimax": {
+        "api_key": "",
+        "base_url": "https://api.minimax.cn/v1",
+        "model": "asr-1.0",
+        "language": "zh",
+    },
+    "deepgram": {
+        "api_key": "",
+        "base_url": "",
+        "model": "nova-3",
+        "language": "zh",
+    },
+    "openai": {
+        "api_key": "",
+        "base_url": "https://api.openai.com/v1",
+        "model": "whisper-1",
+        "language": "zh",
+    },
+}
+
+
+def _asr_defaults() -> dict[str, dict[str, str]]:
+    return {name: dict(values) for name, values in ASR_PROVIDER_DEFAULTS.items()}
+
+
+def normalize_asr(section: Any) -> dict[str, Any]:
+    """把 ASR 配置统一成 ``{provider, configs: {供应商: {字段}}}``。
+
+    兼容旧版的平铺结构（provider/api_key/base_url/model/language）：读到时
+    把平铺字段搬到当前供应商那一份里，Key 不会丢。缺的字段用内置默认值补，
+    这样设置页切到任何一家都有地址可显示。
+    """
+    raw = section if isinstance(section, dict) else {}
+    provider = str(raw.get("provider") or "qwen").strip()
+    if provider not in ASR_PROVIDERS:
+        provider = "qwen"
+
+    configs = _asr_defaults()
+    incoming = raw.get("configs")
+    if isinstance(incoming, dict):
+        for name in ASR_PROVIDERS:
+            values = incoming.get(name)
+            if not isinstance(values, dict):
+                continue
+            for field in ASR_CONFIG_FIELDS:
+                if field in values and values[field] is not None:
+                    configs[name][field] = str(values[field])
+    else:
+        # 旧版平铺结构：只覆盖当前供应商，其余保持默认。
+        for field in ASR_CONFIG_FIELDS:
+            if field in raw and raw[field] is not None:
+                configs[provider][field] = str(raw[field])
+
+    return {"provider": provider, "configs": configs}
+
+
+def active_asr_config(section: Any) -> tuple[str, dict[str, str]]:
+    """当前供应商 + 它自己的那份配置。"""
+    normalized = normalize_asr(section)
+    provider = normalized["provider"]
+    return provider, normalized["configs"][provider]
+
+
+def merge_asr_settings(current: Any, incoming: Any) -> dict[str, Any]:
+    """保存时按供应商合并：只改提交了的那几家，没提交的原样保留。"""
+    base = normalize_asr(current)
+    if not isinstance(incoming, dict):
+        return base
+
+    provider = str(incoming.get("provider") or base["provider"]).strip()
+    if provider not in ASR_PROVIDERS:
+        provider = base["provider"]
+    configs = {name: dict(values) for name, values in base["configs"].items()}
+
+    submitted = incoming.get("configs")
+    if isinstance(submitted, dict):
+        for name in ASR_PROVIDERS:
+            values = submitted.get(name)
+            if not isinstance(values, dict):
+                continue
+            for field in ASR_CONFIG_FIELDS:
+                if field in values:
+                    configs[name][field] = str(values[field] or "")
+    else:
+        # 旧版前端只提交平铺字段：落到当前供应商上。
+        for field in ASR_CONFIG_FIELDS:
+            if field in incoming:
+                configs[provider][field] = str(incoming[field] or "")
+
+    return {"provider": provider, "configs": configs}
+
+
 DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
     # 模型相关的输入框一律不预填：base_url / model / voice 默认留空，
     # 由用户在设置页自己填。真正构建服务时，providers.py 里还有一层兜底默认值，
     # 所以留空也能跑，只是界面上不再替用户做主。
     "asr": {
         "provider": "qwen",
-        "api_key": "",
-        "base_url": "",
-        "model": "",
-        "language": "zh",
+        "configs": _asr_defaults(),
     },
     "llm": {
         "provider": "openai_compatible",
@@ -128,13 +231,25 @@ def load_settings() -> dict[str, Any]:
     """读取配置；文件不存在时返回默认值。"""
     settings = json.loads(json.dumps(DEFAULT_SETTINGS))
     path = config_path()
+    stored: dict[str, Any] = {}
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as f:
-                stored = json.load(f)
-            settings = _merge(settings, stored)
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                stored = loaded
         except (OSError, json.JSONDecodeError):
-            pass
+            stored = {}
+
+    # 旧版 ASR 是平铺的。必须先搬进 configs 再 merge：默认值里已经有
+    # configs，直接 merge 会让旧 Key 被默认空值盖掉，升级后看起来像丢了。
+    stored_asr = stored.get("asr")
+    if isinstance(stored_asr, dict) and "configs" not in stored_asr:
+        stored = {**stored, "asr": normalize_asr(stored_asr)}
+
+    if stored:
+        settings = _merge(settings, stored)
+    settings["asr"] = normalize_asr(settings.get("asr"))
 
     # 老配置文件里可能还留着 system_prompt；提示词改成内置后一律忽略。
     llm = settings.get("llm")
@@ -161,8 +276,17 @@ def save_settings(incoming: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(incoming, dict):
         raise ValueError("配置必须是 JSON 对象")
 
+    current = load_settings()
+    incoming_asr = incoming.get("asr")
+    if incoming_asr is not None and not isinstance(incoming_asr, dict):
+        raise ValueError("asr 必须是对象")
+
     clean: dict[str, Any] = {}
     for section in SECTIONS:
+        if section == "asr":
+            # ASR 按供应商合并，单独处理，不能让通用 merge 用默认值
+            # 覆盖掉没提交的那几家的 Key。
+            continue
         value = incoming.get(section, {})
         if not isinstance(value, dict):
             raise ValueError(f"{section} 必须是对象")
@@ -171,7 +295,8 @@ def save_settings(incoming: dict[str, Any]) -> dict[str, Any]:
     # 提示词由各场景内置，前端即使还带着这个键也不落盘。
     clean.get("llm", {}).pop("system_prompt", None)
 
-    merged = _merge(load_settings(), clean)
+    merged = _merge(current, clean)
+    merged["asr"] = merge_asr_settings(current.get("asr"), incoming_asr)
     _write_settings(merged)
     return merged
 

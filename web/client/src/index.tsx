@@ -40,7 +40,7 @@ import {
   saveDeviceId,
 } from "@/lib/preferences";
 import { markSessionEnded } from "@/lib/sessions";
-import { fetchSettings } from "@/lib/settings";
+import { activeAsrConfig, fetchSettings } from "@/lib/settings";
 import type { TermCorrection } from "@/lib/terms";
 import { readTheme, resolveDark, saveTheme, type ThemeMode } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -159,9 +159,10 @@ function Home() {
     void fetchSettings()
       .then((settings) => {
         if (cancelled) return;
-        const missing = [settings.asr, settings.llm].some(
-          (section) => !String(section?.api_key || "").trim(),
-        );
+        const asrConfig = activeAsrConfig(settings.asr);
+        const missing =
+          !String(asrConfig.api_key || "").trim() ||
+          !String(settings.llm?.api_key || "").trim();
         setNeedsSetup(missing);
       })
       .catch(() => {

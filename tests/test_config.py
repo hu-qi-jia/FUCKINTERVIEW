@@ -66,6 +66,87 @@ def test_dev_environment_does_not_migrate(tmp_path, monkeypatch):
     assert config.migrate_legacy_data() == []
 
 
+def test_legacy_flat_asr_fields_migrate_into_provider_configs(tmp_path, monkeypatch):
+    """旧版把 ASR 五个字段平铺；升级后要搬进当前供应商那一份，Key 不能丢。"""
+    monkeypatch.setenv(config.ENV_DATA_DIR, str(tmp_path))
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "asr": {
+                    "provider": "minimax",
+                    "api_key": "mm-test-key",
+                    "base_url": "https://api.minimax.cn/v1",
+                    "model": "asr-1.0",
+                    "language": "zh",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    saved = config.load_settings()
+
+    assert saved["asr"]["provider"] == "minimax"
+    assert saved["asr"]["configs"]["minimax"]["api_key"] == "mm-test-key"
+    assert saved["asr"]["configs"]["minimax"]["model"] == "asr-1.0"
+    # 其他供应商补内置地址，设置页切过去就有值可显示。
+    assert saved["asr"]["configs"]["qwen"]["base_url"].startswith("https://dashscope")
+
+
+def test_save_asr_keeps_each_provider_config(tmp_path, monkeypatch):
+    """切供应商只改 provider，不能把另一家的 Key / 地址冲掉。"""
+    monkeypatch.setenv(config.ENV_DATA_DIR, str(tmp_path))
+
+    config.save_settings(
+        {
+            "asr": {
+                "provider": "qwen",
+                "configs": {
+                    "qwen": {
+                        "api_key": "qwen-key",
+                        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                        "model": "qwen3-asr-flash",
+                        "language": "zh",
+                    },
+                    "minimax": {
+                        "api_key": "mm-key",
+                        "base_url": "https://api.minimax.cn/v1",
+                        "model": "asr-1.0",
+                        "language": "zh",
+                    },
+                },
+            }
+        }
+    )
+
+    saved = config.save_settings(
+        {
+            "asr": {
+                "provider": "minimax",
+                "configs": {"minimax": {"model": "asr-1.0"}},
+            }
+        }
+    )
+
+    assert saved["asr"]["provider"] == "minimax"
+    assert saved["asr"]["configs"]["qwen"]["api_key"] == "qwen-key"
+    assert saved["asr"]["configs"]["minimax"]["api_key"] == "mm-key"
+    assert saved["asr"]["configs"]["minimax"]["base_url"] == "https://api.minimax.cn/v1"
+
+
+def test_active_asr_config_resolves_current_provider(tmp_path, monkeypatch):
+    monkeypatch.setenv(config.ENV_DATA_DIR, str(tmp_path))
+    provider, values = config.active_asr_config(
+        {
+            "provider": "minimax",
+            "configs": {"minimax": {"api_key": "k", "base_url": "u", "model": "m", "language": "zh"}},
+        }
+    )
+    assert provider == "minimax"
+    assert values["api_key"] == "k"
+    assert values["model"] == "m"
+
+
 def test_userdata_config_is_copied_and_detached_from_dev(tmp_path, monkeypatch):
     """旧版把配置写在 userData/data/config，还把数据目录指到开发仓库。"""
     repo = tmp_path / "repo"

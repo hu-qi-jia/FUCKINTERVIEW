@@ -41,13 +41,19 @@ import { qaStats, reindexQa, type QaStats } from "@/lib/qa";
 import type { ThemeMode } from "@/lib/theme";
 import {
   ASR_PROVIDERS,
+  activeAsrConfig,
+  emptyAsrConfig,
   fetchSettings,
+  findAsrModel,
+  findAsrProvider,
   findProvider,
   LLM_PROVIDERS,
+  QWEN_HTTP_BASE_URL,
+  QWEN_REALTIME_BASE_URL,
   saveSettings,
   THINKING_EFFORTS,
   type AppSettings,
-  type ProviderMeta,
+  type AsrProviderConfig,
   type ThinkingEffort,
 } from "@/lib/settings";
 
@@ -105,7 +111,7 @@ function ProviderSelect({
   value,
   onChange,
 }: {
-  providers: ProviderMeta[];
+  providers: { value: string; labelKey: string }[];
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -365,20 +371,116 @@ export function SettingsDialog({
     setMessage("");
   }, []);
 
-  // 换供应商时把模型相关字段清空：不替用户预填，让他按选中的供应商自己填。
+  /** ASR 的字段写在「当前供应商」那一份里，切换供应商时各留各的。 */
+  const patchAsr = useCallback(
+    (key: keyof AsrProviderConfig, value: string) => {
+      setSettings((current) => {
+        if (!current) return current;
+        const provider = current.asr.provider;
+        const config =
+          current.asr.configs[provider] ?? emptyAsrConfig(provider);
+        return {
+          ...current,
+          asr: {
+            ...current.asr,
+            configs: {
+              ...current.asr.configs,
+              [provider]: { ...config, [key]: value },
+            },
+          },
+        };
+      });
+      setStatus("idle");
+      setMessage("");
+    },
+    [],
+  );
+
+  // 换供应商不再清空输入：每家一份配置，切回去就是上次填的那套。
   const changeAsrProvider = useCallback((provider: string) => {
-    if (!findProvider(ASR_PROVIDERS, provider)) return;
-    setSettings((current) =>
-      current
-        ? {
-            ...current,
-            asr: { ...current.asr, provider, model: "", base_url: "" },
-          }
-        : current
-    );
+    const meta = findAsrProvider(provider);
+    if (!meta) return;
+    setSettings((current) => {
+      if (!current) return current;
+      const existing =
+        current.asr.configs[provider] ?? emptyAsrConfig(provider);
+      return {
+        ...current,
+        asr: {
+          provider,
+          configs: {
+            ...current.asr.configs,
+            [provider]: {
+              ...existing,
+              base_url: existing.base_url || meta.defaultBaseUrl,
+              model: existing.model || meta.models[0]?.id || "",
+            },
+          },
+        },
+      };
+    });
     setStatus("idle");
     setMessage("");
   }, []);
+
+  // 换模型时把请求地址带出来：用户不用去官方文档里找哪个域名才是请求地址。
+  // 只有当前地址为空、或还是某个内置默认地址时才替换，手填的地址不动。
+  const changeAsrModel = useCallback((value: string) => {
+    setSettings((current) => {
+      if (!current) return current;
+      const provider = current.asr.provider;
+      const meta = findAsrProvider(provider);
+      if (!meta) return current;
+      const config =
+        current.asr.configs[provider] ?? emptyAsrConfig(provider);
+      const nextModel = value === "__custom__" ? "" : value;
+      const modelMeta = meta.models.find((item) => item.id === nextModel);
+      const builtinBases = new Set(
+        [meta.defaultBaseUrl, ...meta.models.map((item) => item.baseUrl)]
+          .filter((item): item is string => Boolean(item)),
+      );
+      const shouldFill =
+        !config.base_url || builtinBases.has(config.base_url);
+      // 选到内置模型时就用它的官方请求地址，哪怕上一版填的是别的地址——
+      // 这正是「不用去翻文档找哪个链接是请求地址」的意义。自定义模型才保留原地址。
+      const nextBase = modelMeta?.baseUrl
+        ? modelMeta.baseUrl
+        : shouldFill
+          ? meta.defaultBaseUrl
+          : config.base_url;
+      return {
+        ...current,
+        asr: {
+          provider,
+          configs: {
+            ...current.asr.configs,
+            [provider]: {
+              ...config,
+              model: nextModel,
+              base_url: nextBase,
+            },
+          },
+        },
+      };
+    });
+    setStatus("idle");
+    setMessage("");
+  }, []);
+
+  // 自定义模型名里带 realtime 时，默认地址也跟着换成 WebSocket 端点。
+  const changeAsrCustomModel = useCallback(
+    (value: string) => {
+      patchAsr("model", value);
+      if (
+        settings?.asr.provider === "qwen" &&
+        value.startsWith("qwen3-asr-flash-realtime") &&
+        activeAsrConfig(settings.asr).base_url === QWEN_HTTP_BASE_URL
+      ) {
+        patchAsr("base_url", QWEN_REALTIME_BASE_URL);
+      }
+    },
+    [patchAsr, settings],
+  );
 
   const changeLlmProvider = useCallback((provider: string) => {
     if (!findProvider(LLM_PROVIDERS, provider)) return;
@@ -411,7 +513,28 @@ export function SettingsDialog({
   if (!open) return null;
 
   const showLlmBaseUrl = !!settings && settings.llm.provider !== "anthropic";
-  const showAsrBaseUrl = !!settings && settings.asr.provider !== "deepgram";
+  const asrConfig = settings
+    ? activeAsrConfig(settings.asr)
+    : emptyAsrConfig("qwen");
+  const asrProvider = settings?.asr.provider ?? "qwen";
+  const asrProviderMeta = findAsrProvider(asrProvider);
+  const asrModelMeta = findAsrModel(asrProvider, asrConfig.model);
+  const asrModelKnown = Boolean(asrModelMeta);
+  const asrModelValue = asrModelKnown ? asrConfig.model : "__custom__";
+  const asrModelItems = [
+    ...(asrProviderMeta?.models ?? []).map((model) => ({
+      value: model.id,
+      label: model.id,
+    })),
+    { value: "__custom__", label: t("settings.fields.customModel") },
+  ];
+  const asrCapability =
+    asrModelMeta?.streaming ??
+    (asrConfig.model.includes("asr") &&
+    asrConfig.model.includes("realtime")
+      ? "input"
+      : "none");
+  const showAsrBaseUrl = asrProvider !== "deepgram";
   const currentLanguage: AppLanguage = i18n.language.startsWith("en")
     ? "en"
     : "zh";
@@ -717,9 +840,14 @@ export function SettingsDialog({
               ) : (
                 <div className="grid gap-6">
                   <section className="grid gap-3" data-slot="settings-section">
-                    <h3 className="text-sm font-semibold">
-                      {t("settings.sections.asr")}
-                    </h3>
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold">
+                        {t("settings.sections.asr")}
+                      </h3>
+                      <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[11px] leading-none">
+                        {t(`settings.asrCapability.${asrCapability}`)}
+                      </span>
+                    </div>
                     <Field label={t("settings.fields.provider")}>
                       <ProviderSelect
                         providers={ASR_PROVIDERS}
@@ -730,32 +858,55 @@ export function SettingsDialog({
 
                     <div className={FORM_GRID}>
                       <Field label={t("settings.fields.model")}>
-                        <Input
-                          value={settings.asr.model}
-                          placeholder="qwen3-asr-flash"
-                          onChange={(event) =>
-                            patch("asr", "model", event.target.value)
-                          }
-                        />
+                        <Select
+                          items={asrModelItems}
+                          value={asrModelValue}
+                          onValueChange={(next) => changeAsrModel(String(next))}
+                        >
+                          <SelectTrigger className="h-8 w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent alignItemWithTrigger={false}>
+                            {asrModelItems.map(({ value, label }) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </Field>
                       <Field label={t("settings.fields.asrLanguage")}>
                         <Input
-                          value={settings.asr.language}
+                          value={asrConfig.language}
                           placeholder="zh"
                           onChange={(event) =>
-                            patch("asr", "language", event.target.value)
+                            patchAsr("language", event.target.value)
                           }
                         />
                       </Field>
                     </div>
 
+                    {!asrModelKnown && (
+                      <Field label={t("settings.fields.customModel")}>
+                        <Input
+                          value={asrConfig.model}
+                          placeholder="qwen3-asr-flash-realtime"
+                          spellCheck={false}
+                          onChange={(event) =>
+                            changeAsrCustomModel(event.target.value)
+                          }
+                        />
+                      </Field>
+                    )}
+
                     {showAsrBaseUrl && (
                       <Field label={t("settings.fields.baseUrl")}>
                         <Input
-                          value={settings.asr.base_url}
-                          placeholder="https://api.openai.com/v1"
+                          value={asrConfig.base_url}
+                          placeholder={asrProviderMeta?.defaultBaseUrl ?? ""}
+                          spellCheck={false}
                           onChange={(event) =>
-                            patch("asr", "base_url", event.target.value)
+                            patchAsr("base_url", event.target.value)
                           }
                         />
                       </Field>
@@ -765,10 +916,10 @@ export function SettingsDialog({
                       <Input
                         type="password"
                         autoComplete="off"
-                        value={settings.asr.api_key}
+                        value={asrConfig.api_key}
                         placeholder="sk-…"
                         onChange={(event) =>
-                          patch("asr", "api_key", event.target.value)
+                          patchAsr("api_key", event.target.value)
                         }
                       />
                     </Field>

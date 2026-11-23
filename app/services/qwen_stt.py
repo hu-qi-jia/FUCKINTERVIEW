@@ -5,6 +5,7 @@ DashScope 的 qwen3-asr-flash 通过 OpenAI 兼容的 /chat/completions 接口�
 """
 
 import base64
+import json
 from collections.abc import AsyncGenerator
 
 import aiohttp
@@ -112,6 +113,13 @@ class QwenSTTService(SegmentedSTTService):
                     yield ErrorFrame(error=f"Qwen ASR error ({response.status}): {error_text}")
                     return
                 result = await response.json()
+
+            # 代理/兼容接口有时会回一个没有 choices 的错误 JSON；以前这里
+            # 只报一个 KeyError('choices')，看不出服务端到底说了什么。
+            if not isinstance(result, dict) or "choices" not in result:
+                preview = json.dumps(result, ensure_ascii=False)[:300]
+                yield ErrorFrame(error=f"Qwen ASR error: 响应缺少 choices（{preview}）")
+                return
 
             message = result["choices"][0]["message"]
             content = message.get("content", "")

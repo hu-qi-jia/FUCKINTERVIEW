@@ -178,32 +178,51 @@ export function CoachPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionsReady, answeredCount]);
 
-  const toggle = (dimension: CoachDimension) => {
+  const toggle = async (dimension: CoachDimension) => {
     if (active === dimension) {
       setActive(null);
       setDraft("");
       return;
+    }
+    // 手动填的内容不点「保存」就切走，以前会直接丢。切之前先把当前格的
+    // 草稿落盘；保存失败就停在原格，让人看见错误再重试。
+    if (active) {
+      const ok = await save(active, 0, { advance: false });
+      if (!ok) return;
     }
     setActive(dimension);
     setDraft(cardSlots[dimension]?.a ?? "");
   };
 
   /** depth 0 是这一格的主问题，>0 是追问链上的第 n 环。 */
-  const save = async (dimension: CoachDimension, depth = 0) => {
+  const save = async (
+    dimension: CoachDimension,
+    depth = 0,
+    { advance = true }: { advance?: boolean } = {},
+  ): Promise<boolean> => {
     const key = `${dimension}:${depth}`;
     const text = (depth === 0 ? draft : (followDrafts[key] ?? "")).trim();
-    if (!text || saving || writing || followSaving) return;
+    const slot = cardSlots[dimension];
+    const saved =
+      depth === 0
+        ? (slot?.a ?? "")
+        : (slot?.followups?.[depth - 1]?.a ?? "");
+    // 没改过就当保存成功：切格/写回时不需要再发一次请求。
+    if (text === saved.trim()) return true;
+    if (!text || saving || writing || followSaving) return false;
     const profileId = profile.id;
     if (depth === 0) setSaving(dimension);
     else setFollowSaving(key);
     setError(null);
     try {
       const next = await coachAnswer(profileId, slug, dimension, text, depth);
-      if (profileIdRef.current !== profileId) return;
+      if (profileIdRef.current !== profileId) return false;
       // 追问保存后不往前跳，让人顺着这条链继续往下问。
       if (depth === 0) {
-        advanceFrom.current = dimension;
-        advanceRef.current = true;
+        if (advance) {
+          advanceFrom.current = dimension;
+          advanceRef.current = true;
+        }
       } else {
         setFollowDrafts((current) => {
           const rest = { ...current };
@@ -212,9 +231,11 @@ export function CoachPanel({
         });
       }
       onCoachSlots(next);
+      return true;
     } catch (cause) {
-      if (profileIdRef.current !== profileId) return;
+      if (profileIdRef.current !== profileId) return false;
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
     } finally {
       if (depth === 0) setSaving(null);
       else setFollowSaving((current) => (current === key ? null : current));
@@ -247,6 +268,12 @@ export function CoachPanel({
 
   const writeBack = async () => {
     if (writing || !slug) return;
+    // 顶部「写入经历卡」只读服务端已保存的回答。当前格如果是手动填完
+    // 还没点「保存」，先落盘再写回，否则会提示「没有新的回答可以写入」。
+    if (active) {
+      const ok = await save(active, 0, { advance: false });
+      if (!ok) return;
+    }
     const profileId = profile.id;
     setWriting(true);
     setError(null);
@@ -289,6 +316,13 @@ export function CoachPanel({
         (dimension) => cardSlots[dimension]?.a && !cardSlots[dimension]?.applied,
       ).length
     : 0;
+  // 当前格手动填完但还没点「保存」也算待写入：顶部按钮要能点，
+  // writeBack 会先把这份草稿落盘再调合并。
+  const draftPending = Boolean(
+    active &&
+      draft.trim() &&
+      draft.trim() !== (cardSlots[active]?.a ?? ""),
+  );
   const percent = Math.round((filled / total) * 100);
 
   return (
@@ -299,7 +333,7 @@ export function CoachPanel({
           <Button
             size="sm"
             variant="outline"
-            disabled={busy || writing || pending === 0}
+            disabled={busy || writing || (pending === 0 && !draftPending)}
             onClick={() => void writeBack()}
           >
             {writing && <Spinner className="size-3.5" />}
@@ -422,7 +456,7 @@ export function CoachPanel({
                     <button
                       type="button"
                       aria-expanded={open}
-                      onClick={() => toggle(dimension)}
+                      onClick={() => void toggle(dimension)}
                       className="flex w-full items-start gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
                       <span

@@ -55,6 +55,7 @@ from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 from app.config import (
+    active_asr_config,
     load_settings,
     migrate_legacy_data,
     save_model_dir,
@@ -1764,8 +1765,12 @@ def _model_snapshot(settings: dict, mode: str) -> dict[str, str | None]:
 
     def label(section: str) -> str | None:
         raw = settings.get(section) or {}
-        provider = str(raw.get("provider") or "").strip()
-        model = str(raw.get("model") or "").strip()
+        if section == "asr":
+            provider, config = active_asr_config(raw)
+            model = str(config.get("model") or "").strip()
+        else:
+            provider = str(raw.get("provider") or "").strip()
+            model = str(raw.get("model") or "").strip()
         if provider and model:
             return f"{provider}/{model}"
         return model or provider or None
@@ -1804,9 +1809,10 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
         qa_source="QaAnswer" if mode == "live" else None,
     )
 
+    asr_provider, asr_config = active_asr_config(settings["asr"])
     logger.info(
         f"Starting bot mode={mode} session={interview_id} with "
-        f"ASR={settings['asr'].get('provider')}/{settings['asr'].get('model')}, "
+        f"ASR={asr_provider}/{asr_config.get('model')}, "
         f"LLM={settings['llm'].get('provider')}/{settings['llm'].get('model')}, "
         f"TTS={settings['tts'].get('provider')}/{settings['tts'].get('model')}"
     )
@@ -1907,7 +1913,11 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
                 enable_metrics=True,
                 enable_usage_metrics=True,
             ),
-            idle_timeout_secs=runner_args.pipeline_idle_timeout_secs,
+            # 面试里几分钟没人说话是正常的：候选人在思考、写代码，或者面试官
+            # 在翻简历。Pipecat 默认 5 分钟收不到 VAD/转写帧就判 pipeline
+            # 空闲，并连带取消 runner——表现就是「面试进行到第 5 分钟自己结束」。
+            # 这里的生命周期只由客户端连接决定：页面断开时 transport 会收尾。
+            idle_timeout_secs=None,
             processor_unusable_policy=ProcessorUnusablePolicy.END,
             observers=[recorder],
         )

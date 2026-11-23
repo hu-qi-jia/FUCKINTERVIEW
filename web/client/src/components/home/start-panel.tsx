@@ -1,14 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
+import DecryptedText from "@/components/ui/decrypted-text";
 import type { SessionStatsSummary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
-
-/** 祝福语轮播的间隔。太短会晃眼，太长就等于只有一句。 */
-const CHEER_INTERVAL_MS = 7000;
 
 function StatBlock({
   label,
@@ -51,32 +48,6 @@ export function StartPanel({
 }) {
   const { t } = useTranslation();
 
-  // 开始面试前那句祝福语轮着来：一次只出一行，换句时旧的淡出、新的淡入抬起。
-  // 新旧下标放一个 state 里，切换是一次更新，两层不会错开。
-  const rawCheers = t("home.cheers", { returnObjects: true }) as unknown;
-  const cheers = Array.isArray(rawCheers)
-    ? rawCheers.filter((item): item is string => typeof item === "string")
-    : [];
-  const [carousel, setCarousel] = useState<{
-    index: number;
-    previous: number | null;
-  }>({ index: 0, previous: null });
-  useEffect(() => {
-    if (cheers.length < 2) return;
-    const timer = setInterval(
-      () =>
-        setCarousel((state) => ({
-          index: (state.index + 1) % cheers.length,
-          previous: state.index,
-        })),
-      CHEER_INTERVAL_MS
-    );
-    return () => clearInterval(timer);
-  }, [cheers.length]);
-  const cheer = cheers[carousel.index] ?? "";
-  const outgoing =
-    carousel.previous === null ? "" : (cheers[carousel.previous] ?? "");
-
   return (
     <div
       className={cn(
@@ -85,24 +56,22 @@ export function StartPanel({
       )}
     >
       <div className="flex min-w-0 flex-col gap-3 px-1 py-2 lg:col-span-3">
-        {/* 一句一句轮着来的祝福语。换句时旧的淡出、新的淡入并抬起一点，
-            两层叠着过渡；高度由新的一行撑住，不会跳版。 */}
-        <div className="relative min-h-[1.4em]">
-          {carousel.previous !== null && (
-            <p
-              key={`out-${carousel.index}`}
-              aria-hidden
-              className="absolute inset-x-0 top-0 text-[24px] leading-snug font-medium animate-out fade-out fill-mode-forwards duration-500 motion-reduce:hidden"
-            >
-              {outgoing}
-            </p>
-          )}
-          <p
-            key={carousel.index}
-            className="text-[24px] leading-snug font-medium animate-in fade-in slide-in-from-bottom-1 fill-mode-both duration-500 motion-reduce:animate-none"
-          >
-            {cheer}
-          </p>
+        {/* 主视觉文字：解密动效，循环重播；有减少动效偏好时直接显示原文。 */}
+        <div className="flex min-h-[1.4em] items-center text-[30px] leading-snug font-semibold">
+          <DecryptedText
+            text="FUCKINTERVIEW"
+            effect="scramble"
+            animateOn="view"
+            sequential
+            revealDirection="start"
+            speed={45}
+            maxIterations={12}
+            loop
+            loopDelay={4000}
+            className="text-foreground"
+            encryptedClassName="text-muted-foreground/50"
+            parentClassName="tracking-tight"
+          />
         </div>
 
         {/* 主操作：黑（深色主题白），跟其他按钮同一个色系，只是放到主视觉的尺寸。

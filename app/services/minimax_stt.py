@@ -11,6 +11,7 @@
 所谓流式是「结果边出边推」；音频侧仍由 VAD 切段后整段上传。
 """
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 
@@ -154,41 +155,60 @@ class MiniMaxSTTService(SegmentedSTTService):
             )
 
             text = ""
-            async with self._session.post(
-                f"{self._base_url}/speech_to_text",
-                data=form,
-                headers=headers,
-                # 分段转写是串行的：一段卡住会让后面的整段排队。给个上限，
-                # 超时就报错丢这一段，而不是一直占着队列。
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    await self.stop_processing_metrics()
-                    yield ErrorFrame(
-                        error=f"MiniMax ASR error ({response.status}): {error_text}"
-                    )
-                    return
-
-                is_event_stream = "text/event-stream" in response.headers.get(
-                    "Content-Type", ""
-                )
-                if is_event_stream:
-                    async for event in self._read_events(response):
-                        delta = str(event.get("delta") or "")
-                        if delta:
-                            text += delta
-                            yield InterimTranscriptionFrame(
-                                text,
-                                self._user_id,
-                                time_now_iso8601(),
-                                language,
+            # 分段转写是串行的：一段卡住会让后面的整段排队。30 秒的超时
+            # 一旦命中，后面所有识别都会跟着晚半分钟；线上日志里 30 秒
+            # 一条的「MiniMax ASR error」（空消息）就是超时。压到 10 秒，
+            # 连接类错误且还没吐字时重试一次，别让整场面试排队等它。
+            timeout = aiohttp.ClientTimeout(total=10, connect=3, sock_read=10)
+            for attempt in (0, 1):
+                text = ""
+                got_delta = False
+                try:
+                    async with self._session.post(
+                        f"{self._base_url}/speech_to_text",
+                        data=form,
+                        headers=headers,
+                        timeout=timeout,
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            await self.stop_processing_metrics()
+                            yield ErrorFrame(
+                                error=f"MiniMax ASR error ({response.status}): {error_text}"
                             )
-                        if event.get("finish"):
-                            break
-                else:
-                    result = await response.json()
-                    text = str(result.get("text") or "")
+                            return
+
+                        is_event_stream = "text/event-stream" in response.headers.get(
+                            "Content-Type", ""
+                        )
+                        if is_event_stream:
+                            async for event in self._read_events(response):
+                                delta = str(event.get("delta") or "")
+                                if delta:
+                                    got_delta = True
+                                    text += delta
+                                    yield InterimTranscriptionFrame(
+                                        text,
+                                        self._user_id,
+                                        time_now_iso8601(),
+                                        language,
+                                    )
+                                if event.get("finish"):
+                                    break
+                        else:
+                            result = await response.json()
+                            text = str(result.get("text") or "")
+                    break
+                except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+                    # 已经吐过中间结果的不要重试，否则前端会收到重复文字。
+                    if attempt == 0 and not got_delta:
+                        logger.warning(
+                            "MiniMax ASR transient error, retrying: "
+                            f"{type(error).__name__}: {error!r} audio={len(audio)}B"
+                        )
+                        await asyncio.sleep(0.2)
+                        continue
+                    raise
 
             # 空片段也要收掉计时，否则这条 processing 指标会一直挂着。
             await self.stop_processing_metrics()
@@ -203,4 +223,11 @@ class MiniMaxSTTService(SegmentedSTTService):
                     language,
                 )
         except Exception as e:
-            yield ErrorFrame(error=f"MiniMax ASR error: {e}")
+            # 空消息的异常（超时/连接被对端关掉）以前只留下 "MiniMax ASR
+            # error: "，看不出是哪一类；把类型和 repr 一起写进日志。
+            logger.error(
+                f"MiniMax ASR failed: {type(e).__name__}: {e!r} audio={len(audio)}B"
+            )
+            yield ErrorFrame(
+                error=f"MiniMax ASR error ({type(e).__name__}): {e!r}"
+            )
