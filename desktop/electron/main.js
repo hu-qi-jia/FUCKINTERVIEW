@@ -557,15 +557,12 @@ function installDisplayMediaHandler() {
         return;
       }
       try {
-        const sources = await desktopCapturer.getSources({
-          types: ["screen"],
-          thumbnailSize: { width: 0, height: 0 },
-        });
-        if (!sources.length) {
+        const source = await cachedScreenSource();
+        if (!source) {
           callback({});
           return;
         }
-        callback({ video: sources[0], audio: "loopback" });
+        callback({ video: source, audio: "loopback" });
       } catch (error) {
         console.error("[display-media] 取屏幕源失败", error);
         callback({});
@@ -573,6 +570,37 @@ function installDisplayMediaHandler() {
     },
     { useSystemPicker: false }
   );
+}
+
+// 取一次屏幕源要等几百毫秒到两秒；每次点「开始面试」都重新枚举，用户
+// 看到的就是连接前的等待。启动时先取好缓存，点开始时直接交出去。
+// 显示器布局变化会清掉缓存，避免拿到已经失效的 source id。
+let screenSourceCache = null;
+let screenSourceAt = 0;
+const SCREEN_SOURCE_TTL_MS = 5 * 60_000;
+
+async function cachedScreenSource() {
+  const now = Date.now();
+  if (screenSourceCache && now - screenSourceAt < SCREEN_SOURCE_TTL_MS) {
+    return screenSourceCache;
+  }
+  const started = Date.now();
+  const sources = await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize: { width: 0, height: 0 },
+    fetchWindowIcons: false,
+  });
+  screenSourceCache = sources[0] ?? null;
+  screenSourceAt = now;
+  console.log(
+    `[display-media] 屏幕源已缓存：${sources.length} 个，用时 ${Date.now() - started}ms`
+  );
+  return screenSourceCache;
+}
+
+function invalidateScreenSource() {
+  screenSourceCache = null;
+  screenSourceAt = 0;
 }
 
 function installPermissionHandlers() {
@@ -831,6 +859,13 @@ if (!app.requestSingleInstanceLock()) {
     loadPrivacySettings();
     installPermissionHandlers();
     installDisplayMediaHandler();
+    // 启动时就把屏幕源取好，点「开始面试」时不用再等枚举。
+    void cachedScreenSource().catch((error) => {
+      console.error("[display-media] 预取屏幕源失败", error);
+    });
+    for (const event of ["display-added", "display-removed", "display-metrics-changed"]) {
+      screen.on(event, invalidateScreenSource);
+    }
     installWindowIpc();
     installMenu();
     createTray();

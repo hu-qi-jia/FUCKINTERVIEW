@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 from collections.abc import AsyncGenerator
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -81,11 +82,14 @@ class QwenRealtimeSTTService(STTService):
 
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._receiver_task: asyncio.Task | None = None
+        self._connect_task: asyncio.Task | None = None
         self._connect_lock = asyncio.Lock()
+        self._flush_lock = asyncio.Lock()
         self._buffer = bytearray()
         self._sample_rate = int(sample_rate or 16000)
         self._finished = asyncio.Event()
         self._last_partial = ""
+        self._last_connect_attempt = 0.0
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -94,7 +98,10 @@ class QwenRealtimeSTTService(STTService):
         await super().start(frame)
         # 传输层可能是 16k，也可能按设置换过；以 StartFrame 为准。
         self._sample_rate = int(getattr(frame, "audio_in_sample_rate", 0) or self._sample_rate)
-        await self._connect()
+        # 不 await：DashScope 的 WebSocket 握手实测 1–4 秒，等它会把整条
+        # pipeline 的 ready 一起拖住，用户看到的就是「开始面试要等很久」。
+        # 先在后台连，音频先缓冲，连上后按顺序补发。
+        self._connect_task = self.create_task(self._connect())
 
     async def stop(self, frame: EndFrame):
         await self._finish()
@@ -130,9 +137,11 @@ class QwenRealtimeSTTService(STTService):
         async with self._connect_lock:
             if self._ws is not None and not self._ws.closed:
                 return
+            self._last_connect_attempt = time.monotonic()
             if not self._session:
                 self._session = aiohttp.ClientSession()
             self._finished = asyncio.Event()
+            started = time.monotonic()
             try:
                 self._ws = await self._session.ws_connect(
                     self._endpoint(),
@@ -143,7 +152,7 @@ class QwenRealtimeSTTService(STTService):
                 logger.error(
                     f"Qwen realtime ASR connect failed: {type(error).__name__}: {error!r}"
                 )
-                raise
+                return
 
             language = self._language()
             await self._send(
@@ -165,8 +174,10 @@ class QwenRealtimeSTTService(STTService):
             self._receiver_task = self.create_task(self._receive())
             logger.info(
                 f"Qwen realtime ASR connected: model={self._settings.model} "
-                f"rate={self._sample_rate}"
+                f"rate={self._sample_rate} took={time.monotonic() - started:.2f}s"
             )
+            # 握手期间攒下的音频按顺序补发，别让用户开口的前几句丢掉。
+            await self._flush_buffer()
 
     async def _send(self, payload: dict):
         ws = self._ws
@@ -176,12 +187,18 @@ class QwenRealtimeSTTService(STTService):
 
     async def _finish(self):
         """先 session.finish，再等服务端把最后一句吐完，最后关连接。"""
+        if self._connect_task is not None:
+            if not self._connect_task.done():
+                await self.cancel_task(self._connect_task)
+            self._connect_task = None
         ws = self._ws
         if ws is None or ws.closed:
             self._ws = None
+            self._buffer.clear()
             return
         try:
-            await self._send({"type": "session.finish"})
+            async with self._flush_lock:
+                await self._send({"type": "session.finish"})
             try:
                 await asyncio.wait_for(self._finished.wait(), timeout=2.0)
             except asyncio.TimeoutError:
@@ -190,6 +207,7 @@ class QwenRealtimeSTTService(STTService):
             logger.debug(f"Qwen realtime ASR finish skipped: {error!r}")
         finally:
             self._ws = None
+            self._buffer.clear()
             if self._receiver_task is not None:
                 await self.cancel_task(self._receiver_task)
                 self._receiver_task = None
@@ -204,23 +222,53 @@ class QwenRealtimeSTTService(STTService):
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
         if not audio:
             return
-        try:
-            await self._connect()
-            self._buffer.extend(audio)
+        self._buffer.extend(audio)
+        self._trim_buffer()
+        if self._ws is None or self._ws.closed:
+            # 握手还没完成：先攒着，别在这里 await，否则又把 pipeline 卡住。
+            self._ensure_connect()
+        else:
+            await self._flush_buffer()
+        yield None
+
+    def _ensure_connect(self):
+        if self._connect_task is not None and not self._connect_task.done():
+            return
+        # 失败后别每 20ms 重连一次，给服务端和网络留 2 秒。
+        if time.monotonic() - self._last_connect_attempt < 2.0:
+            return
+        self._connect_task = self.create_task(self._connect())
+
+    def _trim_buffer(self):
+        """最多留 10 秒音频；再长说明连接一直没起来，丢最旧的。"""
+        max_bytes = max(3200, int(self._sample_rate * 2 * 10))
+        if len(self._buffer) > max_bytes:
+            del self._buffer[: len(self._buffer) - max_bytes]
+
+    async def _flush_buffer(self):
+        async with self._flush_lock:
+            ws = self._ws
+            if ws is None or ws.closed:
+                return
             # 100ms 一包：太小请求头开销大，太大首字延迟高。
             chunk_bytes = max(1600, int(self._sample_rate * 0.1) * 2)
-            while len(self._buffer) >= chunk_bytes:
+            while len(self._buffer) >= chunk_bytes and self._ws is ws:
                 chunk = bytes(self._buffer[:chunk_bytes])
                 del self._buffer[:chunk_bytes]
-                await self._send(
-                    {
-                        "type": "input_audio_buffer.append",
-                        "audio": base64.b64encode(chunk).decode("ascii"),
-                    }
-                )
-        except Exception as error:
-            logger.warning(f"Qwen realtime ASR send failed: {type(error).__name__}: {error!r}")
-        yield None
+                try:
+                    await self._send(
+                        {
+                            "type": "input_audio_buffer.append",
+                            "audio": base64.b64encode(chunk).decode("ascii"),
+                        }
+                    )
+                except Exception as error:
+                    # 没发出去的包放回去，下次连上再补。
+                    self._buffer[:0] = chunk
+                    logger.warning(
+                        f"Qwen realtime ASR send failed: {type(error).__name__}: {error!r}"
+                    )
+                    break
 
     async def _receive(self):
         ws = self._ws
