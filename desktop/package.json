@@ -1,7 +1,7 @@
 {
   "name": "interview-desktop",
   "productName": "FUCKINTERVIEW",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "license": "MIT",
   "description": "FUCKINTERVIEW 桌面端：Electron 外壳 + 本地 Python 服务",
